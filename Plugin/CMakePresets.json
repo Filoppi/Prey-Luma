@@ -1,0 +1,230 @@
+{
+	"version": 6,
+	"cmakeMinimumRequired": {
+		"major": 3,
+		"minor": 26,
+		"patch": 0
+	},
+	"configurePresets": [
+		{
+			"name": "common",
+			"hidden": true,
+			"cacheVariables": {
+				"CMAKE_CXX_FLAGS": "$env{PROJECT_PLATFORM_FLAGS} $env{PROJECT_TEXT_FLAGS} $env{PROJECT_COMPILER_FLAGS} $penv{CXXFLAGS}",
+				"SFSE_SUPPORT_XBYAK": "ON"
+			},
+			"vendor": {
+				"microsoft.com/VisualStudioSettings/CMake/1.0": {
+					"intelliSenseMode": "windows-msvc-x64",
+					"enableMicrosoftCodeAnalysis": true,
+					"enableClangTidyCodeAnalysis": true
+				}
+			}
+		},
+		{
+			"name": "packaging-vcpkg",
+			"hidden": true,
+			"cacheVariables": {
+				"CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+				"VCPKG_HOST_TRIPLET": "x64-windows-static-md",
+				"VCPKG_TARGET_TRIPLET": "x64-windows-static-md"
+			}
+		},
+		{
+			"name": "buildtype-debug",
+			"hidden": true,
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "Debug"
+			}
+		},
+		{
+			"name": "buildtype-release",
+			"hidden": true,
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "Release"
+			}
+		},
+		{
+			"name": "x64",
+			"hidden": true,
+			"architecture": "x64",
+			"cacheVariables": {
+				"CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+			}
+		},
+		{
+			"name": "generator-msvc",
+			"hidden": true,
+			"inherits": "x64",
+			"generator": "Visual Studio 17 2022"
+		},
+		{
+			"name": "generator-ninja",
+			"hidden": true,
+			"generator": "Ninja"
+		},
+		{
+			"name": "compiler-msvc",
+			"hidden": true,
+			"environment": {
+				"PROJECT_COMPILER_FLAGS": "/cgthreads8 /diagnostics:caret /fp:contract /fp:except- /guard:cf- /permissive- /Zc:__cplusplus /Zc:enumTypes /Zc:lambda /Zc:preprocessor /Zc:referenceBinding /Zc:rvalueCast /Zc:templateScope /Zc:ternary /Zc:preprocessor /EHsc /MP /W4 /external:anglebrackets /external:W0",
+				"PROJECT_COMPILER": "msvc"
+			}
+		},
+		{
+			"name": "compiler-clang",
+			"hidden": true,
+			"cacheVariables": {
+				"CMAKE_C_COMPILER": "clang",
+				"CMAKE_CXX_COMPILER": "clang++"
+			},
+			"environment": {
+				"PROJECT_COMPILER": "clang",
+				"PROJECT_COMPILER_FLAGS": "-Wno-overloaded-virtual -Wno-delete-non-abstract-non-virtual-dtor -Wno-inconsistent-missing-override -Wno-reinterpret-base-class"
+			},
+			"vendor": {
+				"microsoft.com/VisualStudioSettings/CMake/1.0": {
+					"intelliSenseMode": "windows-clang-x64"
+				}
+			}
+		},
+		{
+			"name": "compiler-clang-cl",
+			"hidden": true,
+			"inherits": "compiler-clang",
+			"cacheVariables": {
+				"CMAKE_C_COMPILER": "clang-cl",
+				"CMAKE_CXX_COMPILER": "clang-cl"
+			},
+			"environment": {
+				"CC": "clang-cl",
+				"CXX": "clang-cl",
+				"PROJECT_COMPILER_FLAGS": "/permissive- /EHsc /W4 -Wno-overloaded-virtual -Wno-delete-non-abstract-non-virtual-dtor -Wno-inconsistent-missing-override -Wno-reinterpret-base-class -D__cpp_consteval"
+			}
+		},
+		{
+			"name": "build-debug-msvc-msvc",
+			"inherits": [
+				"common",
+				"packaging-vcpkg",
+				"buildtype-debug",
+				"generator-msvc",
+				"compiler-msvc"
+			]
+		},
+		{
+			"name": "build-debug-msvc-ninja",
+			"inherits": [
+				"common",
+				"packaging-vcpkg",
+				"buildtype-debug",
+				"generator-ninja",
+				"compiler-msvc"
+			]
+		},
+		{
+			"name": "build-debug-clang-cl-msvc",
+			"toolset": "ClangCL",
+			"inherits": [
+				"common",
+				"packaging-vcpkg",
+				"buildtype-debug",
+				"generator-msvc",
+				"compiler-clang-cl"
+			]
+		},
+		{
+			"name": "build-debug-clang-cl-ninja",
+			"inherits": [
+				"common",
+				"packaging-vcpkg",
+				"buildtype-debug",
+				"generator-ninja",
+				"compiler-clang-cl"
+			]
+		},
+		{
+			"name": "build-release-msvc-msvc",
+			"inherits": [
+				"common",
+				"packaging-vcpkg",
+				"buildtype-release",
+				"generator-msvc",
+				"compiler-msvc"
+			]
+		},
+		{
+			"name": "build-release-msvc-ninja",
+			"inherits": [
+				"common",
+				"packaging-vcpkg",
+				"buildtype-release",
+				"generator-ninja",
+				"compiler-msvc"
+			]
+		},
+		{
+			"name": "build-release-clang-cl-msvc",
+			"toolset": "ClangCL",
+			"inherits": [
+				"common",
+				"packaging-vcpkg",
+				"buildtype-release",
+				"generator-msvc",
+				"compiler-clang-cl"
+			]
+		},
+		{
+			"name": "build-release-clang-cl-ninja",
+			"inherits": [
+				"common",
+				"packaging-vcpkg",
+				"buildtype-release",
+				"generator-ninja",
+				"compiler-clang-cl"
+			]
+		}
+	],
+	"buildPresets": [
+		{
+			"name": "debug-msvc-ninja",
+			"configurePreset": "build-debug-msvc-ninja",
+			"displayName": "1. (Debug) MSVC - Ninja"
+		},
+		{
+			"name": "release-msvc-ninja",
+			"configurePreset": "build-release-msvc-ninja",
+			"displayName": "2. (Release) MSVC - Ninja"
+		},
+		{
+			"name": "debug-msvc-msvc",
+			"configurePreset": "build-debug-msvc-msvc",
+			"displayName": "3. (Debug) MSVC - MSVC"
+		},
+		{
+			"name": "release-msvc-msvc",
+			"configurePreset": "build-release-msvc-msvc",
+			"displayName": "4. (Release) MSVC - MSVC"
+		},
+		{
+			"name": "debug-clang-cl-ninja",
+			"configurePreset": "build-debug-clang-cl-ninja",
+			"displayName": "5. (Debug) Clang - Ninja"
+		},
+		{
+			"name": "release-clang-cl-ninja",
+			"configurePreset": "build-release-clang-cl-ninja",
+			"displayName": "6. (Release) Clang - Ninja"
+		},
+		{
+			"name": "debug-clang-cl-msvc",
+			"configurePreset": "build-debug-clang-cl-msvc",
+			"displayName": "7. (Debug) Clang - MSVC"
+		},
+		{
+			"name": "release-clang-cl-msvc",
+			"configurePreset": "build-release-clang-cl-msvc",
+			"displayName": "8. (Release) Clang - MSVC"
+		}
+	]
+}

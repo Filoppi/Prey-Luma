@@ -1,0 +1,16 @@
+[
+    {
+        "action": "base",
+        "params": [
+            "{target_base}",
+            "{env:GamePath}\\Data\\SFSE\\Plugins\\"
+        ]
+    },
+    {
+        "action": "copy",
+        "params": [
+            "{cmake_output}\\*",
+            "{dist}\\"
+        ]
+    }
+]

@@ -1,0 +1,23 @@
+[
+    {
+        "action": "copy_if",
+        "params": [
+            "{dist}\\*.ini",
+            "{target_base}"
+        ]
+    },
+    {
+        "action": "copy_if",
+        "params": [
+            "{dist}\\*.toml",
+            "{target_base}"
+        ]
+    },
+    {
+        "action": "copy_if",
+        "params": [
+            "{dist}\\*.json",
+            "{target_base}"
+        ]
+    }
+]

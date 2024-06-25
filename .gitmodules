@@ -1,0 +1,3 @@
+[submodule "extern/DKUtil"]
+	path = extern/DKUtil
+	url = https://github.com/gottyduke/DKUtil.git

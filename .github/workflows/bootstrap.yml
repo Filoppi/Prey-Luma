@@ -1,0 +1,35 @@
+name: Auto Bootstrap
+
+on: [push]
+
+permissions: write-all
+
+env:
+  REPO: ${{ github.repository }}
+
+jobs:
+  setup-project:
+    if: ${{ !contains (github.repository, '/SF_PluginTemplate') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check Template
+        id: template
+        shell: pwsh
+        run: "Write-Output 'IS_TEMPLATE=$(Test-Path ${{ github.workspace }}/.github/TEMPLATE)' >> $env:GITHUB_OUTPUT"
+      
+      - name: Rename Project
+        id: setup
+        if: ${{ steps.template.outputs.IS_TEMPLATE }} == 'true'
+        shell: pwsh
+        run: "& ${{ github.workspace }}/.github/bootstrap.ps1"
+        
+      - name: Check for Commit
+        if: ${{ steps.setup.outputs.SETUP_SUCCESS }} == 'true'
+        uses: EndBug/add-and-commit@v9
+        with:
+          committer_name: setup-action
+          committer_email: 41898282+github-actions[bot]@users.noreply.github.com
+          message: 'build: initial setup'

@@ -1,0 +1,12 @@
+#pragma once
+
+
+namespace Plugin
+{
+	inline constexpr auto NAME = "@PROJECT_NAME@"sv;
+	inline constexpr auto AUTHOR = "gottyduke"sv;
+	inline constexpr auto Version = 
+		@PROJECT_VERSION_MAJOR@u * 10000 +
+		@PROJECT_VERSION_MINOR@u * 100 +
+		@PROJECT_VERSION_PATCH@u;
+}

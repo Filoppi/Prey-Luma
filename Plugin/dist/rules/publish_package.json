@@ -1,0 +1,25 @@
+[
+    {
+        "action": "package",
+        "config": "Release",
+        "params": [
+            "{dist}\\*.dll",
+            "{dist}\\*.ini",
+            "{dist}\\*.json",
+            "{dist}\\*.toml",
+            "{dist}\\{project_name}.v{project_version}.zip"
+        ]
+    },
+    {
+        "action": "package",
+        "config": "RelWithDebInfo",
+        "params": [
+            "{dist}\\*.dll",
+            "{dist}\\*.pdb",
+            "{dist}\\*.ini",
+            "{dist}\\*.json",
+            "{dist}\\*.toml",
+            "{dist}\\{project_name}.v{project_version}.zip"
+        ]
+    }
+]
