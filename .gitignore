@@ -4,3 +4,5 @@
 *.zip
 *.timestamp
 deploy-*.ps1
+
+**/.vshistory/

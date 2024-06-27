@@ -3,7 +3,7 @@
         "action": "base",
         "params": [
             "{target_base}",
-            "{env:GamePath}\\Data\\SFSE\\Plugins\\"
+            "E:\\SteamLibrary\\steamapps\\common\\KingdomComeDeliverance\\Bin\\Win64"
         ]
     },
     {

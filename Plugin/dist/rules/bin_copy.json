@@ -2,8 +2,8 @@
     {
         "action": "copy",
         "params": [
-            "{dist}\\*.dll",
-            "{target_base}"
+            "{dist}\\{project_name}.dll",
+            "{target_base}\\{project_name}.asi"
         ]
     },
     {

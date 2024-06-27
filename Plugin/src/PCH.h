@@ -116,3 +116,7 @@ using namespace std::literals;
 //#define CONFIG_PATH "RELATIVE CONFID LOOKUP PATH"
 #include "DKUtil/Hook.hpp"
 #include "DKUtil/Logger.hpp"
+
+// reshade addon api
+#include "imgui.h"
+#include "reshade/reshade_api.hpp"
