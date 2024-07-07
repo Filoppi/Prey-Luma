@@ -40,7 +40,12 @@ namespace Hooks
 		IDXGISwapChain3* swapChain3 = nullptr;
 		a_deviceInfo->m_pSwapChain->QueryInterface(__uuidof(IDXGISwapChain3), reinterpret_cast<void**>(&swapChain3));
 
-		DXGI_COLOR_SPACE_TYPE colorSpace = DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;
+		DXGI_COLOR_SPACE_TYPE colorSpace;
+		if (format == RE::ETEX_Format::eTF_R10G10B10A2) {
+			colorSpace = DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;
+		} else {
+			colorSpace = DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;
+		}
 
 		swapChain3->SetColorSpace1(colorSpace);
 		swapChain3->Release();
@@ -56,8 +61,9 @@ namespace Hooks
 		bool bReturn = _Hook_CreateRenderTarget(a_szTexName, a_pTex, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, a_eTF, a_nCustomID, a_nFlags);
 
 		// add ours
-		_Hook_CreateRenderTarget("$TonemapTarget", ptexTonemapTarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, RE::eTF_R16G16B16A16F, -1, a_nFlags);
-		_Hook_CreateRenderTarget("$PostAATarget", ptexPostAATarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, RE::eTF_R16G16B16A16F, -1, a_nFlags);
+		_Hook_CreateRenderTarget("$TonemapTarget", ptexTonemapTarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, a_nFlags);
+		_Hook_CreateRenderTarget("$PostAATarget", ptexPostAATarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, a_nFlags);
+		_Hook_CreateRenderTarget("$UpscaleTarget", ptexUpscaleTarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, a_nFlags);
 
 		return bReturn;
 	}
@@ -67,8 +73,9 @@ namespace Hooks
 		RE::CTexture* pTex = _Hook_CreateTextureObject(a_name, a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, a_eTF, a_nCustomID, a9);
 
 		// add ours
-		ptexTonemapTarget = _Hook_CreateTextureObject("$TonemapTarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, RE::eTF_R16G16B16A16F, -1, a9);
-		ptexPostAATarget = _Hook_CreateTextureObject("$PostAATarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, RE::eTF_R16G16B16A16F, -1, a9);
+		ptexTonemapTarget = _Hook_CreateTextureObject("$TonemapTarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, format, -1, a9);
+		ptexPostAATarget = _Hook_CreateTextureObject("$PostAATarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, format, -1, a9);
+		ptexUpscaleTarget = _Hook_CreateTextureObject("$UpscaleTarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, format, -1, a9);
 
 		return pTex;
 	}
@@ -144,6 +151,17 @@ namespace Hooks
 			pVal[1] = 0.f;
 			pVal[2] = 0.f;
 			pVal[3] = 0.f;
+		}
+	}
+
+	void Hooks::PushJitter(RE::PostAAConstants* pPostAAConstantsDst, RE::PostAAConstants* pPostAAConstantsSrc)
+	{
+		//do what the original code would do
+		pPostAAConstantsDst->fxaaParams = pPostAAConstantsSrc->fxaaParams;
+
+		if (*Offsets::cvar_r_AntialiasingMode != 5) {
+			// push jitter offsets instead of unused fxaa params
+			reinterpret_cast<RE::PostAAConstantsAltered*>(pPostAAConstantsDst)->m_vProjMatrixSubPixoffset = Offsets::pCD3D9Renderer->m_vProjMatrixSubPixoffset;
 		}
 	}
 

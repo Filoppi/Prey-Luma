@@ -5,6 +5,9 @@
 
 namespace Hooks
 {
+	constexpr RE::ETEX_Format format = RE::ETEX_Format::eTF_R16G16B16A16F;
+	constexpr RE::ETEX_Format format16f = RE::ETEX_Format::eTF_R16G16B16A16F;
+
 	class Patches
 	{
 	public:
@@ -15,7 +18,6 @@ namespace Hooks
 			{
 				// SPostEffectsUtils::Create
 				const auto address = Offsets::baseAddress + 0x1071510;
-				constexpr uint8_t format = 0x13;
 
 				dku::Hook::WriteImm(address + 0x47D, format);   // $PrevFrameScaled
 
@@ -29,7 +31,6 @@ namespace Hooks
 			{
 				// CTexture::GenerateSceneMap
 				const auto address = Offsets::baseAddress + 0xF57090;
-				constexpr uint8_t format = 0x13;
 
 				dku::Hook::WriteImm(address + 0xEE, format);    // $BackBuffer
 				dku::Hook::WriteImm(address + 0x151, format);   // $BackBuffer
@@ -38,16 +39,27 @@ namespace Hooks
 			{
 				// CColorGradingControllerD3D::InitResources
 				const auto address = Offsets::baseAddress + 0xF036D0;
-				constexpr uint8_t format = 0x13;
 
-				dku::Hook::WriteImm(address + 0xA3, format);   // ColorGradingMergeLayer0
-				dku::Hook::WriteImm(address + 0xFA, format);   // ColorGradingMergeLayer1
+				dku::Hook::WriteImm(address + 0xA3, format16f);  // ColorGradingMergeLayer0
+				dku::Hook::WriteImm(address + 0xFA, format16f);  // ColorGradingMergeLayer1
 			}
 
-			// Patch swapchain DXGI_FORMAT RGBA8 to RGBA16F and DXGI_SWAP_EFFECT to DXGI_SWAP_EFFECT_FLIP_DISCARD
+			{
+				// CTexture::GenerateHDRMaps
+				const auto address = Offsets::baseAddress + 0xF15280;
+
+				dku::Hook::WriteImm(address + 0x11A, format16f);  // used to calculate bits per pixel 
+				dku::Hook::WriteImm(address + 0x14B, format16f);  // $HDRTargetPrev
+				dku::Hook::WriteImm(address + 0x52A, format16f);  // $HDRTempBloom0
+				dku::Hook::WriteImm(address + 0x5B0, format16f);  // $HDRTempBloom1
+				dku::Hook::WriteImm(address + 0x630, format16f);  // $HDRFinalBloom
+				dku::Hook::WriteImm(address + 0xAB7, format16f);  // $SceneTargetR11G11B10F_0
+				dku::Hook::WriteImm(address + 0xB52, format16f);  // $SceneTargetR11G11B10F_1
+			}
+
+			// Patch swapchain DXGI_FORMAT from RGBA8 and DXGI_SWAP_EFFECT to DXGI_SWAP_EFFECT_FLIP_DISCARD
 			{
 				const auto address = Offsets::baseAddress + 0xF50000;
-				constexpr uint8_t format = 0x13;
 				dku::Hook::WriteImm(address + 0x4CE, format);
 
 				constexpr uint8_t swap_effect = 0x4;
@@ -219,6 +231,103 @@ namespace Hooks
 					auto hook = dku::Hook::AddASMPatch(Offsets::baseAddress + 0xF99500, offset, &patch);
 					hook->Enable();
 				}
+
+				// Use UpscaleTarget instead of SceneSpecular (CPostAAStage::DoFinalComposition)
+				{
+					struct Patch : Xbyak::CodeGenerator
+					{
+						Patch(uintptr_t a_addr)
+						{
+							push(rax);
+
+							// call our function
+							mov(rax, a_addr);
+							call(rax);
+							mov(rcx, rax);
+
+							pop(rax);
+						}
+					};
+
+					Patch patch(reinterpret_cast<uintptr_t>(GetUpscaleTargetRT));
+					patch.ready();
+
+					auto offset = std::make_pair(0x3B, 0x42);
+					auto hook = dku::Hook::AddASMPatch(Offsets::baseAddress + 0xF9BBB0, offset, &patch);
+					hook->Enable();
+				}
+
+				// Use PostAATarget instead of SceneNormalsMap #2 (CPostAAStage::DoFinalComposition)
+				{
+					struct Patch : Xbyak::CodeGenerator
+					{
+						Patch(uintptr_t a_addr)
+						{
+							push(rax);
+
+							// call our function
+							mov(rax, a_addr);
+							call(rax);
+							cmovnz(rcx, rax);
+
+							pop(rax);
+						}
+					};
+
+					Patch patch(reinterpret_cast<uintptr_t>(GetPostAATargetRT));
+					patch.ready();
+
+					auto offset = std::make_pair(0x9B, 0xA3);
+					auto hook = dku::Hook::AddASMPatch(Offsets::baseAddress + 0xF9BBB0, offset, &patch);
+					hook->Enable();
+				}
+
+				// Use UpscaleTarget instead of SceneSpecular #2 (CD3D9Renderer::RT_SwitchToNativeResolutionBackbuffer)
+				{
+					struct Patch : Xbyak::CodeGenerator
+					{
+						Patch(uintptr_t a_addr)
+						{
+							// call our function
+							mov(rax, a_addr);
+							call(rax);
+						}
+					};
+
+					Patch patch(reinterpret_cast<uintptr_t>(GetUpscaleTargetRT));
+					patch.ready();
+
+					auto offset = std::make_pair(0x47, 0x4E);
+					auto hook = dku::Hook::AddASMPatch(Offsets::baseAddress + 0xF7EB20, offset, &patch);
+					hook->Enable();
+				}
+
+				// Use UpscaleTarget instead of SceneSpecular #3 (CD3D9Renderer::RT_SwitchToNativeResolutionBackbuffer)
+				{
+					struct Patch : Xbyak::CodeGenerator
+					{
+						Patch(uintptr_t a_addr)
+						{
+							push(rax);
+							push(rcx);
+
+							// call our function
+							mov(rax, a_addr);
+							call(rax);
+							mov(rdx, rax);
+
+							pop(rax);
+							pop(rcx);
+						}
+					};
+
+					Patch patch(reinterpret_cast<uintptr_t>(GetUpscaleTargetRT));
+					patch.ready();
+
+					auto offset = std::make_pair(0x10E, 0x115);
+					auto hook = dku::Hook::AddASMPatch(Offsets::baseAddress + 0xF7EB20, offset, &patch);
+					hook->Enable();
+				}
 			}
 
 			// Push our parameters
@@ -265,6 +374,29 @@ namespace Hooks
 					hook->Enable();
 				}
 			}
+
+			// TAA jitter
+			{
+				// Hook SDeviceObjectHelpers::CShaderConstantManager::BeginTypedConstantUpdate<PostAAConstants>
+				// and put jitter offset instead of the unused fxaa params so the shader can access it
+
+				struct Patch : Xbyak::CodeGenerator
+				{
+					Patch(uintptr_t a_addr)
+					{
+						// call our function
+						mov(rax, a_addr);
+						call(rax);
+					}
+				};
+
+				Patch patch(reinterpret_cast<uintptr_t>(PushJitter));
+				patch.ready();
+
+				auto offset = std::make_pair(0x281, 0x289);
+				auto hook = dku::Hook::AddASMPatch(Offsets::baseAddress + 0xF99260, offset, &patch);
+				hook->Enable();
+			}
 		}
 
 	private:
@@ -284,10 +416,13 @@ namespace Hooks
 
 		static uintptr_t            GetTonemapTargetRT() { return reinterpret_cast<uintptr_t>(ptexTonemapTarget); }
 		static uintptr_t            GetPostAATargetRT() { return reinterpret_cast<uintptr_t>(ptexPostAATarget); }
+		static uintptr_t            GetUpscaleTargetRT() { return reinterpret_cast<uintptr_t>(ptexUpscaleTarget); }
 		static inline RE::CTexture* ptexTonemapTarget;
 		static inline RE::CTexture* ptexPostAATarget;
+		static inline RE::CTexture* ptexUpscaleTarget;
 
 		static void SetUIShaderParameters(float* pVal, RE::ECGParam paramType);
+		static void PushJitter(RE::PostAAConstants* pPostAAConstantsDst, RE::PostAAConstants* pPostAAConstantsSrc);
 	};
 
 	void Install();

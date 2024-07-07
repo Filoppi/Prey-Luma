@@ -94,6 +94,21 @@ namespace RE
 		eTT_MaxTexType,
 	};
 
+	struct Vec2
+	{
+		float x;
+		float y;
+	};
+
+	struct Vec4
+	{
+		float x;
+		float y;
+		float z;
+		float w;
+	};
+
+
 	class CD3D9Renderer
 	{
 	public:
@@ -180,7 +195,9 @@ namespace RE
 		//...
 
 		// members
-		uint8_t unk0000[0x9890];
+		uint8_t unk0000[0xD68];
+		Vec2 m_vProjMatrixSubPixoffset; // 0xD70
+		uint8_t unkD78[0x8B20];
 		volatile int32_t        m_nAsyncDeviceState;  //0x9898
 		uint8_t unk98A0[0xD0];
 		ID3D11DepthStencilView* m_pNativeZSurface;  // 0x9970
@@ -189,6 +206,7 @@ namespace RE
 		uint8_t unkAE08[0x130];
 		ID3D11DeviceContext1* m_pDeviceContext; //0xAF38
 	};
+	static_assert(offsetof(CD3D9Renderer, m_vProjMatrixSubPixoffset) == 0xD70);
 	static_assert(offsetof(CD3D9Renderer, m_nAsyncDeviceState) == 0x9898);
 	static_assert(offsetof(CD3D9Renderer, m_pNativeZSurface) == 0x9970);
 	static_assert(offsetof(CD3D9Renderer, m_pBackBuffer) == 0xAE00);
@@ -218,14 +236,6 @@ namespace RE
 		unsigned int          m_presentFlags;
 		bool                  m_activated;
 		bool                  m_activatedMT;
-	};
-
-	struct Vec4
-	{
-		float x;
-		float y;
-		float z;
-		float w;
 	};
 
 	class CCryNameR
@@ -345,6 +355,45 @@ namespace RE
 		virtual void Unk2B();
 		virtual void GetHDRSetupParams(RE::HDRSetupParams& a_pParams);
 		//...
+	};
+
+	struct PostAAConstants
+	{
+		UINT64 unk00;
+		UINT64 unk08;
+		UINT64 unk10;
+		UINT64 unk18;
+		UINT64 unk20;
+		UINT64 unk28;
+		UINT64 unk30;
+		UINT64 unk38;
+		UINT64 unk40;
+		UINT64 unk48;
+		UINT64 unk50;
+		UINT64 unk58;
+		UINT64 unk60;
+		UINT64 unk68;
+		Vec4 fxaaParams;
+	};
+
+	struct PostAAConstantsAltered
+	{
+		UINT64 unk00;
+		UINT64 unk08;
+		UINT64 unk10;
+		UINT64 unk18;
+		UINT64 unk20;
+		UINT64 unk28;
+		UINT64 unk30;
+		UINT64 unk38;
+		UINT64 unk40;
+		UINT64 unk48;
+		UINT64 unk50;
+		UINT64 unk58;
+		UINT64 unk60;
+		UINT64 unk68;
+		Vec2 m_vProjMatrixSubPixoffset;
+		Vec2 unused;
 	};
 
 }
