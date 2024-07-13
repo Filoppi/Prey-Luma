@@ -377,25 +377,9 @@ namespace Hooks
 
 			// TAA jitter
 			{
-				// Hook SDeviceObjectHelpers::CShaderConstantManager::BeginTypedConstantUpdate<PostAAConstants>
-				// and put jitter offset instead of the unused fxaa params so the shader can access it
-
-				struct Patch : Xbyak::CodeGenerator
-				{
-					Patch(uintptr_t a_addr)
-					{
-						// call our function
-						mov(rax, a_addr);
-						call(rax);
-					}
-				};
-
-				Patch patch(reinterpret_cast<uintptr_t>(PushJitter));
-				patch.ready();
-
-				auto offset = std::make_pair(0x281, 0x289);
-				auto hook = dku::Hook::AddASMPatch(Offsets::baseAddress + 0xF99260, offset, &patch);
-				hook->Enable();
+				// Hook CConstantBuffer::UpdateBuffer to push jitter offset instead of the unused fxaa params
+				const auto address = Offsets::baseAddress + 0xF99FE0;
+				_Hook_UpdateBuffer = dku::Hook::write_call(address + 0x1AAA, Hook_UpdateBuffer);
 			}
 		}
 
@@ -406,6 +390,7 @@ namespace Hooks
 		static RE::CTexture* Hook_CreateTextureObject(const char* a_name, uint32_t a_nWidth, uint32_t a_nHeight, int a_nDepth, RE::ETEX_Type a_eTT, uint32_t a_nFlags, RE::ETEX_Format a_eTF, int a_nCustomID, uint8_t a9);
 		static bool          Hook_FXSetPSFloat(RE::CShader* a_this, const RE::CCryNameR& a_nameParam, RE::Vec4* a_fParams, int a_nParams);
 		static bool          Hook_mfParseParamComp(void* a_this, int comp, RE::SCGParam* pCurParam, const char* szSemantic, char* params, const char* szAnnotations, void* FXParams, void* ef, uint32_t nParamFlags, RE::EHWShaderClass eSHClass, bool bExpressionOperand);
+		static void          Hook_UpdateBuffer(RE::CConstantBuffer* a_this, void* a_src, size_t a_size, uint32_t a_numDataBlocks);
 
 		static inline std::add_pointer_t<decltype(Hook_FlashRenderInternal)> _Hook_FlashRenderInternal;
 		static inline std::add_pointer_t<decltype(Hook_CreateDevice)>        _Hook_CreateDevice;
@@ -413,6 +398,7 @@ namespace Hooks
 		static inline std::add_pointer_t<decltype(Hook_CreateTextureObject)> _Hook_CreateTextureObject;
 		static inline std::add_pointer_t<decltype(Hook_FXSetPSFloat)>        _Hook_FXSetPSFloat;
 		static inline std::add_pointer_t<decltype(Hook_mfParseParamComp)>    _Hook_mfParseParamComp;
+		static inline std::add_pointer_t<decltype(Hook_UpdateBuffer)>        _Hook_UpdateBuffer;
 
 		static uintptr_t            GetTonemapTargetRT() { return reinterpret_cast<uintptr_t>(ptexTonemapTarget); }
 		static uintptr_t            GetPostAATargetRT() { return reinterpret_cast<uintptr_t>(ptexPostAATarget); }
@@ -422,7 +408,6 @@ namespace Hooks
 		static inline RE::CTexture* ptexUpscaleTarget;
 
 		static void SetUIShaderParameters(float* pVal, RE::ECGParam paramType);
-		static void PushJitter(RE::PostAAConstants* pPostAAConstantsDst, RE::PostAAConstants* pPostAAConstantsSrc);
 	};
 
 	void Install();

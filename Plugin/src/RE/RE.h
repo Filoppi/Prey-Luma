@@ -6,6 +6,7 @@ namespace RE
 {
 	class CTexture;
 	class CShader;
+	class CConstantBuffer;
 
 	enum ETEX_Format : uint8_t
 	{
@@ -106,6 +107,26 @@ namespace RE
 		float y;
 		float z;
 		float w;
+	};
+
+	struct Mat4x4
+	{
+		float m00;
+		float m01;
+		float m02;
+		float m03;
+		float m10;
+		float m11;
+		float m12;
+		float m13;
+		float m20;
+		float m21;
+		float m22;
+		float m23;
+		float m30;
+		float m31;
+		float m32;
+		float m33;
 	};
 
 
@@ -359,41 +380,11 @@ namespace RE
 
 	struct PostAAConstants
 	{
-		UINT64 unk00;
-		UINT64 unk08;
-		UINT64 unk10;
-		UINT64 unk18;
-		UINT64 unk20;
-		UINT64 unk28;
-		UINT64 unk30;
-		UINT64 unk38;
-		UINT64 unk40;
-		UINT64 unk48;
-		UINT64 unk50;
-		UINT64 unk58;
-		UINT64 unk60;
-		UINT64 unk68;
+		Mat4x4 matReprojection;
+		Vec4 params;
+		Vec4 screenSize;
+		Vec4 worldViewPos;
 		Vec4 fxaaParams;
 	};
-
-	struct PostAAConstantsAltered
-	{
-		UINT64 unk00;
-		UINT64 unk08;
-		UINT64 unk10;
-		UINT64 unk18;
-		UINT64 unk20;
-		UINT64 unk28;
-		UINT64 unk30;
-		UINT64 unk38;
-		UINT64 unk40;
-		UINT64 unk48;
-		UINT64 unk50;
-		UINT64 unk58;
-		UINT64 unk60;
-		UINT64 unk68;
-		Vec2 m_vProjMatrixSubPixoffset;
-		Vec2 unused;
-	};
-
+	static_assert(offsetof(PostAAConstants, fxaaParams) == 0x70);
 }

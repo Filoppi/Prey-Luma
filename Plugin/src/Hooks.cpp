@@ -142,6 +142,19 @@ namespace Hooks
 		return bResult;
 	}
 
+	void Hooks::Hook_UpdateBuffer(RE::CConstantBuffer* a_this, void* a_src, size_t a_size, uint32_t a_numDataBlocks)
+	{
+		if (*Offsets::cvar_r_AntialiasingMode != 5) {
+			// push jitter offsets instead of unused fxaa params
+			auto constants = reinterpret_cast<RE::PostAAConstants*>(a_src);
+			constants->fxaaParams.x = Offsets::pCD3D9Renderer->m_vProjMatrixSubPixoffset.x;
+			constants->fxaaParams.y = Offsets::pCD3D9Renderer->m_vProjMatrixSubPixoffset.y;
+		}
+
+		// run original
+		_Hook_UpdateBuffer(a_this, a_src, a_size, a_numDataBlocks);
+	}
+
 	void Hooks::SetUIShaderParameters(float* pVal, RE::ECGParam paramType)
 	{
 		if (paramType == RE::ECGParam::ECGP_LumaUILuminance) {
@@ -151,17 +164,6 @@ namespace Hooks
 			pVal[1] = 0.f;
 			pVal[2] = 0.f;
 			pVal[3] = 0.f;
-		}
-	}
-
-	void Hooks::PushJitter(RE::PostAAConstants* pPostAAConstantsDst, RE::PostAAConstants* pPostAAConstantsSrc)
-	{
-		//do what the original code would do
-		pPostAAConstantsDst->fxaaParams = pPostAAConstantsSrc->fxaaParams;
-
-		if (*Offsets::cvar_r_AntialiasingMode != 5) {
-			// push jitter offsets instead of unused fxaa params
-			reinterpret_cast<RE::PostAAConstantsAltered*>(pPostAAConstantsDst)->m_vProjMatrixSubPixoffset = Offsets::pCD3D9Renderer->m_vProjMatrixSubPixoffset;
 		}
 	}
 
