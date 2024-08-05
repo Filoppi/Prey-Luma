@@ -80,68 +80,6 @@ namespace Hooks
 		return pTex;
 	}
 
-	float NitsToPQ(float Y)
-	{
-		Y = std::powf(Y / 10000.f, 0.1593017578125f);
-
-		// E'
-		return std::powf((0.8359375f + 18.8515625f * Y)
-		               / (1.f        + 18.6875f    * Y)
-		       , 78.84375f);
-	}
-
-	bool Hooks::Hook_FXSetPSFloat(RE::CShader* a_this, const RE::CCryNameR& a_nameParam, RE::Vec4* a_fParams, int a_nParams)
-	{
-		// run original
-		_Hook_FXSetPSFloat(a_this, a_nameParam, a_fParams, a_nParams);
-
-		// run with ours
-		static RE::CCryNameR lumaParamsName { "LumaTonemappingParams" };
-
-		const auto settings = Settings::Main::GetSingleton();
-
-		// max luminance
-		float fMaxLuminance = settings->PeakBrightness.GetValue();
-		float fMaxLuminanceHalf = fMaxLuminance * 0.5f;
-		fMaxLuminance = NitsToPQ(fMaxLuminance);
-		fMaxLuminanceHalf = NitsToPQ(fMaxLuminanceHalf);
-
-		// game paperwhite
-		RE::HDRSetupParams hdrParams;
-		RE::C3DEngine* c3Engine = *Offsets::pC3DEngine;
-		c3Engine->GetHDRSetupParams(hdrParams);
-
-		float fPaperWhite = settings->GamePaperWhite.GetValue();
-		fPaperWhite /= std::powf(10.f, 0.034607309f + 0.7577371f * log10(hdrParams.HDRFilmCurve.w * 203.f));
-
-		// extend gamut
-		float fExtendGamut = settings->ExtendGamut.GetValue();
-		int32_t iExtendGamutTarget = settings->ExtendGamutTarget.GetValue();
-		fExtendGamut *= MaxGamutExpansion[iExtendGamutTarget];
-		fExtendGamut += 1.f;
-		// store gamut target as sign
-		fExtendGamut *= float(iExtendGamutTarget * 2 - 1);
-
-		RE::Vec4 lumaParams = { fMaxLuminance, fMaxLuminanceHalf, fPaperWhite, fExtendGamut };
-
-		bool bSuccess = _Hook_FXSetPSFloat(a_this, lumaParamsName, &lumaParams, 1);
-		return bSuccess;
-	}
-
-	bool Hooks::Hook_mfParseParamComp(void* a_this, int comp, RE::SCGParam* pCurParam, const char* szSemantic, char* params, const char* szAnnotations, void* FXParams, void* ef, uint32_t nParamFlags, RE::EHWShaderClass eSHClass, bool bExpressionOperand)
-	{
-		// run original
-		bool bResult = _Hook_mfParseParamComp(a_this, comp, pCurParam, szSemantic, params, szAnnotations, FXParams, ef, nParamFlags, eSHClass, bExpressionOperand);
-
-		// our param will fail to parse fully because there's no relevant entry in the sParams array, so finish it up manually
-		if (!bResult && pCurParam && stricmp(szSemantic, "PB_SFLumaUILuminance") == 0) {
-			pCurParam->m_eCGParamType = RE::ECGParam::ECGP_LumaUILuminance;
-			return true; 
-		}
-
-		return bResult;
-	}
-
 	void Hooks::Hook_UpdateBuffer(RE::CConstantBuffer* a_this, void* a_src, size_t a_size, uint32_t a_numDataBlocks)
 	{
 		if (*Offsets::cvar_r_AntialiasingMode != 5) {
@@ -153,18 +91,6 @@ namespace Hooks
 
 		// run original
 		_Hook_UpdateBuffer(a_this, a_src, a_size, a_numDataBlocks);
-	}
-
-	void Hooks::SetUIShaderParameters(float* pVal, RE::ECGParam paramType)
-	{
-		if (paramType == RE::ECGParam::ECGP_LumaUILuminance) {
-			const auto settings = Settings::Main::GetSingleton();
-			float      fUILuminance = settings->UILuminance.GetValue();
-			pVal[0] = fUILuminance / 80.f;
-			pVal[1] = 0.f;
-			pVal[2] = 0.f;
-			pVal[3] = 0.f;
-		}
 	}
 
 	void Install()
