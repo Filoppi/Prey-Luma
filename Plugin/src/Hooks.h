@@ -66,15 +66,6 @@ namespace Hooks
 				dku::Hook::WriteImm(address + 0xAB7, format16f);  // $SceneTargetR11G11B10F_0
 				dku::Hook::WriteImm(address + 0xB52, format16f);  // $SceneTargetR11G11B10F_1
 			}
-
-			// Patch swapchain DXGI_FORMAT from RGBA8 and DXGI_SWAP_EFFECT to DXGI_SWAP_EFFECT_FLIP_DISCARD
-			{
-				const auto address = Offsets::baseAddress + 0xF50000;
-				dku::Hook::WriteImm(address + 0x4CE, format);
-
-				constexpr uint8_t swap_effect = 0x4;
-				dku::Hook::WriteImm(address + 0x50C, swap_effect);
-			}
 		}
 	};
 	class Hooks
@@ -91,6 +82,27 @@ namespace Hooks
 			//	_Hook_FlashRenderInternal = Hook->GetOldFunction<FlashRenderInternal_t>();
 			//	Hook->Enable();
 			//}
+
+			// Patch swapchain desc to change DXGI_FORMAT from RGBA8 and DXGI_SWAP_EFFECT to DXGI_SWAP_EFFECT_FLIP_DISCARD
+			{
+				struct Patch : Xbyak::CodeGenerator
+				{
+					Patch(uintptr_t a_addr)
+					{
+						// call our function
+						mov(rax, a_addr);
+						mov(rcx, rdi);
+						call(rax);
+					}
+				};
+
+				Patch patch(reinterpret_cast<uintptr_t>(PatchSwapchainDesc));
+				patch.ready();
+
+				auto offset = std::make_pair(0x50E, 0x515);
+				auto hook = dku::Hook::AddASMPatch(Offsets::baseAddress + 0xF50000, offset, &patch);
+				hook->Enable();
+			}
 
 			// Hook swapchain creation and set colorspace
 			{
@@ -361,6 +373,7 @@ namespace Hooks
 		static inline std::add_pointer_t<decltype(Hook_CreateTextureObject)> _Hook_CreateTextureObject;
 		static inline std::add_pointer_t<decltype(Hook_UpdateBuffer)>        _Hook_UpdateBuffer;
 
+		static void PatchSwapchainDesc(DXGI_SWAP_CHAIN_DESC& a_desc);
 		static uintptr_t            GetTonemapTargetRT() { return reinterpret_cast<uintptr_t>(ptexTonemapTarget); }
 		static uintptr_t            GetPostAATargetRT() { return reinterpret_cast<uintptr_t>(ptexPostAATarget); }
 		static uintptr_t            GetUpscaleTargetRT() { return reinterpret_cast<uintptr_t>(ptexUpscaleTarget); }

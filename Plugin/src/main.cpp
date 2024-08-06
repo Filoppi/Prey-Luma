@@ -2,7 +2,6 @@
 
 #include "Hooks.h"
 #include "Offsets.h"
-#include "Settings.h"
 
 using namespace DKUtil::Alias;
 
@@ -33,8 +32,6 @@ BOOL APIENTRY DllMain(HMODULE a_hModule, DWORD a_ul_reason_for_call, LPVOID a_lp
 
 		// do stuff
 		AllocTrampoline(1 << 9);
-
-		Settings::Main::GetSingleton()->Load();
 
 		Offsets::Init();
 		Hooks::Install();

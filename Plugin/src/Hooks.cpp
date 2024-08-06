@@ -1,14 +1,6 @@
 #include "Hooks.h"
 
-#include "Settings.h"
-
 #include <dxgi1_4.h>
-
-static const float MaxGamutExpansion[2] =
-{
-	0.0037935f,
-	0.0102255f
-};
 
 namespace Hooks
 {
@@ -50,9 +42,6 @@ namespace Hooks
 		swapChain3->SetColorSpace1(colorSpace);
 		swapChain3->Release();
 
-		// good moment late enough to register reshade settings
-		Settings::Main::GetSingleton()->RegisterReshadeOverlay();
-
 		return bReturn;
 	}
 
@@ -91,6 +80,18 @@ namespace Hooks
 
 		// run original
 		_Hook_UpdateBuffer(a_this, a_src, a_size, a_numDataBlocks);
+	}
+
+	void Hooks::PatchSwapchainDesc(DXGI_SWAP_CHAIN_DESC& a_desc)
+	{
+		// set flags (done by the code that we wrote over)
+		a_desc.Flags = 2;
+		
+		// set format
+		a_desc.BufferDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+
+		// set swap effect
+		a_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
 	}
 
 	void Install()
