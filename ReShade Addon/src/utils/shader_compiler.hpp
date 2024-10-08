@@ -63,7 +63,7 @@ HRESULT CreateLibrary(IDxcLibrary** dxc_library) {
   // HMODULE dxil_loader = LoadLibraryW(L"dxil.dll");
   HMODULE dx_compiler = LoadLibraryW(L"dxcompiler.dll");
   if (dx_compiler == nullptr) {
-    reshade::log_message(reshade::log_level::error, "dxcompiler.dll not loaded");
+    reshade::log::message(reshade::log::level::error, "dxcompiler.dll not loaded");
     return -1;
   }
   // NOLINTNEXTLINE(google-readability-casting)
@@ -77,7 +77,7 @@ HRESULT CreateCompiler(IDxcCompiler** dxc_compiler) {
   // HMODULE dxil_loader = LoadLibraryW(L"dxil.dll");
   HMODULE dx_compiler = LoadLibraryW(L"dxcompiler.dll");
   if (dx_compiler == nullptr) {
-    reshade::log_message(reshade::log_level::error, "dxcompiler.dll not loaded");
+    reshade::log::message(reshade::log::level::error, "dxcompiler.dll not loaded");
     return -1;
   }
   // NOLINTNEXTLINE(google-readability-casting)
@@ -247,7 +247,7 @@ std::vector<uint8_t> CompileShaderFromFileFXC(LPCWSTR file_path, LPCSTR shader_t
         s << ".";
       }
       s << ")";
-      reshade::log_message(failed ? reshade::log_level::error : reshade::log_level::warning, s.str().c_str());
+      reshade::log::message(failed ? reshade::log::level::error : reshade::log::level::warning, s.str().c_str());
     }
   }
 
@@ -454,7 +454,7 @@ std::vector<uint8_t> CompileShaderFromFileDXC(LPCWSTR file_path, LPCSTR shader_t
     }
     s << ")";
 
-    reshade::log_message(reshade::log_level::error, s.str().c_str());
+    reshade::log::message(reshade::log::level::error, s.str().c_str());
   }
 
   return result;

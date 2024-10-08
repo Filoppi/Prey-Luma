@@ -3,7 +3,7 @@
         "action": "base",
         "params": [
             "{target_base}",
-            "E:\\SteamLibrary\\steamapps\\common\\KingdomComeDeliverance\\Bin\\Win64"
+            "C:\\Program Files (x86)\\Steam\\SteamApps\\common\\Prey\\Binaries\\Danielle\\x64\\Release"
         ]
     },
     {

@@ -19,7 +19,7 @@ static reshade::api::pipeline_subobject* ClonePipelineSubObjects(uint32_t subobj
     {
       std::stringstream s;
       s << "utils::pipeline::ClonePipelineSubObjects(cloning " << subobjects[i].type << "[" << i << "]";
-      reshade::log_message(reshade::log_level::debug, s.str().c_str());
+      reshade::log::message(reshade::log::level::debug, s.str().c_str());
     }
 #endif
     switch (subobject.type) {
@@ -57,7 +57,7 @@ static reshade::api::pipeline_subobject* ClonePipelineSubObjects(uint32_t subobj
         s << " from " << old_desc->code;
         s << " to " << new_desc->code;
         s << ")";
-        reshade::log_message(reshade::log_level::debug, s.str().c_str());
+        reshade::log::message(reshade::log::level::debug, s.str().c_str());
 #endif
         break;
       }

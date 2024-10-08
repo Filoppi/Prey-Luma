@@ -583,7 +583,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
 
   for (const auto& entry : std::filesystem::directory_iterator(directory)) {
     if (!entry.is_regular_file()) {
-      reshade::log_message(reshade::log_level::warning, "loadCustomShaders(not a regular file)");
+      reshade::log::message(reshade::log::level::warning, "loadCustomShaders(not a regular file)");
       continue;
     }
     const auto& entry_path = entry.path();
@@ -594,7 +594,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
       s << "loadCustomShaders(Missing extension or stem or unknown extension: ";
       s << entry_path.string();
       s << ")";
-      reshade::log_message(reshade::log_level::warning, s.str().c_str());
+      reshade::log::message(reshade::log::level::warning, s.str().c_str());
       continue;
     }
 
@@ -617,7 +617,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
         s << "loadCustomShaders(Invalid cso file format: ";
         s << filename_no_extension_string;
         s << ")";
-        reshade::log_message(reshade::log_level::warning, s.str().c_str());
+        reshade::log::message(reshade::log::level::warning, s.str().c_str());
         continue;
       }
       hash_string = filename_no_extension_string.substr(2, 8);
@@ -680,7 +680,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
         s << ", hash: " << PRINT_CRC32(shader_hash);
         s << ", target: " << shader_target;
         s << ")";
-        reshade::log_message(reshade::log_level::debug, s.str().c_str());
+        reshade::log::message(reshade::log::level::debug, s.str().c_str());
       }
 
       custom_shader->code = renodx::utils::shader::compiler::CompileShaderFromFile(
@@ -693,7 +693,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
         s << "loadCustomShaders(Compilation failed: ";
         s << entry_path.string();
         s << ")";
-        reshade::log_message(reshade::log_level::warning, s.str().c_str());
+        reshade::log::message(reshade::log::level::warning, s.str().c_str());
 
         continue;
       }
@@ -701,7 +701,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
       {
         std::stringstream s;
         s << "loadCustomShaders(Shader built with size: " << custom_shader->code.size() << ")";
-        reshade::log_message(reshade::log_level::debug, s.str().c_str());
+        reshade::log::message(reshade::log::level::debug, s.str().c_str());
       }
     }
     // Second try to load cso shaders
@@ -712,7 +712,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
       {
         std::stringstream s;
         s << "loadCustomShaders(Reading " << custom_shader->code.size() << " from " << filename_no_extension_string << ")";
-        reshade::log_message(reshade::log_level::debug, s.str().c_str());
+        reshade::log::message(reshade::log::level::debug, s.str().c_str());
       }
       if (!custom_shader->code.empty()) {
         file.seekg(0, std::ios::beg);
@@ -726,7 +726,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
 }
 
 void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = std::unordered_set<uint64_t>(), bool recompile_shaders = true, bool immediate_load = true, bool immediate_unload = false) {
-  reshade::log_message(reshade::log_level::debug, "loadCustomShaders()");
+  reshade::log::message(reshade::log::level::debug, "loadCustomShaders()");
 
   if (recompile_shaders) {
     CompileCustomShaders(pipelines_filter);
@@ -754,7 +754,7 @@ void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = st
       s << "loadCustomShaders(Unknown hash: ";
       s << PRINT_CRC32(shader_hash);
       s << ")";
-      reshade::log_message(reshade::log_level::warning, s.str().c_str());
+      reshade::log::message(reshade::log::level::warning, s.str().c_str());
       continue;
     }
 
@@ -773,7 +773,7 @@ void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = st
         s << custom_shader->code.size() << " bytes ";
         s << " from " << custom_shader->file_path.string();
         s << ")";
-        reshade::log_message(reshade::log_level::debug, s.str().c_str());
+        reshade::log::message(reshade::log::level::debug, s.str().c_str());
       }
 
       // DX12 can use PSO objects that need to be cloned
@@ -788,9 +788,9 @@ void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = st
         s << reinterpret_cast<void*>(cached_pipeline->pipeline.handle);
         s << " with " << subobject_count << " object(s)";
         s << ")";
-        reshade::log_message(reshade::log_level::debug, s.str().c_str());
+        reshade::log::message(reshade::log::level::debug, s.str().c_str());
       }
-      reshade::log_message(reshade::log_level::debug, "Iterating pipeline...");
+      reshade::log::message(reshade::log::level::debug, "Iterating pipeline...");
 
       for (uint32_t i = 0; i < subobject_count; ++i) {
         const auto& subobject = subobjects[i];
@@ -821,7 +821,7 @@ void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = st
         s << " with " << PRINT_CRC32(new_hash);
         s << " (" << custom_shader->code.size() << " bytes)";
         s << ")";
-        reshade::log_message(reshade::log_level::debug, s.str().c_str());
+        reshade::log::message(reshade::log::level::debug, s.str().c_str());
       }
 
       {
@@ -831,7 +831,7 @@ void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = st
         s << ", layout: " << reinterpret_cast<void*>(cached_pipeline->layout.handle);
         s << ", subobject_count: " << subobject_count;
         s << ")";
-        reshade::log_message(reshade::log_level::debug, s.str().c_str());
+        reshade::log::message(reshade::log::level::debug, s.str().c_str());
       }
 
       reshade::api::pipeline pipeline_clone;
@@ -848,7 +848,7 @@ void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = st
       s << ", size: " << subobject_count;
       s << ", " << (built_pipeline_ok ? "OK" : "FAILED!");
       s << ")";
-      reshade::log_message(built_pipeline_ok ? reshade::log_level::info : reshade::log_level::error, s.str().c_str());
+      reshade::log::message(built_pipeline_ok ? reshade::log::level::info : reshade::log::level::error, s.str().c_str());
 
       if (built_pipeline_ok) {
         assert(!cached_pipeline->cloned && cached_pipeline->pipeline_clone.handle == 0);
@@ -890,7 +890,7 @@ bool needs_watcher_init = true;
 std::aligned_storage_t<1U << 18, std::max<size_t>(alignof(FILE_NOTIFY_EXTENDED_INFORMATION), alignof(FILE_NOTIFY_INFORMATION))> watch_buffer;
 
 void CALLBACK HandleEventCallback(DWORD error_code, DWORD bytes_transferred, LPOVERLAPPED overlapped) {
-  reshade::log_message(reshade::log_level::info, "Live callback.");
+  reshade::log::message(reshade::log::level::info, "Live callback.");
   // TODO: only re-load the shaders that were changed to improve performance, and also verify this is safe. Replacing shaders from another thread at a random time could break as we need to wait one frame or the pipeline binding could hang.
   LoadCustomShaders();
   // Trigger the watch again as the event is only triggered once
@@ -916,7 +916,7 @@ void ToggleLiveWatching() {
       std::filesystem::create_directory(directory);
     }
 
-    reshade::log_message(reshade::log_level::info, "Watching live");
+    reshade::log::message(reshade::log::level::info, "Watching live");
 
 #if 0
     // Clean up any previous handle for safety
@@ -935,14 +935,14 @@ void ToggleLiveWatching() {
         NULL  // NOLINT
     );
     if (m_target_dir_handle == INVALID_HANDLE_VALUE) {
-      reshade::log_message(reshade::log_level::error, "ToggleLiveWatching(targetHandle: invalid)");
+      reshade::log::message(reshade::log::level::error, "ToggleLiveWatching(targetHandle: invalid)");
       return;
     }
     {
       std::stringstream s;
       s << "ToggleLiveWatching(targetHandle: ";
       s << reinterpret_cast<void*>(m_target_dir_handle);
-      reshade::log_message(reshade::log_level::info, s.str().c_str());
+      reshade::log::message(reshade::log::level::info, s.str().c_str());
     }
 
     memset(&watch_buffer, 0, sizeof(watch_buffer));
@@ -966,18 +966,18 @@ void ToggleLiveWatching() {
         ReadDirectoryNotifyExtendedInformation);
 
     if (success == S_OK) {
-      reshade::log_message(reshade::log_level::info, "ToggleLiveWatching(ReadDirectoryChangesExW: Listening.)");
+      reshade::log::message(reshade::log::level::info, "ToggleLiveWatching(ReadDirectoryChangesExW: Listening.)");
     } else {
       std::stringstream s;
       s << "ToggleLiveWatching(ReadDirectoryChangesExW: Failed: ";
       s << GetLastError();
       s << ")";
-      reshade::log_message(reshade::log_level::error, s.str().c_str());
+      reshade::log::message(reshade::log::level::error, s.str().c_str());
     }
 
     LoadCustomShaders();
   } else {
-    reshade::log_message(reshade::log_level::info, "Cancelling live");
+    reshade::log::message(reshade::log::level::info, "Cancelling live");
     CancelIoEx(m_target_dir_handle, &overlapped);
   }
 }
@@ -1241,7 +1241,7 @@ void OnInitPipeline(
             s2 << ", type: " << subobject.type;
             s2 << ", pipeline: " << reinterpret_cast<void*>(pipeline.handle);
             s2 << ")";
-            reshade::log_message(reshade::log_level::info, s2.str().c_str());
+            reshade::log::message(reshade::log::level::info, s2.str().c_str());
           }
 #endif // DEVELOPMENT
           break;
@@ -3053,8 +3053,8 @@ void OnBindViewports(reshade::api::command_list* cmd_list, uint32_t first, uint3
 void OnReshadePresent(reshade::api::effect_runtime* runtime) {
 #if DEVELOPMENT
   if (trace_running) {
-    reshade::log_message(reshade::log_level::info, "present()");
-    reshade::log_message(reshade::log_level::info, "--- End Frame ---");
+    reshade::log::message(reshade::log::level::info, "present()");
+    reshade::log::message(reshade::log::level::info, "--- End Frame ---");
     trace_count = trace_pipeline_handles.size();
     trace_running = false;
   } else if (trace_scheduled) {
@@ -3062,7 +3062,7 @@ void OnReshadePresent(reshade::api::effect_runtime* runtime) {
     trace_shader_hashes.clear();
     trace_pipeline_handles.clear();
     trace_running = true;
-    reshade::log_message(reshade::log_level::info, "--- Frame ---");
+    reshade::log::message(reshade::log::level::info, "--- Frame ---");
   }
 #endif
 

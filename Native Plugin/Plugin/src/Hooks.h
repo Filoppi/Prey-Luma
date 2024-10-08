@@ -13,7 +13,6 @@ namespace Hooks
 	public:
 		static void Patch()
 		{
-			
 			// Patch internal CryEngine RGBA8 to RGBA16F
 			{
 				// SPostEffectsUtils::Create
