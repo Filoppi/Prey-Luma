@@ -1,6 +1,6 @@
-[submodule "external/DKUtil"]
-	path = Native Plugin/external/DKUtil
-	url = https://github.com/gottyduke/DKUtil.git
-[submodule "external/reshade"]
+[submodule "ReShade Addon/external/reshade"]
 	path = ReShade Addon/external/reshade
 	url = https://github.com/crosire/reshade
+[submodule "Native Plugin/external/DKUtil"]
+	path = Native Plugin/external/DKUtil
+	url = https://github.com/gottyduke/DKUtil.git
