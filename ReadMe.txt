@@ -8,3 +8,7 @@ To upgrade the native plugin version, open ".\Native Plugin\Plugin\CMakeLists.tx
 
 The game's original shaders code can be found in the ... pak in the GOG version of the game (extract the zip).
 Luma shaders can be found in ".\Data\Binaries\Danielle\x64\Release\renodx-dev\live".
+
+Luma inherits code from the following repositories:
+https://github.com/ersh1/Luma-Prey/
+https://github.com/clshortfuse/renodx
