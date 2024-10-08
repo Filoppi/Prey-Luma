@@ -1,0 +1,41 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.11.35201.85
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ReShade Addon", "ReShade Addon\build\ReShade Addon.vcxproj", "{E0947F3A-8107-3BB4-83BE-9A22D419719E}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Native Plugin", "Native Plugin\build\Luma-Prey.vcxproj", "{ABA2C76E-235F-388C-944A-37B73B98CACC}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		MinSizeRel|x64 = MinSizeRel|x64
+		Release|x64 = Release|x64
+		RelWithDebInfo|x64 = RelWithDebInfo|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{E0947F3A-8107-3BB4-83BE-9A22D419719E}.Debug|x64.ActiveCfg = Debug|x64
+		{E0947F3A-8107-3BB4-83BE-9A22D419719E}.Debug|x64.Build.0 = Debug|x64
+		{E0947F3A-8107-3BB4-83BE-9A22D419719E}.MinSizeRel|x64.ActiveCfg = Release|x64
+		{E0947F3A-8107-3BB4-83BE-9A22D419719E}.MinSizeRel|x64.Build.0 = Release|x64
+		{E0947F3A-8107-3BB4-83BE-9A22D419719E}.Release|x64.ActiveCfg = Release|x64
+		{E0947F3A-8107-3BB4-83BE-9A22D419719E}.Release|x64.Build.0 = Release|x64
+		{E0947F3A-8107-3BB4-83BE-9A22D419719E}.RelWithDebInfo|x64.ActiveCfg = Release|x64
+		{E0947F3A-8107-3BB4-83BE-9A22D419719E}.RelWithDebInfo|x64.Build.0 = Release|x64
+		{ABA2C76E-235F-388C-944A-37B73B98CACC}.Debug|x64.ActiveCfg = Debug|x64
+		{ABA2C76E-235F-388C-944A-37B73B98CACC}.Debug|x64.Build.0 = Debug|x64
+		{ABA2C76E-235F-388C-944A-37B73B98CACC}.MinSizeRel|x64.ActiveCfg = MinSizeRel|x64
+		{ABA2C76E-235F-388C-944A-37B73B98CACC}.MinSizeRel|x64.Build.0 = MinSizeRel|x64
+		{ABA2C76E-235F-388C-944A-37B73B98CACC}.Release|x64.ActiveCfg = Release|x64
+		{ABA2C76E-235F-388C-944A-37B73B98CACC}.Release|x64.Build.0 = Release|x64
+		{ABA2C76E-235F-388C-944A-37B73B98CACC}.RelWithDebInfo|x64.ActiveCfg = RelWithDebInfo|x64
+		{ABA2C76E-235F-388C-944A-37B73B98CACC}.RelWithDebInfo|x64.Build.0 = RelWithDebInfo|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {8B799422-BA66-3174-B21F-B9FA07C4B2E3}
+	EndGlobalSection
+EndGlobal

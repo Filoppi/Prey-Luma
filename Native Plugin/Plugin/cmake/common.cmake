@@ -1,15 +1,15 @@
 # dependency macros
 macro(find_dependency_path DEPENDENCY FILE)
-	# searches extern for dependencies and if not checks the environment variable
+	# searches external for dependencies and if not checks the environment variable
 	if(NOT ${DEPENDENCY} STREQUAL "")
-		# Check extern
+		# Check external
 		message(
 			STATUS
 			"Searching for ${DEPENDENCY} using file ${FILE}"
 		)
 		find_path("${DEPENDENCY}Path"
 			${FILE}
-			PATHS "${CMAKE_CURRENT_SOURCE_DIR}/../extern/${DEPENDENCY}")
+			PATHS "${CMAKE_CURRENT_SOURCE_DIR}/../external/${DEPENDENCY}")
 
 		if("${${DEPENDENCY}Path}" STREQUAL "${DEPENDENCY}Path-NOTFOUND")
 			# Check path

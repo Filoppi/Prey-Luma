@@ -30,7 +30,7 @@ Generic native dll plugin template for various games.
 
 These dependencies can be configured through the git submodule by running `update-submodule.bat`. Alternatively, the dependencies can also use a local git repository, by setting the `DKUtilPath` environment variable to the path of the local git repository.
 
-In order to enable local git repository lookup, existing folders within `extern` should be **removed**.
+In order to enable local git repository lookup, existing folders within `external` should be **removed**.
 
 > To prevent duplicating submodules in multiple local projects, it's recommended to clone the DKUtil repositories locally. Then, set the environment path accordingly, this ensures all projects share the same package.  
 
