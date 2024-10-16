@@ -3,6 +3,11 @@
 #include "Offsets.h"
 #include "RE/RE.h"
 
+// Replacing (splitting up) some RTs is necessary otherwise:
+// - If we upgraded all UNORM8 textures to FP16, some texture copies done through the ID3D11DeviceContext::CopyResource() function would fail as they have mismatching formats
+// - If we only upgraded the necessary textures (the ones we can without the issue mentioned above), then the tonemapper would be clipped to SDR because it re-uses (e.g.) the normal map texture that is UNORM8
+#define ADD_NEW_RENDER_TARGETS 1
+
 namespace Hooks
 {
 	constexpr RE::ETEX_Format format = RE::ETEX_Format::eTF_R16G16B16A16F;
@@ -108,6 +113,7 @@ namespace Hooks
 				_Hook_CreateDevice = dku::Hook::write_call(Offsets::baseAddress + 0xF53F37, Hook_CreateDevice);
 			}
 
+#if ADD_NEW_RENDER_TARGETS
 			// Replicate how the game treats render targets
 			{
 				// Hook SD3DPostEffectsUtils::CreateRenderTarget for $SceneDiffuse in CDeferredShading::CreateDeferredMaps
@@ -116,7 +122,9 @@ namespace Hooks
 				// Hook CTexture::CreateTextureObject for $SceneDiffuse
 				_Hook_CreateTextureObject = dku::Hook::write_call(Offsets::baseAddress + 0x100F61F, Hook_CreateTextureObject);
 			}
+#endif
 
+#if ADD_NEW_RENDER_TARGETS
 			// Replace with our new RTs
 			{
 				// use TonemapTarget as target for tonemapper
@@ -350,6 +358,7 @@ namespace Hooks
 					hook->Enable();
 				}
 			}
+#endif
 
 			// TAA jitter
 			{

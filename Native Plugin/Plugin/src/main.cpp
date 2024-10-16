@@ -24,14 +24,21 @@ BOOL APIENTRY DllMain(HMODULE a_hModule, DWORD a_ul_reason_for_call, LPVOID a_lp
 {
 	if (a_ul_reason_for_call == DLL_PROCESS_ATTACH) {
 #ifndef NDEBUG
+// Enable these if you want to wait until you attached the debugger while in "DEBUG" configuration
+#if 0
+		if (!IsDebuggerPresent()) {
+			MessageBoxA(NULL, "Loaded. You can now attach the debugger or continue execution.", Plugin::NAME.data(), NULL);
+		}
+#elif 0
 		while (!IsDebuggerPresent()) {
 			Sleep(100);
 		}
 #endif
+#endif
 		dku::Logger::Init(Plugin::NAME, std::to_string(Plugin::Version));
 
 		// do stuff
-		AllocTrampoline(1 << 9);
+		AllocTrampoline(1 << 9); // Set the size big enough so that it works
 
 		Offsets::Init();
 		Hooks::Install();
