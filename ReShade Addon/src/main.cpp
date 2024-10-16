@@ -624,6 +624,9 @@ com_ptr<ID3D11Texture2D> dlss_exposure;
 com_ptr<ID3D11Texture2D> dlss_motion_vectors;
 com_ptr<ID3D11RenderTargetView> dlss_motion_vectors_rtv;
 #endif // ENABLE_NGX
+com_ptr<ID3D11Texture2D> copy_texture;
+com_ptr<ID3D11VertexShader> copy_vertex_shader;
+com_ptr<ID3D11PixelShader> copy_pixel_shader;
 
 static_assert(sizeof(Matrix44A) == sizeof(float4) * 4);
 
@@ -3325,6 +3328,264 @@ void OnUnmapBufferRegion(reshade::api::device* device, reshade::api::resource re
     }
 }
 
+bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource source, reshade::api::resource dest)
+{
+    ID3D11Resource* source_resource = reinterpret_cast<ID3D11Resource*>(source.handle);
+    com_ptr<ID3D11Texture2D> source_resource_texture;
+    HRESULT hr = source_resource->QueryInterface(&source_resource_texture);
+    if (SUCCEEDED(hr)) {
+        ID3D11Resource* target_resource = reinterpret_cast<ID3D11Resource*>(dest.handle);
+        com_ptr<ID3D11Texture2D> target_resource_texture;
+        hr = target_resource->QueryInterface(&target_resource_texture);
+        if (SUCCEEDED(hr)) {
+            D3D11_TEXTURE2D_DESC source_desc;
+            D3D11_TEXTURE2D_DESC target_desc;
+            source_resource_texture->GetDesc(&source_desc);
+            target_resource_texture->GetDesc(&target_desc);
+
+            if (source_desc.Width != target_desc.Width || source_desc.Height != target_desc.Height)
+                return false;
+
+            auto isUnorm8 = [](DXGI_FORMAT format) {
+                switch (format)
+                {
+                case DXGI_FORMAT_R8G8B8A8_TYPELESS:
+                case DXGI_FORMAT_R8G8B8A8_UNORM:
+                case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+                case DXGI_FORMAT_B8G8R8A8_UNORM:
+                case DXGI_FORMAT_B8G8R8X8_UNORM:
+                case DXGI_FORMAT_B8G8R8A8_TYPELESS:
+                case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
+                case DXGI_FORMAT_B8G8R8X8_TYPELESS:
+                case DXGI_FORMAT_B8G8R8X8_UNORM_SRGB:
+                    return true;
+                }
+                return false;
+                };
+            auto isFloat16 = [](DXGI_FORMAT format) {
+                switch (format)
+                {
+                case DXGI_FORMAT_R16G16B16A16_TYPELESS:
+                case DXGI_FORMAT_R16G16B16A16_FLOAT:
+                    return true;
+                }
+                return false;
+                };
+            auto isFloat11 = [](DXGI_FORMAT format) {
+                switch (format)
+                {
+                case DXGI_FORMAT_R11G11B10_FLOAT:
+                    return true;
+                }
+                return false;
+                };
+
+            // If we detected incompatible formats that were likely caused by Luma upgrading texture formats (of render targets only...),
+            // do the copy in shader
+            if (((isUnorm8(target_desc.Format) || isFloat11(target_desc.Format)) && isFloat16(source_desc.Format))
+                || ((isUnorm8(source_desc.Format) || isFloat11(source_desc.Format)) && isFloat16(target_desc.Format))) {
+                const auto* device = cmd_list->get_device();
+                ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
+                ID3D11DeviceContext* native_device_context = (ID3D11DeviceContext*)(cmd_list->get_native());
+
+                //
+                // Prepare resources:
+                //
+                assert((source_desc.BindFlags & D3D11_BIND_SHADER_RESOURCE) != 0);
+                com_ptr<ID3D11ShaderResourceView> source_resource_texture_view;
+                D3D11_SHADER_RESOURCE_VIEW_DESC source_srv_desc;
+                source_srv_desc.Format = source_desc.Format;
+                // Redirect typeless and sRGB formats to classic UNORM, the "copy resource" functions wouldn't distinguish between these, as they copy by byte.
+                switch (source_srv_desc.Format)
+                {
+                case DXGI_FORMAT_R8G8B8A8_TYPELESS:
+                case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+                    source_srv_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+                    break;
+                case DXGI_FORMAT_B8G8R8A8_TYPELESS:
+                case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
+                    source_srv_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+                    break;
+                case DXGI_FORMAT_B8G8R8X8_TYPELESS:
+                case DXGI_FORMAT_B8G8R8X8_UNORM_SRGB:
+                    source_srv_desc.Format = DXGI_FORMAT_B8G8R8X8_UNORM;
+                    break;
+                case DXGI_FORMAT_R16G16B16A16_TYPELESS:
+                    source_srv_desc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+                    break;
+                }
+                source_srv_desc.ViewDimension = D3D11_SRV_DIMENSION::D3D11_SRV_DIMENSION_TEXTURE2D;
+                source_srv_desc.Texture2D.MipLevels = 1;
+                source_srv_desc.Texture2D.MostDetailedMip = 0;
+                hr = native_device->CreateShaderResourceView(source_resource_texture.get(), &source_srv_desc, &source_resource_texture_view);
+                assert(SUCCEEDED(hr));
+
+                com_ptr<ID3D11Texture2D> proxy_target_resource_texture;
+                // We need to make a double copy if the target texture isn't a render target, unfortunately (we could intercept its creation and add the flag, or replace any further usage in this frame by redirecting all pointers
+                // to the new copy we made, but for now this works)
+                if ((target_desc.BindFlags & D3D11_BIND_RENDER_TARGET) == 0) {
+                    // Create the persisting texture copy if necessary (if anything changed from the last copy).
+                    // Theoretically all these textures have the same resolution as the screen so having one persisten texture is ok.
+                    //TODOFT: verify the above assumption
+                    if (!copy_texture.get()) {
+                        D3D11_TEXTURE2D_DESC proxy_target_desc;
+                        copy_texture->GetDesc(&proxy_target_desc);
+                        if (proxy_target_desc.Width != target_desc.Width || proxy_target_desc.Height != target_desc.Height || proxy_target_desc.Format != target_desc.Format) {
+                            proxy_target_desc = target_desc;
+                            proxy_target_desc.BindFlags |= D3D11_BIND_RENDER_TARGET;
+                            copy_texture = nullptr;
+                            hr = native_device->CreateTexture2D(&proxy_target_desc, nullptr, &copy_texture);
+                        }
+                    }
+                    proxy_target_resource_texture = copy_texture;
+                    assert(SUCCEEDED(hr));
+                }
+                else {
+                    proxy_target_resource_texture = target_resource_texture;
+                }
+
+                com_ptr<ID3D11RenderTargetView> target_resource_texture_view;
+                D3D11_RENDER_TARGET_VIEW_DESC target_rtv_desc;
+                target_rtv_desc.Format = target_desc.Format;
+                switch (target_rtv_desc.Format)
+                {
+                case DXGI_FORMAT_R8G8B8A8_TYPELESS:
+                case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+                    target_rtv_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+                    break;
+                case DXGI_FORMAT_B8G8R8A8_TYPELESS:
+                case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
+                    target_rtv_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+                    break;
+                case DXGI_FORMAT_B8G8R8X8_TYPELESS:
+                case DXGI_FORMAT_B8G8R8X8_UNORM_SRGB:
+                    target_rtv_desc.Format = DXGI_FORMAT_B8G8R8X8_UNORM;
+                    break;
+                case DXGI_FORMAT_R16G16B16A16_TYPELESS:
+                    target_rtv_desc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+                    break;
+                }
+                target_rtv_desc.ViewDimension = D3D11_RTV_DIMENSION::D3D11_RTV_DIMENSION_TEXTURE2D;
+                target_rtv_desc.Texture2D.MipSlice = 0;
+                hr = native_device->CreateRenderTargetView(proxy_target_resource_texture.get(), &target_rtv_desc, &target_resource_texture_view);
+                assert(SUCCEEDED(hr));
+
+                static const uint32_t copy_vertex_shader_hash = std::stoul("FFFFFFF0", nullptr, 16);
+                static const uint32_t copy_pixel_shader_hash = std::stoul("FFFFFFF1", nullptr, 16);
+                if (copy_vertex_shader == nullptr && copy_pixel_shader == nullptr) {
+                    const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
+                    if (custom_shaders_cache.contains(copy_vertex_shader_hash) && custom_shaders_cache.contains(copy_pixel_shader_hash)) {
+                        //TODOFT: these need to be loaded at all times, even when the user unloads the data?
+                        //Also they should be re-compiled when we modify them in the IDE? Also should we create these separately (e.g. put them in a "Luma Custom Shaders" folder and compile them in a separate array?)?
+                        CachedCustomShader* vertex_shader = custom_shaders_cache[copy_vertex_shader_hash];
+                        CachedCustomShader* pixel_shader = custom_shaders_cache[copy_pixel_shader_hash];
+                        hr = native_device->CreateVertexShader(vertex_shader->code.data(), vertex_shader->code.size(), nullptr, &copy_vertex_shader);
+                        assert(SUCCEEDED(hr));
+                        hr = native_device->CreatePixelShader(pixel_shader->code.data(), pixel_shader->code.size(), nullptr, &copy_pixel_shader);
+                        assert(SUCCEEDED(hr));
+                    }
+                    else {
+                        assert(false); // The copy shader failed to be found (maybe it has been unloaded?)
+                    }
+                }
+
+                //
+                // Cache aside the previous resources/states:
+                //
+                com_ptr<ID3D11VertexShader> prev_vs;
+                com_ptr<ID3D11PixelShader> prev_ps;
+                native_device_context->VSGetShader(&prev_vs, nullptr, 0);
+                native_device_context->PSGetShader(&prev_ps, nullptr, 0);
+                ID3D11RenderTargetView* prev_render_target_views[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
+                ID3D11DepthStencilView* prev_depth_stencil_views[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
+                native_device_context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &prev_render_target_views[0], &prev_depth_stencil_views[0]);
+                D3D11_PRIMITIVE_TOPOLOGY prev_primitive_topology;
+                native_device_context->IAGetPrimitiveTopology(&prev_primitive_topology);
+                com_ptr<ID3D11ShaderResourceView> prev_shader_resource_view;
+                native_device_context->PSGetShaderResources(0, 1, &prev_shader_resource_view);
+                D3D11_RECT prev_scissor_rects[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
+                UINT prev_scissor_rects_num = 1;
+                native_device_context->RSGetScissorRects(&prev_scissor_rects_num, nullptr); // This will get the number of scissor rects used
+                native_device_context->RSGetScissorRects(&prev_scissor_rects_num, &prev_scissor_rects[0]);
+                D3D11_VIEWPORT prev_viewports[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
+                UINT prev_viewports_num = 1;
+                native_device_context->RSGetViewports(&prev_viewports_num, nullptr); // This will get the number of viewports used
+                native_device_context->RSGetViewports(&prev_viewports_num, &prev_viewports[0]);
+
+                //
+                // Set the new resources/states:
+                //
+                native_device_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY::D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP); //TODOFT: do we need to call IASetVertexBuffers()?
+                D3D11_RECT scissor_rect; /*= prev_scissor_rects[0]*/
+                scissor_rect.left = 0;
+                scissor_rect.top = 0;
+                scissor_rect.right = target_desc.Width;
+                scissor_rect.bottom = target_desc.Height;
+                native_device_context->RSSetScissorRects(1, &scissor_rect);
+                D3D11_VIEWPORT viewport; /*= prev_viewports[0]*/
+                viewport.TopLeftX = 0;
+                viewport.TopLeftY = 0;
+                viewport.Width = target_desc.Width;
+                viewport.Height = target_desc.Height;
+                viewport.MinDepth = 0;
+                viewport.MaxDepth = 1;
+                native_device_context->RSSetViewports(1, &viewport);
+                ID3D11ShaderResourceView* const shader_resource_view_const = source_resource_texture_view.get();
+                native_device_context->PSSetShaderResources(0, 1, &shader_resource_view_const);
+                ID3D11RenderTargetView* const render_target_view_const = target_resource_texture_view.get();
+                native_device_context->OMSetRenderTargets(1, &render_target_view_const, nullptr);
+                native_device_context->VSSetShader(copy_vertex_shader.get(), nullptr, 0);
+                native_device_context->PSSetShader(copy_pixel_shader.get(), nullptr, 0);
+
+                //
+                // Finally draw:
+                //
+                native_device_context->Draw(4, 0);
+
+                //
+                // Copy our render target target resource into the non render target target resource if necessary:
+                //
+                if ((target_desc.BindFlags & D3D11_BIND_RENDER_TARGET) == 0) {
+                    native_device_context->CopyResource(target_resource_texture.get(), proxy_target_resource_texture.get());
+                }
+
+                //
+                // Restore the previous resources/states:
+                //
+                native_device_context->IASetPrimitiveTopology(prev_primitive_topology);
+                native_device_context->RSSetScissorRects(prev_scissor_rects_num, &prev_scissor_rects[0]);
+                native_device_context->RSSetViewports(prev_viewports_num, &prev_viewports[0]);
+                ID3D11ShaderResourceView* const prev_shader_resource_view_const = prev_shader_resource_view.get();
+                native_device_context->PSSetShaderResources(0, 1, &prev_shader_resource_view_const);
+                native_device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &prev_render_target_views[0], prev_depth_stencil_views[0]);
+                for (UINT i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; i++) {
+                    if (prev_render_target_views[i] != nullptr) {
+                        prev_render_target_views[i]->Release();
+                        prev_render_target_views[i] = nullptr;
+                    }
+                    if (prev_depth_stencil_views[i] != nullptr) {
+                        prev_depth_stencil_views[i]->Release();
+                        prev_depth_stencil_views[i] = nullptr;
+                    }
+                }
+                native_device_context->VSSetShader(prev_vs.get(), nullptr, 0);
+                native_device_context->PSSetShader(prev_ps.get(), nullptr, 0);
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+bool OnCopyTextureRegion(reshade::api::command_list* cmd_list, reshade::api::resource source, uint32_t source_subresource, const reshade::api::subresource_box* source_box, reshade::api::resource dest, uint32_t dest_subresource, const reshade::api::subresource_box* dest_box, reshade::api::filter_mode filter /*Unused in DX11*/)
+{
+    if (source_subresource == 0 && dest_subresource == 0 && (!source_box || (source_box->left == 0 && source_box->top == 0)) && (!dest_box || (dest_box->left == 0 && dest_box->top == 0)) && (!dest_box || !source_box || (source_box->width() == dest_box->width() && source_box->height() == dest_box->height()))) {
+        return OnCopyResource(cmd_list, source, dest);
+    }
+    return false;
+}
+
 void OnBindViewports(reshade::api::command_list* cmd_list, uint32_t first, uint32_t count, const reshade::api::viewport* viewports)
 {
     if (count <= 0) return;
@@ -4372,6 +4633,8 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
       reshade::register_event<reshade::addon_event::push_descriptors>(OnPushDescriptors);
       reshade::register_event<reshade::addon_event::map_buffer_region>(OnMapBufferRegion);
       reshade::register_event<reshade::addon_event::unmap_buffer_region>(OnUnmapBufferRegion);
+      reshade::register_event<reshade::addon_event::copy_resource>(OnCopyResource);
+      reshade::register_event<reshade::addon_event::copy_texture_region>(OnCopyTextureRegion);
 
 
       reshade::register_event<reshade::addon_event::draw>(OnDraw);
@@ -4425,6 +4688,8 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
       reshade::unregister_event<reshade::addon_event::push_descriptors>(OnPushDescriptors);
       reshade::unregister_event<reshade::addon_event::map_buffer_region>(OnMapBufferRegion);
       reshade::unregister_event<reshade::addon_event::unmap_buffer_region>(OnUnmapBufferRegion);
+      reshade::unregister_event<reshade::addon_event::copy_resource>(OnCopyResource);
+      reshade::unregister_event<reshade::addon_event::copy_texture_region>(OnCopyTextureRegion);
 
       reshade::unregister_event<reshade::addon_event::draw>(OnDraw);
       reshade::unregister_event<reshade::addon_event::dispatch>(OnDispatch);
