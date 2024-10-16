@@ -152,9 +152,7 @@ bool PreprocessShaderFromFile(LPCWSTR file_path, LPCWSTR shader_name_w, LPCSTR s
 
     if (d3d_readFileToBlob[fxc_library] != nullptr && d3d_preprocess[fxc_library] != nullptr) {
       CComPtr<ID3DBlob> uncompiled_blob;
-      if (SUCCEEDED(d3d_readFileToBlob[fxc_library](
-              file_path,
-              &uncompiled_blob))) {
+      if (SUCCEEDED(d3d_readFileToBlob[fxc_library](file_path, &uncompiled_blob))) {
 #pragma warning(push)
 #pragma warning(disable : 4244)
         const std::wstring& shader_name_w_s = shader_name_w;
@@ -176,7 +174,7 @@ bool PreprocessShaderFromFile(LPCWSTR file_path, LPCWSTR shader_name_w, LPCSTR s
           out_error->assign(reinterpret_cast<char*>(error_blob->GetBufferPointer()));
         }
         if (SUCCEEDED(result) && preprocessed_blob != nullptr) {
-          std::string prepocessed_blob_string;  // TODO: there's probably a more optimize way of finding the blob's hash
+          std::string prepocessed_blob_string;  // TODO: there's probably a more optimized way of finding the blob's hash
           prepocessed_blob_string.assign(reinterpret_cast<char*>(preprocessed_blob->GetBufferPointer()));
           std::size_t new_preprocessed_hash = std::hash<std::string>{}(prepocessed_blob_string);
           if (preprocessed_hash == new_preprocessed_hash) {
@@ -188,6 +186,52 @@ bool PreprocessShaderFromFile(LPCWSTR file_path, LPCWSTR shader_name_w, LPCSTR s
     }
   }
   return true;
+}
+
+// Note: you can pass in an hlsl or cso path or a path without a format, ".cso" will always be added at the end
+bool LoadCompiledShaderFromFile(std::vector<uint8_t>& compiled_shader, LPCWSTR file_path, LPCWSTR library = L"D3DCompiler_47.dll") {
+  typedef HRESULT(WINAPI * pD3DReadFileToBlob)(LPCWSTR, ID3DBlob**);
+  static std::unordered_map<LPCWSTR, pD3DReadFileToBlob> d3d_readFileToBlob;
+  {
+    const std::lock_guard<std::mutex> lock(s_mutex_shader_compiler);
+    if (d3d_compiler[library] == nullptr)
+    {
+      d3d_compiler[library] = LoadLibraryW(library);
+    }
+    if (d3d_compiler[library] != nullptr && d3d_readFileToBlob[library] == nullptr) {
+        // NOLINTNEXTLINE(google-readability-casting)
+        d3d_readFileToBlob[library] = pD3DReadFileToBlob(GetProcAddress(d3d_compiler[library], "D3DReadFileToBlob"));
+    }
+  }
+
+  bool file_loaded = false;
+  CComPtr<ID3DBlob> out_blob;
+  if (d3d_readFileToBlob[library] != nullptr) {
+    std::wstring file_path_cso = file_path;
+    if (file_path_cso.ends_with(L".hlsl")) {
+      file_path_cso = file_path_cso.substr(0, file_path_cso.size() - 5);
+      file_path_cso += L".cso";
+    }
+    else if (!file_path_cso.ends_with(L".cso")) {
+      file_path_cso += L".cso";
+    }
+
+    CComPtr<ID3DBlob> out_blob;
+    HRESULT result = d3d_readFileToBlob[library](file_path_cso.c_str(), &out_blob);
+    if (SUCCEEDED(result)) {
+      compiled_shader.assign(
+          reinterpret_cast<uint8_t*>(out_blob->GetBufferPointer()),
+          reinterpret_cast<uint8_t*>(out_blob->GetBufferPointer()) + out_blob->GetBufferSize());
+      file_loaded = true;
+    }
+    // No need for warnings if the file failed loading or didn't exist, that's expected to happen
+  }
+
+#if 0  // Not much point in unloading the library, we'd need to keep "s_mutex_shader_compiler" locked the whole time.
+  FreeLibrary(d3d_compiler[library]);
+#endif
+
+  return file_loaded;
 }
 
 std::vector<uint8_t> CompileShaderFromFileFXC(LPCWSTR file_path, LPCSTR shader_target, const D3D_SHADER_MACRO* defines = nullptr, std::string* out_error = nullptr, LPCWSTR library = L"D3DCompiler_47.dll") {
@@ -213,41 +257,55 @@ std::vector<uint8_t> CompileShaderFromFileFXC(LPCWSTR file_path, LPCSTR shader_t
   if (d3d_compilefromfile[library] != nullptr) {
     CComPtr<ID3DBlob> error_blob;
     HRESULT result = d3d_compilefromfile[library](
-        file_path,
-        defines,
-        D3D_COMPILE_STANDARD_FILE_INCLUDE,
-        "main",
-        shader_target,
-        D3DCOMPILE_ENABLE_BACKWARDS_COMPATIBILITY,
-        0,
-        &out_blob,
-        &error_blob);
+      file_path,
+      defines,
+      D3D_COMPILE_STANDARD_FILE_INCLUDE,
+      "main",
+      shader_target,
+      D3DCOMPILE_ENABLE_BACKWARDS_COMPATIBILITY,
+      0,
+      &out_blob,
+      &error_blob);
     if (SUCCEEDED(result)) {
       compiled_shader.assign(
           reinterpret_cast<uint8_t*>(out_blob->GetBufferPointer()),
           reinterpret_cast<uint8_t*>(out_blob->GetBufferPointer()) + out_blob->GetBufferSize());
-    }
-    bool failed = FAILED(result);
-    bool error = failed || error_blob != nullptr;
-    if (error) {
-      std::stringstream s;
-      if (failed) {
-      s << "CompileShaderFromFileFXC(Compilation failed";
-      }
-      else {
-        s << "CompileShaderFromFileFXC(Compilation warning";
-      }
-      if (error_blob != nullptr) {
-        auto* error = reinterpret_cast<uint8_t*>(error_blob->GetBufferPointer());
-        s << ": " << error;
-        if (error && out_error != nullptr) {
-          out_error->assign((char*)error);
+          
+      // TODO: add a setting to not serialize to disk
+      if (d3d_writeBlobToFile[library] != nullptr) {
+        const bool overwrite = true; // Overwrite whatever original or custom shader we previously had there
+        std::wstring file_path_cso = file_path;
+        if (file_path_cso.ends_with(L".hlsl")) {
+            file_path_cso = file_path_cso.substr(0, file_path_cso.size() - 5);
+            file_path_cso += L".cso";
         }
-      } else {
-        s << ".";
+        else if (!file_path_cso.ends_with(L".cso")) {
+            file_path_cso += L".cso";
+        }
+        result = d3d_writeBlobToFile[library](out_blob, file_path_cso.c_str(), overwrite);
+        assert(SUCCEEDED(result));
       }
-      s << ")";
-      reshade::log::message(failed ? reshade::log::level::error : reshade::log::level::warning, s.str().c_str());
+
+      bool failed = FAILED(result);
+      bool error = failed || error_blob != nullptr; // This includes warnings too
+      if (error) {
+        std::stringstream s;
+        if (failed) {
+        s << "CompileShaderFromFileFXC(Compilation failed";
+        }
+        else {
+          s << "CompileShaderFromFileFXC(Compilation warning";
+        }
+        if (error_blob != nullptr) {
+          auto* error = reinterpret_cast<uint8_t*>(error_blob->GetBufferPointer());
+          s << ": " << error;
+          if (error && out_error != nullptr) {
+            out_error->assign((char*)error);
+          }
+        }
+        s << ")";
+        reshade::log::message(failed ? reshade::log::level::error : reshade::log::level::warning, s.str().c_str());
+      }
     }
   }
 
@@ -426,6 +484,7 @@ std::vector<uint8_t> CompileShaderFromFileDXC(LPCWSTR file_path, LPCSTR shader_t
 
   CComPtr<ID3DBlob> out_blob;
   CComPtr<ID3DBlob> error_blob;
+  // TODO: add serialization to disk here too
   if (SUCCEEDED(BridgeD3DCompileFromFile(
           file_path,
           defines,
@@ -449,8 +508,6 @@ std::vector<uint8_t> CompileShaderFromFileDXC(LPCWSTR file_path, LPCSTR shader_t
       if (out_error != nullptr) {
         out_error->assign((char*)error);
       }
-    } else {
-      s << ".";
     }
     s << ")";
 
@@ -460,6 +517,7 @@ std::vector<uint8_t> CompileShaderFromFileDXC(LPCWSTR file_path, LPCSTR shader_t
   return result;
 }
 
+// TODO: optimize the return value by moving it to a parameter, passing large vectors by value isn't great
 std::vector<uint8_t> CompileShaderFromFile(LPCWSTR file_path, LPCSTR shader_target, const std::vector<std::string>& defines = {}, std::string* out_error = nullptr, LPCWSTR fxc_library = L"D3DCompiler_47.dll") {
   std::vector<D3D_SHADER_MACRO> local_defines;
   FillDefines(defines, local_defines);
