@@ -2130,7 +2130,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                       ASSERT_ONCE(std::lrintf(output_resolution.x) == output_texture_desc.Width && std::lrintf(output_resolution.y) == output_texture_desc.Height);
                       std::array<uint32_t, 2> dlss_render_resolution = FindClosestIntegerResolutionForAspectRatio((double)output_texture_desc.Width * (double)dlss_sr_render_resolution, (double)output_texture_desc.Height * (double)dlss_sr_render_resolution, (double)output_texture_desc.Width / (double)output_texture_desc.Height);
                       // The "HDR" flag in DLSS SR actually means whether the color is in linear space or "sRGB gamma" (SDR) space
-                      bool dlss_hdr = strncmp(&defines_text[3][0], "0", 1) != 0; // "POST_PROCESS_SPACE_TYPE"
+                      bool dlss_hdr = uint8_t(shader_defines_data[post_process_space_define_index].compiled_data.value[0] - '0') >= 1; // "POST_PROCESS_SPACE_TYPE" (we are assuming the value was always a number and not empty)
 
 #if (DEVELOPMENT || TEST) && TEST_DLSS
                       com_ptr<ID3D11VertexShader> vs;
