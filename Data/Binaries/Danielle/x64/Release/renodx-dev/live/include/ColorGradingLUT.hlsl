@@ -871,7 +871,7 @@ float3 SampleLUTWithExtrapolation(LUT_TEXTURE_TYPE lut, SamplerState samplerStat
 #endif
       }
 		}
-    //TODOFT3: use Log (10?) instead of PQ?
+    //TODOFT3: use Log (10? 2?) instead of PQ?
 		else //if (settings.extrapolationQuality >= 1)
 		{
       // We always run the UV centering logic in the vanilla transfer function space (e.g. sRGB), not PQ, as all these transfer functions are reliable enough within the 0-1 range.
