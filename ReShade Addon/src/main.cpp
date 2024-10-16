@@ -748,10 +748,12 @@ std::filesystem::path GetShaderPath() {
   wchar_t file_prefix[MAX_PATH] = L"";
   GetModuleFileNameW(nullptr, file_prefix, ARRAYSIZE(file_prefix));
 
-  std::filesystem::path dump_path = file_prefix;
-  dump_path = dump_path.parent_path();
-  dump_path /= ".\\renodx-dev"; //TODOFT: rename shader folders
-  return dump_path;
+  std::filesystem::path shaders_path = file_prefix;
+  shaders_path = shaders_path.parent_path();
+  std::string name_no_spaces = NAME;
+  std::replace(name_no_spaces.begin(), name_no_spaces.end(), ' ', '-');
+  shaders_path /= ".\\" + name_no_spaces;
+  return shaders_path;
 }
 
 void DestroyPipelineSubojects(reshade::api::pipeline_subobject* subojects, uint32_t subobject_count) {
@@ -829,8 +831,6 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
   if (!std::filesystem::exists(directory)) {
     std::filesystem::create_directory(directory);
   }
-
-  directory /= ".\\live";
 
   if (!std::filesystem::exists(directory)) {
     std::filesystem::create_directory(directory);
@@ -1221,8 +1221,6 @@ void ToggleLiveWatching() {
     if (!std::filesystem::exists(directory)) {
       std::filesystem::create_directory(directory);
     }
-
-    directory /= ".\\live";
 
     if (!std::filesystem::exists(directory)) {
       std::filesystem::create_directory(directory);
