@@ -36,6 +36,9 @@
 .vscode/
 **/.vshistory/
 
+# Compiled Shaders
+*.cso
+
 # Misc
 [Bb]uild/
 *.zip
