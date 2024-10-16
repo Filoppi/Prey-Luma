@@ -1370,6 +1370,10 @@ void OnDestroyDevice(reshade::api::device* device) {
   dlss_motion_vectors_rtv = nullptr;
 #endif // NGX
 
+  copy_texture = nullptr;
+  copy_vertex_shader = nullptr;
+  copy_pixel_shader = nullptr;
+
   device->destroy_private_data<DeviceData>();
 }
 
@@ -1836,6 +1840,15 @@ void SetPreyLumaConstantBuffers(reshade::api::command_list* cmd_list, reshade::a
     }
 }
 
+//TODOFT5: where is glass drawns
+//TODOFT5: expose DLSS res range multipliers here or to game config
+//TODOFT5: DLSS pre-exposure (duplicate?)
+//TODOFT5: prey verify that the sun sprite size didn't already change with resolution on startup
+//TODOFT5: _DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR
+//TODOFT5: test gamma sRGB mode?
+//TODOFT5: (duplicate?) verify that the addon is being run with Prey and that the detected version is Steam. E.g. return false in "AddonInit()"?
+
+//TODOFT5: comment
 bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = false) {
   const auto* device = cmd_list->get_device();
   auto device_api = device->get_api();
@@ -3380,8 +3393,8 @@ bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource
 
             // If we detected incompatible formats that were likely caused by Luma upgrading texture formats (of render targets only...),
             // do the copy in shader
-            if (((isUnorm8(target_desc.Format) || isFloat11(target_desc.Format)) && isFloat16(source_desc.Format))
-                || ((isUnorm8(source_desc.Format) || isFloat11(source_desc.Format)) && isFloat16(target_desc.Format))) {
+            /*if (((isUnorm8(target_desc.Format) || isFloat11(target_desc.Format)) && isFloat16(source_desc.Format))
+                || ((isUnorm8(source_desc.Format) || isFloat11(source_desc.Format)) && isFloat16(target_desc.Format)))*/ {
                 const auto* device = cmd_list->get_device();
                 ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
                 ID3D11DeviceContext* native_device_context = (ID3D11DeviceContext*)(cmd_list->get_native());
