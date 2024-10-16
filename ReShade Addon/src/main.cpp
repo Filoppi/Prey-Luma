@@ -3879,10 +3879,10 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
     if (ImGui::BeginTabItem("Settings")) {
         ImGui::BeginDisabled(!dlss_sr_supported);
         if (ImGui::Checkbox("DLSS Super Resolution", &dlss_sr)) {
-            reshade::set_config_value(runtime, NAME, "DLSS Super Resolution", dlss_sr);
+            reshade::set_config_value(runtime, NAME, "DLSSSuperResolution", dlss_sr);
         }
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-            ImGui::SetTooltip("This replaces the game's native AA and dynamic resolution scaling implementations.\nSelect \"SMAA 2TX\" or \"TAA\" in the game's AA settings for DLSS to engage (a tick will appear here when it's engaged).\n\nRequires compatible Nvidia GPUs.");
+            ImGui::SetTooltip("This replaces the game's native AA and dynamic resolution scaling implementations.\nSelect \"SMAA 2TX\" or \"TAA\" in the game's AA settings for DLSS/DLAA to engage (a tick will appear here when it's engaged).\n\nRequires compatible Nvidia GPUs.");
         }
         ImGui::SameLine();
         if (dlss_sr != true && dlss_sr_supported) {
@@ -3910,12 +3910,12 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         }
         ImGui::EndDisabled();
 
-        if (ImGui::Checkbox("Tonemap UI background", &tonemap_ui_background)) {
-            reshade::set_config_value(runtime, NAME, "Tonemap UI background", tonemap_ui_background);
+        if (ImGui::Checkbox("Tonemap UI Background", &tonemap_ui_background)) {
+            reshade::set_config_value(runtime, NAME, "TonemapUIBackground", tonemap_ui_background);
         }
         ImGui::SameLine();
         if (tonemap_ui_background != true) {
-            ImGui::PushID("Tonemap UI background");
+            ImGui::PushID("Tonemap UI Background");
             if (ImGui::SmallButton(ICON_FK_UNDO)) {
                 tonemap_ui_background = true;
             }
@@ -3931,7 +3931,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 
         int value = cb_luma_frame_settings.ForceSDR;
         if (ImGui::SliderInt("Force SDR", &value, 0, 1)) {
-            reshade::set_config_value(runtime, NAME, "Force SDR", value);
+            reshade::set_config_value(runtime, NAME, "ForceSDR", value);
         }
         ImGui::SameLine();
         if (value != false) {
@@ -3952,10 +3952,10 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 
         if (ImGui::SliderFloat("Scene Peak White", &cb_luma_frame_settings.ScenePeakWhite, 400.0, 10000)) {
             if (cb_luma_frame_settings.ScenePeakWhite == default_user_peak_white) {
-                reshade::set_config_value(runtime, NAME, "Scene Peak White", 0.f);
+                reshade::set_config_value(runtime, NAME, "ScenePeakWhite", 0.f);
             }
             else {
-                reshade::set_config_value(runtime, NAME, "Scene Peak White", cb_luma_frame_settings.ScenePeakWhite);
+                reshade::set_config_value(runtime, NAME, "ScenePeakWhite", cb_luma_frame_settings.ScenePeakWhite);
             }
         }
         ImGui::SameLine();
@@ -3973,8 +3973,8 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             size.y += style.FramePadding.y;
             ImGui::InvisibleButton("", ImVec2(size.x, size.y));
         }
-        if (ImGui::SliderFloat("Scene Paper White", &cb_luma_frame_settings.ScenePaperWhite, 80.0, 500.f)) {
-            reshade::set_config_value(runtime, NAME, "Scene Paper White", cb_luma_frame_settings.ScenePaperWhite);
+        if (ImGui::SliderFloat("Scene Paper White", &cb_luma_frame_settings.ScenePaperWhite, srgb_white_level, 500.f)) {
+            reshade::set_config_value(runtime, NAME, "ScenePaperWhite", cb_luma_frame_settings.ScenePaperWhite);
         }
         ImGui::SameLine();
         if (cb_luma_frame_settings.ScenePaperWhite != default_paper_white) {
@@ -3991,8 +3991,8 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             size.y += style.FramePadding.y;
             ImGui::InvisibleButton("", ImVec2(size.x, size.y));
         }
-        if (ImGui::SliderFloat("UI Paper White", &cb_luma_frame_settings.UIPaperWhite, 80.0, 500.f)) {
-            reshade::set_config_value(runtime, NAME, "UI Paper White", cb_luma_frame_settings.UIPaperWhite);
+        if (ImGui::SliderFloat("UI Paper White", &cb_luma_frame_settings.UIPaperWhite, srgb_white_level, 500.f)) {
+            reshade::set_config_value(runtime, NAME, "UIPaperWhite", cb_luma_frame_settings.UIPaperWhite);
         }
         ImGui::SameLine();
         if (cb_luma_frame_settings.UIPaperWhite != default_paper_white) {
@@ -4287,6 +4287,15 @@ void Init() {
           }
           reshade::set_config_value(runtime, NAME, "Version", VERSION);
       }
+
+      reshade::get_config_value(runtime, NAME, "DLSSSuperResolution", dlss_sr);
+      reshade::get_config_value(runtime, NAME, "TonemapUIBackground", tonemap_ui_background);
+      reshade::get_config_value(runtime, NAME, "ForceSDR", cb_luma_frame_settings.ForceSDR);
+      if (reshade::get_config_value(runtime, NAME, "ScenePeakWhite", cb_luma_frame_settings.ScenePeakWhite) && cb_luma_frame_settings.ScenePeakWhite <= 0.f) {
+          cb_luma_frame_settings.ScenePeakWhite = default_user_peak_white;
+      }
+      reshade::get_config_value(runtime, NAME, "ScenePaperWhite", cb_luma_frame_settings.ScenePaperWhite);
+      reshade::get_config_value(runtime, NAME, "UIPaperWhite", cb_luma_frame_settings.UIPaperWhite);
 
       ShaderDefineData::Load(shader_defines_data, runtime);
   }
