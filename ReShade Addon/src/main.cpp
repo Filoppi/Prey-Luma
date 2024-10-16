@@ -546,6 +546,7 @@ bool custom_texture_mip_lod_bias_offset = false; // Live edit //TODOFT: "DEVELOP
 constexpr float texture_mip_lod_bias_offset = -1.0f; // Value tweaked for DLSS (note that the game's native TAA already biases some samples by -1, so we'd do it twice)
 #endif
 float dlss_custom_exposure = 1.0;
+float dlss_custom_pre_exposure = 1.0;
 
 //TODOFT: put all of these in a better place (e.g. device data? frame data?). Probably not needed given it's all single threaded
 // Per frame states:
@@ -2208,7 +2209,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                           // Generate "fake" exposure texture
                           bool exposure_changed = false;
 #if DEVELOPMENT
-                          static float previous_dlss_custom_exposure = dlss_custom_exposure;
+                          static float previous_dlss_custom_exposure = dlss_custom_exposure; //TODOFT: set this to 203/80 or 1/(203/80)?
                           exposure_changed = dlss_custom_exposure != previous_dlss_custom_exposure;
                           previous_dlss_custom_exposure = dlss_custom_exposure;
 #endif // DEVELOPMENT
@@ -2308,10 +2309,12 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                           uint32_t render_width_dlss = std::lrintf(render_resolution.x);
                           uint32_t render_height_dlss = std::lrintf(render_resolution.y);
 
+                          const float dlss_pre_exposure = dlss_custom_pre_exposure != 1.f ? dlss_custom_pre_exposure : 0.f;
+
                           // There doesn't seem to be a need to restore the DX state to whatever we had before (e.g. render targets, cbuffers, samplers, UAVs, texture shader resources, viewport, scissor rect, ...), CryEngine always sets everything it needs again for every pass.
                           // It's unclear whether DLSS expects the target/output texture to also hold the history from the previous frames, but if "DLSS_TARGET_TEXTURE_WAS_UAV" is false, it does for us, while if "DLSS_TARGET_TEXTURE_WAS_UAV" was true,
                           // ps_shader_resources[1] would be the previous frame TAA output.
-                          if (NGX::DLSS::Draw(native_device_context, dlss_output_color.get(), source_color.get(), dlss_motion_vectors.get(), depth_buffer.get(), dlss_exposure.get(), projection_jitters.x, projection_jitters.y, reset_dlss, render_width_dlss, render_height_dlss)) {
+                          if (NGX::DLSS::Draw(native_device_context, dlss_output_color.get(), source_color.get(), dlss_motion_vectors.get(), depth_buffer.get(), dlss_exposure.get(), dlss_pre_exposure, projection_jitters.x, projection_jitters.y, reset_dlss, render_width_dlss, render_height_dlss)) {
 #if !DLSS_TARGET_TEXTURE_WAS_UAV
                               // DX11 doesn't need barriers
                               native_device_context->CopyResource(output_color.get(), dlss_output_color.get());
@@ -4019,6 +4022,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 
         ImGui::NewLine();
         ImGui::SliderFloat("DLSS Custom Exposure", &dlss_custom_exposure, 0.01, 10.0);
+        ImGui::SliderFloat("DLSS Custom Pre-Exposure", &dlss_custom_pre_exposure, 0.01, 10.0);
         
         ImGui::NewLine();
         ImGui::SliderInt("DLSS Motion Vectors Jittered", &dlss_mode, 0, 1);

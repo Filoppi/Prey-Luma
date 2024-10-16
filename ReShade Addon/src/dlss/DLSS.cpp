@@ -376,7 +376,7 @@ bool NGX::DLSS::UpdateSettings(ID3D11Device* device, ID3D11DeviceContext* comman
 	return data->instance.superSamplingFeature != nullptr && data->instance.runtimeParams != nullptr;
 }
 
-bool NGX::DLSS::Draw(ID3D11DeviceContext* commandList, ID3D11Resource* outputColor, ID3D11Resource* sourceColor, ID3D11Resource* motionVectors, ID3D11Resource* depthBuffer, ID3D11Resource* exposure, float jitterX, float jitterY, bool reset, unsigned int renderWidth, unsigned int renderHeight)
+bool NGX::DLSS::Draw(ID3D11DeviceContext* commandList, ID3D11Resource* outputColor, ID3D11Resource* sourceColor, ID3D11Resource* motionVectors, ID3D11Resource* depthBuffer, ID3D11Resource* exposure, float preExposure, float jitterX, float jitterY, bool reset, unsigned int renderWidth, unsigned int renderHeight)
 {
 	assert(data->isSupported);
 	assert(data->instance.superSamplingFeature != nullptr && data->instance.runtimeParams != nullptr);
@@ -401,6 +401,10 @@ bool NGX::DLSS::Draw(ID3D11DeviceContext* commandList, ID3D11Resource* outputCol
 	evalParams.Feature.pInColor = sourceColor;
 	evalParams.Feature.pInOutput = outputColor; // Needs to be a UAV
 	evalParams.pInExposureTexture = exposure; // Only used in HDR mode. Needs to be a 2D texture.
+	if (preExposure != 0.f)
+	{
+		evalParams.InPreExposure = preExposure;
+	}
 	evalParams.InReset = reset ? 1 : 0;
 #if 0 // Disabled to avoid sharpening randomly coming back if users used old DLLs or NV restored it
 	evalParams.Feature.InSharpness = data->sharpness; // It's likely clamped between 0 and 1 internally, though a value of 0 might fall back to the internal default
