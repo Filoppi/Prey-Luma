@@ -3,7 +3,12 @@
  * SPDX-License-Identifier: MIT
  */
 
-#define DEVELOPMENT 1
+// Enable when you are developing shaders or code (not debugging, there's "NDEBUG" for that)
+#define DEVELOPMENT 0
+// Enable when you are testing shaders or code (e.g. to dump the shaders etc etc)
+// This is not mutually exclusive with "DEVELOPMENT", but it should be a sub-set of it
+// If neither of these are true, then we are in "shipping" mode, with code meant to be used by the final user
+#define TEST 0
 
 // "_DEBUG" might already be defined in debug?
 // Setting it to 0 causes the compiler to still assume it as defined and that thus we are in debug mode.
@@ -69,7 +74,15 @@
 #include "dlss/DLSS.h"
 #endif
 
-#if DEVELOPMENT || _DEBUG
+// NOLINTBEGIN(readability-identifier-naming)
+
+extern "C" __declspec(dllexport) const char* NAME = "Prey Luma";
+extern "C" __declspec(dllexport) const char* DESCRIPTION = "Prey (2017) Luma mod";
+constexpr uint32_t VERSION = 1; // Internal version (not public facing)
+
+// NOLINTEND(readability-identifier-naming)
+
+#if DEVELOPMENT || _DEBUG || TEST
 #define ASSERT_ONCE(x) { static bool asserted_once = false; \
 if (!asserted_once && !(x)) { assert(x); asserted_once = true; } }
 #else
@@ -79,9 +92,10 @@ if (!asserted_once && !(x)) { assert(x); asserted_once = true; } }
 //TODOFT: fix cpp file formatting in general (and make sure it's all thread safe, but it should be)
 //TODOFT: store pre-compiled shaders on drive for quicker loading (or allow async shader comp?)
 namespace {
-#if DEVELOPMENT
+#if DEVELOPMENT || _DEBUG
     bool LaunchDebugger()
     {
+#if 0 // Non stopping optional debugger
         // Get System directory, typically c:\windows\system32
         std::wstring systemDir(MAX_PATH + 1, '\0');
         UINT nChars = GetSystemDirectoryW(&systemDir[0], systemDir.length());
@@ -107,17 +121,27 @@ namespace {
         // Close debugger process handles to eliminate resource leak
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);
+#else // Stop execution until the debugger is attached or skipped
 
+#if 1
+        if (!IsDebuggerPresent()) {
+            MessageBoxA(NULL, "Loaded. You can now attach the debugger or continue execution.", NAME, NULL);
+        }
+#else
         // Wait for the debugger to attach
-        //while (!IsDebuggerPresent()) Sleep(100);
-        
-        //MessageBoxA(NULL, "Debugger attached", "Prey", NULL);
+        while (!IsDebuggerPresent()) Sleep(100);
+#endif
 
+#endif
+
+#if 0
         // Stop execution so the debugger can take over
-        //DebugBreak();
+        DebugBreak();
+#endif
+
         return true;
     }
-#endif // DEVELOPMENT
+#endif // DEVELOPMENT || _DEBUG
 
     bool IsMemoryAllZero(const char* begin, std::size_t bytes)
     {
@@ -255,13 +279,14 @@ constexpr uint32_t MAX_SHADER_DEFINES = 20;
 constexpr unsigned int MAX_SHADER_DEFINES_TEXT_LENGTH = 50;
 static std::string defines_titles[MAX_SHADER_DEFINES*2];
 static char defines_text[MAX_SHADER_DEFINES*2][MAX_SHADER_DEFINES_TEXT_LENGTH];
+unsigned int fixed_defines_num = 0;
 
 // Settings
-#if DEVELOPMENT
+#if DEVELOPMENT || TEST
 bool auto_dump = true;
-#else
+#else // !DEVELOPMENT && !TEST
 bool auto_dump = false;
-#endif
+#endif // DEVELOPMENT || TEST
 bool auto_load = true;
 bool live_reload = false;
 bool trace_list_unique_shaders_only = false;
@@ -280,6 +305,7 @@ bool dlss_sr_supported = false;
 bool tonemap_ui_background = true;
 Matrix44A reprojection_matrix;
 constexpr float tonemap_ui_background_amount = 0.25;
+constexpr float srgb_white_level = 80;
 constexpr float default_paper_white = 203;
 constexpr float default_peak_white = 1000;
 bool hdr_supported = false; //TODOFT: this requires more work to work properly
@@ -350,7 +376,7 @@ std::vector<CBPerViewGlobal> cb_per_view_globals;
 std::vector<std::string> cb_per_view_globals_last_drawn_shader;
 std::vector<CBPerViewGlobal> cb_per_view_globals_previous;
 std::vector<ID3D11Buffer*> cb_per_view_global_buffers;
-#endif
+#endif // DEVELOPMENT
 LumaFrameSettings cb_luma_frame_settings = { };
 
 constexpr uint32_t ui_cbuffer_index = 7;
@@ -688,6 +714,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
           shader_target.c_str(),
           shader_defines_copy,
           &custom_shader->compilation_error);
+
       if (custom_shader->code.empty()) {
         std::stringstream s;
         s << "loadCustomShaders(Compilation failed: ";
@@ -1385,7 +1412,7 @@ void OnBindPipeline(
       trace_shader_hashes.push_back(shader_hash);
     }
   }
-#endif
+#endif // DEVELOPMENT
 }
 
 void OnPresent(
@@ -1649,7 +1676,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
           && ((viewports[0].Width == std::lrintf(render_resolution.x) && viewports[0].Height == std::lrintf(render_resolution.y))
               || (viewports[0].Width == std::lrintf(output_resolution.x) && viewports[0].Height == std::lrintf(output_resolution.y))));
   }
-#endif
+#endif // DEVELOPMENT
 
   if (!original_shader_hashes.empty()) {
 
@@ -1716,7 +1743,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                D3D11_RENDER_TARGET_VIEW_DESC render_target_view_desc;
                render_target_view->GetDesc(&render_target_view_desc);
                ASSERT_ONCE(render_target_view_desc.ViewDimension == D3D11_RTV_DIMENSION::D3D11_RTV_DIMENSION_TEXTURE2D); // This should always be the case
-#endif
+#endif // DEVELOPMENT
 
                com_ptr<ID3D11Resource> render_target_resource;
                render_target_view->GetResource(&render_target_resource);
@@ -1748,7 +1775,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                        ASSERT_ONCE(scissor_rects[0].left == 0 && scissor_rects[0].top == 0 && scissor_rects[0].right == render_target_texture_2d_desc.Width && scissor_rects[0].bottom == render_target_texture_2d_desc.Height);
                    }
                }
-#endif
+#endif // DEVELOPMENT
 
                D3D11_VIEWPORT viewports[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
                UINT viewports_num = 1;
@@ -1771,7 +1798,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
           //TODOFT: skip SMAA edge detection and edge AA passes, or just disable SMAA in menu
           //TODOFT: skip the texture copy into ps_shader_resources[1] after TAA if DLSS is running? It's not really necessary AFAIK (though it might be used by other things in the game, it's not clear, but likely not...)
           //TODOFT: Enable "DLSS_TARGET_TEXTURE_WAS_UAV" by changing the buffer to UAV with Luma DLL?
-          //TODOFT1: force preset E even with DLAA? Nah, F looks better it seems? Right now preset F is used for DRS!! (try C instead of F in that case though!). Or simply expose it to users, or at least try it for dev settings.
+          //TODOFT1: force preset E even with DLAA? Nah, F looks better it seems? Right now preset F is used for DRS (or is it?)!! (try C instead of F in that case though!). Or simply expose it to users, or at least try it for dev settings.
           
           //TODO LUMA: move DLSS before tonemapping, depth of field, bloom and blur. It wouldn't be easy because exposure is calculated after blur in CryEngine,
           //but we could simply fall back on using DLSS Auto Exposure (even if that wouldn't match the actual value used by post processing...).
@@ -1823,12 +1850,12 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                       // The "HDR" flag in DLSS SR actually means whether the color is in linear space or "sRGB gamma" (SDR) space
                       bool dlss_hdr = strncmp(&defines_text[3][0], "0", 1) != 0; // "POST_PROCESS_SPACE_TYPE"
 
-#if DEVELOPMENT && TEST_DLSS
+#if (DEVELOPMENT || TEST) && TEST_DLSS
                       com_ptr<ID3D11VertexShader> vs;
                       com_ptr<ID3D11PixelShader> ps;
                       native_device_context->VSGetShader(&vs, nullptr, 0);
                       native_device_context->PSGetShader(&ps, nullptr, 0);
-#endif
+#endif //  (DEVELOPMENT || TEST) && TEST_DLSS
 
                       //TODOFT: we could do this async from the beginning of rendering (when we can detect res changes), to here, with a mutex, to avoid potential stutters when DRS first engages (same with creating DLSS textures?)
                       // Our DLSS implementation picks a quality mode based on a fixed rendering resolution, but we scale it back in case we detected the game is running DRS, otherwise we run DLAA.
@@ -1837,7 +1864,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                       // This function doesn't alter the pipeline state (e.g. shaders, cbuffers, RTs, ...), if not, we need to move it to the "Present()" function
                       NGX::DLSS::UpdateSettings(native_device, native_device_context, output_texture_desc.Width, output_texture_desc.Height, dlss_render_resolution[0], dlss_render_resolution[1], dlss_hdr, dlss_mode);
 
-#if DEVELOPMENT && TEST_DLSS // Verify that DLSS never alters the pipeline state
+#if (DEVELOPMENT || TEST) && TEST_DLSS // Verify that DLSS never alters the pipeline state
                       com_ptr<ID3D11ShaderResourceView> ps_shader_resources_post[ARRAYSIZE(ps_shader_resources)];
                       native_device_context->PSGetShaderResources(0, ARRAYSIZE(ps_shader_resources_post), reinterpret_cast<ID3D11ShaderResourceView**>(ps_shader_resources_post));
                       for (uint32_t i = 0; i < ARRAYSIZE(ps_shader_resources); i++)
@@ -1859,8 +1886,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                       ps = nullptr;
                       vs_post = nullptr;
                       ps_post = nullptr;
-#endif
-
+#endif // (DEVELOPMENT || TEST) && TEST_DLSS
 
                       bool skip_dlss = output_texture_desc.Width < 32 || output_texture_desc.Height < 32; // DLSS doesn't support output below 32x32
                       bool dlss_output_changed = false;
@@ -1904,7 +1930,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                           static float previous_dlss_custom_exposure = dlss_custom_exposure;
                           exposure_changed = dlss_custom_exposure != previous_dlss_custom_exposure;
                           previous_dlss_custom_exposure = dlss_custom_exposure;
-#endif
+#endif // DEVELOPMENT
                           if (!dlss_exposure.get() || exposure_changed) {
                               D3D11_TEXTURE2D_DESC exposure_texture_desc; // DLSS fails if we pass in a 1D texture so we have to make a 2D one
                               exposure_texture_desc.Width = 1;
@@ -2052,7 +2078,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
   if (!is_custom_pass) return false;
 #else // We can't do any further checks in this case because some UI draws at the beginning of the frame (in world computers), and also sometimes the scene doesn't even draw!
   //if (!has_drawn_composed_gbuffers) return false;
-#endif
+#endif // !DEVELOPMENT
 
   LumaUIData ui_data;
 
@@ -2266,7 +2292,7 @@ com_ptr<ID3D11SamplerState> CreateCustomSampler(reshade::api::device* device, D3
             desc.MinLOD = min(desc.MinLOD, 0.f);
         }
     }
-#endif
+#endif // !DEVELOPMENT
 
     com_ptr<ID3D11SamplerState> sampler;
     native_device->CreateSamplerState(&desc, &sampler);
@@ -2307,7 +2333,7 @@ bool OnCreateSampler(reshade::api::device* device, reshade::api::sampler_desc& d
     || desc.filter == reshade::api::filter_mode::compare_min_mag_mip_linear
     || desc.filter == reshade::api::filter_mode::min_mag_linear_mip_point
     || desc.filter == reshade::api::filter_mode::compare_min_mag_linear_mip_point); // Doesn't seem to happen
-#endif
+#endif // DEVELOPMENT
 
     if (desc.filter == reshade::api::filter_mode::anisotropic || desc.filter == reshade::api::filter_mode::compare_anisotropic)
     {
@@ -2383,7 +2409,7 @@ void OnDestroyResourceView(reshade::api::device* device, reshade::api::resource_
   const std::unique_lock lock(data.mutex);
   data.resource_views.erase(view.handle);
 }
-#endif
+#endif // DEVELOPMENT
 
 //TODOFT: an alternative way of approaching this would be to cache all the address of buffers that are ever filled up through ::Map() calls,
 //then story a copy of each of their instances, and when one of these buffers is set to a shader stage, re-set the same cbuffer with our
@@ -2424,7 +2450,7 @@ bool UpdateGlobalCBuffer(void* global_buffer_data_ptr)
 #if DEVELOPMENT
     cb_per_view_globals.emplace_back(global_buffer_data);
     cb_per_view_globals_last_drawn_shader.emplace_back(last_drawn_shader); // The shader hash could we unspecified if we didn't replace the shader
-#endif
+#endif // DEVELOPMENT
 
     if (!is_valid_cbuffer)
     {
@@ -2548,7 +2574,7 @@ bool UpdateGlobalCBuffer(void* global_buffer_data_ptr)
         cb_per_view_global.CV_PrevViewProjNearestMatr.m02 *= cb_per_view_global.CV_HPosScale.x;
         cb_per_view_global.CV_PrevViewProjNearestMatr.m12 *= cb_per_view_global.CV_HPosScale.y;
     }
-#endif
+#endif // DEVELOPMENT
 
     // Fix up the rendering scale for all passes after DLSS SR, as we upscaled before the game expected,
     // there's only post processing passes after it anyway (and lens optics shaders don't really read cbuffer 13, but still, some of their passes use custom resolutions).
@@ -2583,7 +2609,7 @@ bool UpdateGlobalCBuffer(void* global_buffer_data_ptr)
                 previous_render_resolution.x = cb_per_view_global.CV_ScreenSize.x;
                 previous_render_resolution.y = cb_per_view_global.CV_ScreenSize.y;
             }
-#endif
+#endif // DEVELOPMENT
 
             render_resolution.x = cb_per_view_global.CV_ScreenSize.x;
             render_resolution.y = cb_per_view_global.CV_ScreenSize.y;
@@ -2708,7 +2734,7 @@ bool UpdateGlobalCBuffer(void* global_buffer_data_ptr)
             projection_matrix_recalculated(3, 0) = 0;
             projection_matrix_recalculated(3, 1) = 0;
             projection_matrix_recalculated(3, 3) = 0;
-#endif
+#endif // DEVELOPMENT
 
             //Matrix44_tpl<double> projection_matrix_prev = (Matrix44_tpl<double>(current_projection_matrix) * Matrix44_tpl<double>(cb_per_view_global.CV_InvViewMatr)).GetTransposed();
             //Matrix44_tpl<double> projection_matrix_prev_real = (Matrix44_tpl<double>(cb_per_view_global_actual_previous.CV_ViewProjMatr) * Matrix44_tpl<double>(cb_per_view_global_actual_previous.CV_InvViewMatr)).GetTransposed();
@@ -2741,7 +2767,7 @@ bool UpdateGlobalCBuffer(void* global_buffer_data_ptr)
 
 #if DEVELOPMENT && 0 // Not needed anymore, but here in case
             const Matrix44A mViewProjPrev = Matrix44_tpl<double>(cb_per_view_global_actual_previous.CV_ViewMatr.GetTransposed()) * projection_matrix_native * Matrix44_tpl<double>(mScaleBias1);
-#endif
+#endif // DEVELOPMENT
 
             Matrix44_tpl<double> previous_projection_matrix_native = Matrix44_tpl<double>(previous_projection_matrix.GetTransposed());
             if (matrix_calculation_mode_2 == 1) // Flip jitters (somehow it works and fixes motion vectors generation, it's not 100% clear why)
@@ -2849,7 +2875,7 @@ void OnPushDescriptors(
                     custom_sampler_by_original_sampler[sampler.handle] = CreateCustomSampler(device, native_desc);
                 }
 #endif
-#endif
+#endif // DEVELOPMENT
             }
         }
 
@@ -3064,7 +3090,7 @@ void OnReshadePresent(reshade::api::effect_runtime* runtime) {
     trace_running = true;
     reshade::log::message(reshade::log::level::info, "--- Frame ---");
   }
-#endif
+#endif // DEVELOPMENT
 
   // TODO: verify this delayed behaviour is actually ever needed and delete it if not
   {
@@ -3266,7 +3292,9 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
     }
   }
   ImGui::PopID();
+#endif // DEVELOPMENT
 
+#if DEVELOPMENT || TEST
   if (ImGui::Button(std::format("Unload Shaders ({})", cloned_pipeline_count).c_str())) {
     needs_unload_shaders = true;
     last_pressed_unload = true;
@@ -3287,7 +3315,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
     pipelines_to_reload.clear();
   }
   ImGui::SameLine();
-#endif // DEVELOPMENT
+#endif // DEVELOPMENT || TEST
   if (ImGui::Button(cloned_pipeline_count ? "Reload Shaders" : "Load Shaders")) {
     needs_unload_shaders = false;
     last_pressed_unload = false;
@@ -3316,7 +3344,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
     pipelines_to_reload.clear();
   }
   ImGui::PopID();
-#endif
+#endif // DEVELOPMENT
 
   if (ImGui::BeginTabBar("##TabBar", ImGuiTabBarFlags_None)) {
 #if DEVELOPMENT
@@ -3542,22 +3570,27 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 
     if (ImGui::BeginTabItem("Settings")) {
         ImGui::BeginDisabled(!dlss_sr_supported);
-        ImGui::Checkbox("DLSS Super Resolution", &dlss_sr);
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-        {
+        if (ImGui::Checkbox("DLSS Super Resolution", &dlss_sr)) {
+            reshade::set_config_value(runtime, NAME, "DLSS Super Resolution", dlss_sr);
+        }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
             ImGui::SetTooltip("This replaces the game's native AA and dynamic resolution scaling implementations.\nSelect \"SMAA 2TX\" or \"TAA\" in the game's AA settings for DLSS to engage (a tick will appear here when it's engaged).\n\nRequires compatible Nvidia GPUs.");
         }
         ImGui::SameLine();
         if (dlss_sr != true && dlss_sr_supported) {
+            ImGui::PushID("DLSS Super Resolution Enabled");
             if (ImGui::SmallButton(ICON_FK_UNDO)) {
                 dlss_sr = true;
             }
+            ImGui::PopID();
         }
         else {
             if (dlss_sr && prey_taa_detected && cloned_pipeline_count != 0) {
+                ImGui::PushID("DLSS Super Resolution Active");
                 ImGui::BeginDisabled();
                 ImGui::SmallButton(ICON_FK_OK); // Show that DLSS is engaged
                 ImGui::EndDisabled();
+                ImGui::PopID();
             }
             else {
                 const auto& style = ImGui::GetStyle();
@@ -3569,12 +3602,16 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         }
         ImGui::EndDisabled();
 
-        ImGui::Checkbox("Tonemap UI background", &tonemap_ui_background);
+        if (ImGui::Checkbox("Tonemap UI background", &tonemap_ui_background)) {
+            reshade::set_config_value(runtime, NAME, "Tonemap UI background", tonemap_ui_background);
+        }
         ImGui::SameLine();
         if (tonemap_ui_background != true) {
+            ImGui::PushID("Tonemap UI background");
             if (ImGui::SmallButton(ICON_FK_UNDO)) {
                 tonemap_ui_background = true;
             }
+            ImGui::PopID();
         }
         else {
             const auto& style = ImGui::GetStyle();
@@ -3585,12 +3622,16 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         }
 
         int value = cb_luma_frame_settings.ForceSDR;
-        ImGui::SliderInt("Force SDR", &value, 0, 1);
+        if (ImGui::SliderInt("Force SDR", &value, 0, 1)) {
+            reshade::set_config_value(runtime, NAME, "Force SDR", value);
+        }
         ImGui::SameLine();
         if (value != false) {
+            ImGui::PushID("Force SDR");
             if (ImGui::SmallButton(ICON_FK_UNDO)) {
                 value = false;
             }
+            ImGui::PopID();
         }
         else {
             const auto& style = ImGui::GetStyle();
@@ -3601,12 +3642,21 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         }
         cb_luma_frame_settings.ForceSDR = value;
 
-        ImGui::SliderFloat("Scene Peak White", &cb_luma_frame_settings.ScenePeakWhite, 400.0, 10000);
+        if (ImGui::SliderFloat("Scene Peak White", &cb_luma_frame_settings.ScenePeakWhite, 400.0, 10000)) {
+            if (cb_luma_frame_settings.ScenePeakWhite == default_user_peak_white) {
+                reshade::set_config_value(runtime, NAME, "Scene Peak White", 0.f);
+            }
+            else {
+                reshade::set_config_value(runtime, NAME, "Scene Peak White", cb_luma_frame_settings.ScenePeakWhite);
+            }
+        }
         ImGui::SameLine();
         if (cb_luma_frame_settings.ScenePeakWhite != default_user_peak_white) {
+            ImGui::PushID("Scene Peak White");
             if (ImGui::SmallButton(ICON_FK_UNDO)) {
                 cb_luma_frame_settings.ScenePeakWhite = default_user_peak_white;
             }
+            ImGui::PopID();
         }
         else {
             const auto& style = ImGui::GetStyle();
@@ -3615,12 +3665,16 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             size.y += style.FramePadding.y;
             ImGui::InvisibleButton("", ImVec2(size.x, size.y));
         }
-        ImGui::SliderFloat("Scene Paper White", &cb_luma_frame_settings.ScenePaperWhite, 80.0, 500);
+        if (ImGui::SliderFloat("Scene Paper White", &cb_luma_frame_settings.ScenePaperWhite, 80.0, 500.f)) {
+            reshade::set_config_value(runtime, NAME, "Scene Paper White", cb_luma_frame_settings.ScenePaperWhite);
+        }
         ImGui::SameLine();
         if (cb_luma_frame_settings.ScenePaperWhite != default_paper_white) {
+            ImGui::PushID("Scene Paper White");
             if (ImGui::SmallButton(ICON_FK_UNDO)) {
                 cb_luma_frame_settings.ScenePaperWhite = default_paper_white;
             }
+            ImGui::PopID();
         }
         else {
             const auto& style = ImGui::GetStyle();
@@ -3629,12 +3683,16 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             size.y += style.FramePadding.y;
             ImGui::InvisibleButton("", ImVec2(size.x, size.y));
         }
-        ImGui::SliderFloat("UI Paper White", &cb_luma_frame_settings.UIPaperWhite, 80.0, 500);
+        if (ImGui::SliderFloat("UI Paper White", &cb_luma_frame_settings.UIPaperWhite, 80.0, 500.f)) {
+            reshade::set_config_value(runtime, NAME, "UI Paper White", cb_luma_frame_settings.UIPaperWhite);
+        }
         ImGui::SameLine();
         if (cb_luma_frame_settings.UIPaperWhite != default_paper_white) {
+            ImGui::PushID("UI Paper White");
             if (ImGui::SmallButton(ICON_FK_UNDO)) {
                 cb_luma_frame_settings.UIPaperWhite = default_paper_white;
             }
+            ImGui::PopID();
         }
         else {
             const auto& style = ImGui::GetStyle();
@@ -3688,7 +3746,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 #endif // DEVELOPMENT
 
         ImGui::EndTabItem();
-      }
+    }
 
     if (ImGui::BeginTabItem("Advanced Setings")) {
       if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
@@ -3696,22 +3754,41 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
           ImGui::SetTooltip("Shader Defines: reload shaders after changing these for the changes to apply.\nSome settings need the \"DEVELOPMENT\" flag turned on.\nDo not change unless you know what you are doing.");
       }
       for (int i = 0; i < (MAX_SHADER_DEFINES * 2) - 1; i += 2) {
+        bool editable = i >= fixed_defines_num;
+#if DEVELOPMENT
+        editable = true;
+#elif !TEST
+        editable = false;
+#endif // DEVELOPMENT
+#if !DEVELOPMENT && !TEST
+        // Don't render empty text fields that couldn't be filled due to them not being editable
+        if (i >= fixed_defines_num) {
+            break;
+        }
+#endif
         // ImGUI doesn't work with std::string data, it seems to need c style char arrays.
         ImGui::PushID(defines_titles[i].data());
-        ImGui::InputTextWithHint("", defines_titles[i].data(), &defines_text[i][0], IM_ARRAYSIZE(defines_text[i]), ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_AlwaysOverwrite);
+        if (editable) {
+            ImGui::InputTextWithHint("", defines_titles[i].data(), &defines_text[i][0], IM_ARRAYSIZE(defines_text[i]), ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_AlwaysOverwrite);
+            shader_defines[i] = &defines_text[i][0];
+        }
+        else {
+            ImGui::LabelText(&defines_text[i][0], nullptr); // This value shouldn't ever change, so we can assume the ptr is persistent
+            //TODOFT: ImGui::LabelText(shader_defines[i].c_str(), nullptr); // This value shouldn't ever change, so we can assume the ptr is persistent
+        }
         ImGui::PopID();
         ImGui::SameLine();
         ImGui::PushID(defines_titles[i+1].data());
+        // Values are currently always editable
         ImGui::InputTextWithHint("", defines_titles[i+1].data(), &defines_text[i+1][0], IM_ARRAYSIZE(defines_text[i+1]), ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_AlwaysOverwrite);
-        ImGui::PopID();
-        shader_defines[i] = &defines_text[i][0];
         shader_defines[i+1] = &defines_text[i+1][0];
+        ImGui::PopID();
       }
 
       ImGui::EndTabItem();
     }
 
-#if DEVELOPMENT
+#if DEVELOPMENT || TEST
     if (ImGui::BeginTabItem("Info")) {
         ImGui::Text("Render Resolution: ", "");
         std::string text = std::to_string(render_resolution.x) + " " + std::to_string(render_resolution.y);
@@ -3745,7 +3822,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 
         ImGui::EndTabItem(); // Info
     }
-#endif
+#endif // DEVELOPMENT || TEST
 
     ImGui::EndTabBar(); // TabBar
   }
@@ -3753,9 +3830,9 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 } // namespace
 
 void Init() {
-#if DEVELOPMENT
+#if DEVELOPMENT || _DEBUG
     LaunchDebugger();
-#endif
+#endif // DEVELOPMENT
 
   // Add all the shaders we have already dumped to the dumped list to avoid live re-dumping them
   dumped_shaders.clear();
@@ -3842,14 +3919,15 @@ void Init() {
     defines_titles[i] = "Define " + std::to_string(1 + i / 2) + " Name";
     defines_titles[i + 1] = "Define " + std::to_string(1 + i / 2) + " Value";
   }
+  // Declare default values
   {
     int i = 0;
     strncpy(defines_text[i++], "DEVELOPMENT", MAX_SHADER_DEFINES_TEXT_LENGTH);
 #if DEVELOPMENT
     strncpy(defines_text[i++], "1", MAX_SHADER_DEFINES_TEXT_LENGTH);
-#else
+#else // !DEVELOPMENT
     strncpy(defines_text[i++], "0", MAX_SHADER_DEFINES_TEXT_LENGTH);
-#endif
+#endif // DEVELOPMENT
     strncpy(defines_text[i++], "POST_PROCESS_SPACE_TYPE", MAX_SHADER_DEFINES_TEXT_LENGTH); // DO NOT CHANGE THE ORDER OF THIS, DLSS relies on it
     strncpy(defines_text[i++], "1", MAX_SHADER_DEFINES_TEXT_LENGTH);
     strncpy(defines_text[i++], "ENABLE_GAMMA_CORRECTION", MAX_SHADER_DEFINES_TEXT_LENGTH);
@@ -3876,10 +3954,10 @@ void Init() {
     strncpy(defines_text[i++], "0", MAX_SHADER_DEFINES_TEXT_LENGTH);
     strncpy(defines_text[i++], "ENABLE_POST_PROCESS", MAX_SHADER_DEFINES_TEXT_LENGTH);
     strncpy(defines_text[i++], "1", MAX_SHADER_DEFINES_TEXT_LENGTH);
+    fixed_defines_num = i;
 
     //TODOFT3: add more and update values
   }
-  // Declare default values
   for (int i = 0; i < (MAX_SHADER_DEFINES * 2) - 1; i += 2) {
     shader_defines[i] = &defines_text[i][0];
     shader_defines[i+1] = &defines_text[i+1][0];
@@ -3914,13 +3992,6 @@ void Uninit() {
   }
 }
 
-// NOLINTBEGIN(readability-identifier-naming)
-
-extern "C" __declspec(dllexport) const char* NAME = "Prey Luma";
-extern "C" __declspec(dllexport) const char* DESCRIPTION = "Prey (2017) Luma mod";
-
-// NOLINTEND(readability-identifier-naming)
-
 extern "C" __declspec(dllexport) bool AddonInit(HMODULE addon_module, HMODULE reshade_module) {
   Init();
   return true;
@@ -3936,7 +4007,7 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
 
 #if DEVELOPMENT
       renodx::utils::descriptor::Use(fdw_reason);
-#endif
+#endif // DEVELOPMENT
 
       reshade::register_event<reshade::addon_event::init_device>(OnInitDevice);
       reshade::register_event<reshade::addon_event::destroy_device>(OnDestroyDevice);
@@ -3945,7 +4016,7 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
 
 #if DEVELOPMENT
       reshade::register_event<reshade::addon_event::init_pipeline_layout>(OnInitPipelineLayout);
-#endif
+#endif // DEVELOPMENT
 
       reshade::register_event<reshade::addon_event::init_pipeline>(OnInitPipeline);
       reshade::register_event<reshade::addon_event::destroy_pipeline>(OnDestroyPipeline);
@@ -3957,7 +4028,7 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
       reshade::register_event<reshade::addon_event::destroy_resource>(OnDestroyResource);
       reshade::register_event<reshade::addon_event::init_resource_view>(OnInitResourceView);
       reshade::register_event<reshade::addon_event::destroy_resource_view>(OnDestroyResourceView);
-#endif
+#endif // DEVELOPMENT
 
       reshade::register_event<reshade::addon_event::push_descriptors>(OnPushDescriptors);
       reshade::register_event<reshade::addon_event::map_buffer_region>(OnMapBufferRegion);
@@ -3983,13 +4054,13 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
 
       reshade::register_event<reshade::addon_event::reshade_present>(OnReshadePresent);
 
-      reshade::register_overlay("Prey Luma", OnRegisterOverlay);
+      reshade::register_overlay(NAME, OnRegisterOverlay);
 
       break;
     case DLL_PROCESS_DETACH:
 #if DEVELOPMENT
-        renodx::utils::descriptor::Use(fdw_reason);
-#endif
+      renodx::utils::descriptor::Use(fdw_reason);
+#endif // DEVELOPMENT
 
       reshade::unregister_event<reshade::addon_event::init_device>(OnInitDevice);
       reshade::unregister_event<reshade::addon_event::destroy_device>(OnDestroyDevice);
@@ -3998,7 +4069,7 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
 
 #if DEVELOPMENT
       reshade::unregister_event<reshade::addon_event::init_pipeline_layout>(OnInitPipelineLayout);
-#endif
+#endif // DEVELOPMENT
 
       reshade::unregister_event<reshade::addon_event::init_pipeline>(OnInitPipeline);
       reshade::unregister_event<reshade::addon_event::destroy_pipeline>(OnDestroyPipeline);
@@ -4010,7 +4081,7 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
       reshade::unregister_event<reshade::addon_event::destroy_resource>(OnDestroyResource);
       reshade::unregister_event<reshade::addon_event::init_resource_view>(OnInitResourceView);
       reshade::unregister_event<reshade::addon_event::destroy_resource_view>(OnDestroyResourceView);
-#endif
+#endif // DEVELOPMENT
 
       reshade::unregister_event<reshade::addon_event::push_descriptors>(OnPushDescriptors);
       reshade::unregister_event<reshade::addon_event::map_buffer_region>(OnMapBufferRegion);
@@ -4035,7 +4106,7 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
 
       reshade::unregister_event<reshade::addon_event::reshade_present>(OnReshadePresent);
 
-      reshade::unregister_overlay("Prey Luma", OnRegisterOverlay);
+      reshade::unregister_overlay(NAME, OnRegisterOverlay);
 
       reshade::unregister_addon(h_module);
 
