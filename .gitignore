@@ -41,3 +41,6 @@
 *.zip
 *.timestamp
 deploy-*.ps1
+
+# Forced not ignored
+!./ReShade Addon/build/Prey-Luma-ReShade.vcxproj
