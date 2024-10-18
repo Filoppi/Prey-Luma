@@ -600,23 +600,32 @@ LumaFrameSettings cb_luma_frame_settings = { };
 constexpr uint32_t ui_cbuffer_index = 7;
 
 // These default should ideally match shaders values, but it's not necessary because whathever the default values they have they will be overridden
+// TODO: add grey out conditions (another define, by name, whether its value is > 0)
 std::vector<ShaderDefineData> shader_defines_data = {
-  {"DEVELOPMENT", DEVELOPMENT ? '1' : '0', true, DEVELOPMENT ? false : true},
-  {"POST_PROCESS_SPACE_TYPE", '1', true, false},
-  {"ENABLE_GAMMA_CORRECTION", '1', false, false},
-  {"ENABLE_LUT_EXTRAPOLATION", '1', false, false},
-  {"TONEMAP_TYPE", '1', false, false},
-  {"SUNSHAFTS_LOOK_TYPE", '2', false, false},
-  {"ENABLE_LENS_OPTICS_HDR", '1', false, false},
-  {"AUTO_HDR_VIDEOS", '1', false, false},
-  {"SSAO_TYPE", '0', false, false},
-  {"FORCE_NEUTRAL_COLOR_GRADING_LUT_TYPE", '0', false, false},
+  {"DEVELOPMENT", DEVELOPMENT ? '1' : '0', true, DEVELOPMENT ? false : true, "Enables some development/debug features that are otherwise not allowed"}, // development_define_index
+  {"POST_PROCESS_SPACE_TYPE", '1', true, false, "0 - Gamma space\n1 - Linear space\n2 - Linear space until UI (then gamma space)\n\nSelect \"2\" if you want the UI to look exactly like it did in Vanilla"}, // post_process_space_define_index
+  {"GAMMA_CORRECTION_TYPE", '1', false, false, "This is best left on unless you have crushed blacks\n0 - sRGB\n1 - Gamma 2.2\n2 - sRGB (color hues) with gamma 2.2 luminance"},
+  {"TONEMAP_TYPE", '1', false, false, "0 - Vanilla SDR\n1 - Luma HDR (Vanilla+)\n2 - Raw HDR (Untonemapped)"},
+  {"SUNSHAFTS_LOOK_TYPE", '2', false, false, "0 - Raw Vanilla\n1 - Vanilla+\n2 - Luma HDR"},
+  {"ENABLE_LENS_OPTICS_HDR", '1', false, false, "Makes the lens effects (e.g. lens flare) slightly HDR"},
+  {"AUTO_HDR_VIDEOS", '1', false, false, "(HDR only) Generates some HDR highlights from SDR videos, for consistency\nThis is pretty lightweight so it won't really affect the artistic intent"},
+  {"ENABLE_LUT_EXTRAPOLATION", '1', false, false, "LUT Extrapolation should be the best looking and most accurate SDR to HDR LUT adaptation mode,\nbut you can always turn it off for the its simpler fallback"},
+#if DEVELOPMENT || TEST
+  {"ENABLE_LINEAR_COLOR_GRADING_LUT", '0', false, false},
   {"DRAW_LUT", '0', false, (DEVELOPMENT || TEST) ? false : true},
+#endif
+  {"SSAO_TYPE", '0', false, false, "0 - Vanilla\n1 - GTAO"},
+  {"SSAO_QUALITY", '1', false, false, "0 - Vanilla\n1 - High\n2 - Extreme (slow)"},
+  {"BLOOM_QUALITY", '1', false, false, "0 - Vanilla\n1 - High"},
+#if DEVELOPMENT || TEST
   {"FORCE_MOTION_VECTORS_JITTERED", prey_taa_jittered ? '1' : '0', false, false},
-  {"ENABLE_CAMERA_MOTION_BLUR", '0', false, false},
-  {"ENABLE_POST_PROCESS", '1', false, false},
+#endif
+  {"ENABLE_CAMERA_MOTION_BLUR", '0', false, false, "Camera Motion Blur can look pretty botched in Prey, and can mess with DLSS/TAA, it's turned off by default in Luma"},
+  {"FORCE_NEUTRAL_COLOR_GRADING_LUT_TYPE", '0', false, false, "Allows you to disable color grading\n0 - Enabled\n1+ - Disabled"},
+  {"ENABLE_POST_PROCESS", '1', false, false, "Allows you to disable all post processing"},
+  {"ENABLE_DITHERING", '0', false, false, "Temporal dithering control. It doesn't seem to be needed in this game"},
+  {"DITHERING_BIT_DEPTH", '9', false, false, "Dithering quantization (values between 7 and 9 should be best)"},
 };
-//TODOFT3: add more and update values, and polish them for shipping. Also maybe add a tooltip?
 constexpr uint32_t development_define_index = 0;
 constexpr uint32_t post_process_space_define_index = 1;
 
