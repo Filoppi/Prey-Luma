@@ -1762,8 +1762,7 @@ void OnPresent(
           com_ptr<IDXGIDevice> native_dxgi_device;
           HRESULT hr = native_device->QueryInterface(&native_dxgi_device);
           com_ptr<IDXGIAdapter> native_adapter;
-          if (SUCCEEDED(hr))
-          {
+          if (SUCCEEDED(hr)) {
               hr = native_dxgi_device->GetAdapter(&native_adapter);
           }
           assert(SUCCEEDED(hr));
@@ -2809,8 +2808,7 @@ bool UpdateGlobalCBuffer(void* global_buffer_data_ptr)
         //UPDATE: we've fixed it in shaders, like this "velocity /= LumaData.RenderResolutionScale"
         cb_per_view_global.CV_PrevViewProjMatr = previous_projection_matrix;
         cb_per_view_global.CV_PrevViewProjNearestMatr = previous_nearest_projection_matrix;
-        if (fix_prev_matrix_mode == 2)
-        {
+        if (fix_prev_matrix_mode == 2) {
             cb_per_view_global.CV_PrevViewProjMatr.m02 *= 0.5;
             cb_per_view_global.CV_PrevViewProjMatr.m12 *= 0.5;
             cb_per_view_global.CV_PrevViewProjNearestMatr.m02 *= 0.5;
@@ -3975,8 +3973,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
                     static const auto characters_to_remove_from_end = full_template_name.length();
                     auto filename_string = custom_shader->file_path.filename().string();
                     filename_string.erase(filename_string.length() - min(characters_to_remove_from_end, filename_string.length()));
-                    if (filename_string.ends_with("_"))
-                    {
+                    if (filename_string.ends_with("_")) {
                       filename_string.erase(filename_string.length() - 1);
                     }
                     name << filename_string;
@@ -4121,11 +4118,9 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
               if (auto pipeline_pair = pipeline_cache_by_pipeline_handle.find(pipeline_handle); pipeline_pair != pipeline_cache_by_pipeline_handle.end() && pipeline_pair->second != nullptr) {
                 bool test_pipeline = pipeline_pair->second->test;
                 if (ImGui::BeginChild("Settings")) {
-                  if (!pipeline_pair->second->HasVertexShader())
-                  {
+                  if (!pipeline_pair->second->HasVertexShader()) {
                     ImGui::Checkbox("Test Shader (skips drawing, or draws black)", &test_pipeline);
-                    if (pipeline_pair->second->cloned && ImGui::Button("Unload"))
-                    {
+                    if (pipeline_pair->second->cloned && ImGui::Button("Unload")) {
                         UnloadCustomShaders({ pipeline_handle }, false, false);
                     }
                   }
@@ -4325,16 +4320,13 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         bool samplers_changed = ImGui::SliderInt("Texture Samplers Upgrade Mode", &samplers_upgrade_mode, 0, 7);
         samplers_changed |= ImGui::SliderInt("Texture Samplers Upgrade Mode - 2", &samplers_upgrade_mode_2, 0, 6);
         ImGui::Checkbox("Custom Texture Samplers Mip LOD Bias", &custom_texture_mip_lod_bias_offset);
-        if (samplers_upgrade_mode > 0 && custom_texture_mip_lod_bias_offset)
-        {
+        if (samplers_upgrade_mode > 0 && custom_texture_mip_lod_bias_offset) {
             samplers_changed |= ImGui::SliderFloat("Texture Samplers Mip LOD Bias", &texture_mip_lod_bias_offset, -8.f, +8.f);
         }
-        if (samplers_changed)
-        {
+        if (samplers_changed) {
             //TODOFT3: move this somewhere "better"? It's probably fine here though :P
             const std::lock_guard<std::recursive_mutex> lock_samplers(s_mutex_samplers);
-            for (auto& original_sampler_handle : custom_sampler_by_original_sampler)
-            {
+            for (auto& original_sampler_handle : custom_sampler_by_original_sampler) {
                 ID3D11SamplerState* native_sampler = reinterpret_cast<ID3D11SamplerState*>(original_sampler_handle.first);
                 D3D11_SAMPLER_DESC native_desc;
                 native_sampler->GetDesc(&native_desc);
@@ -4395,8 +4387,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
               ImGui::PushID("Advanced Settings: Defines Dirty");
               ImGui::BeginDisabled();
               ImGui::SmallButton(ICON_FK_REFRESH); // Note: we don't want to modify "needs_load_shaders" here, there's another button for that
-              if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-              {
+              if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
                   ImGui::SetTooltip("Recompile shaders needed to apply the changed settings");
               }
               ImGui::EndDisabled();
