@@ -4,9 +4,9 @@
 
 // Whether we store the post process buffers in linear space scRGB or gamma space (2.2 or sRGB) (like in the vanilla game, though now we use FP16 textures as opposed to UNORM8 ones).
 // Note that converting between linear and gamma space back and forth results in quality loss, especially over very high and very low values, so this is best left on.
-// 0 Gamma space (vanilla like)
-// 1 Linear space
-// 2 Linear space until UI (more specifically, until PostAAComposites, included), then gamma space (has the some of the advantage of both)
+// 0 Gamma space (vanilla like, but on linear buffers) (this has as tiny loss of quality due to storing gamma space on linear buffers) (UI looks like vanilla)
+// 1 Linear space (UI looks slightly different from vanilla (in alpha blends))
+// 2 Linear space until UI (more specifically, until PostAAComposites, included), then gamma space (has the some of the advantage of both) (UI looks like vanilla)
 #ifndef POST_PROCESS_SPACE_TYPE
 #define POST_PROCESS_SPACE_TYPE 1
 #endif
@@ -212,7 +212,11 @@ cbuffer LumaSettings : register(b2)
 {
   struct
   {
-    uint ForceSDR; //TODOFT0: Also properly add SDR support by making pw 1 and outputting sRGB (if ENABLE_GAMMA_CORRECTION is on, otherwise it's already correct)
+    //TODOFT0: Also properly add SDR support with a separate TM?
+    // 0 for SDR (80 nits) (gamma sRGB output)
+    // 1 for HDR
+    // 2 for SDR on HDR (203 nits) (gamma 2.2 output)
+    uint DisplayMode;
     float PeakWhiteNits;
     float GamePaperWhiteNits;
     float UIPaperWhiteNits;
@@ -229,20 +233,23 @@ cbuffer LumaSettings : register(b2)
   } LumaSettings : packoffset(c0);
 }
 
+bool ShouldForceWhiteLevel() { return LumaSettings.DisplayMode != 1; }
+float GetForcedWhileLevel() { return (LumaSettings.DisplayMode == 0) ? sRGB_WhiteLevelNits : ITU_WhiteLevelNits; }
+
 #ifdef HDR_TONEMAP_PAPER_WHITE_BRIGHTNESS
 static const float GamePaperWhiteNits = HDR_TONEMAP_PAPER_WHITE_BRIGHTNESS;
 static const float UIPaperWhiteNits = HDR_TONEMAP_PAPER_WHITE_BRIGHTNESS;
 #elif DEVELOPMENT
-static const float GamePaperWhiteNits = LumaSettings.ForceSDR ? ITU_WhiteLevelNits : (LumaSettings.GamePaperWhiteNits != 0 ? LumaSettings.GamePaperWhiteNits : ITU_WhiteLevelNits);
-static const float UIPaperWhiteNits = LumaSettings.ForceSDR ? ITU_WhiteLevelNits : (LumaSettings.UIPaperWhiteNits != 0 ? LumaSettings.UIPaperWhiteNits : ITU_WhiteLevelNits);
+static const float GamePaperWhiteNits = ShouldForceWhiteLevel() ? GetForcedWhileLevel() : (LumaSettings.GamePaperWhiteNits != 0 ? LumaSettings.GamePaperWhiteNits : ITU_WhiteLevelNits);
+static const float UIPaperWhiteNits = ShouldForceWhiteLevel() ? GetForcedWhileLevel() : (LumaSettings.UIPaperWhiteNits != 0 ? LumaSettings.UIPaperWhiteNits : ITU_WhiteLevelNits);
 #else // HDR_TONEMAP_PAPER_WHITE_BRIGHTNESS
-static const float GamePaperWhiteNits = LumaSettings.ForceSDR ? ITU_WhiteLevelNits : LumaSettings.GamePaperWhiteNits;
-static const float UIPaperWhiteNits = LumaSettings.ForceSDR ? ITU_WhiteLevelNits : LumaSettings.UIPaperWhiteNits;
+static const float GamePaperWhiteNits = LumaSettings.GamePaperWhiteNits;
+static const float UIPaperWhiteNits = LumaSettings.UIPaperWhiteNits;
 #endif // HDR_TONEMAP_PAPER_WHITE_BRIGHTNESS
 #ifdef HDR_TONEMAP_PEAK_BRIGHTNESS
 static const float PeakWhiteNits = HDR_TONEMAP_PEAK_BRIGHTNESS;
 #elif DEVELOPMENT
-static const float PeakWhiteNits = LumaSettings.ForceSDR ? ITU_WhiteLevelNits : (LumaSettings.PeakWhiteNits != 0 ? LumaSettings.PeakWhiteNits : 1000.0);
+static const float PeakWhiteNits = ShouldForceWhiteLevel() ? GetForcedWhileLevel() : (LumaSettings.PeakWhiteNits != 0 ? LumaSettings.PeakWhiteNits : 1000.0); // Same peak white default as in c++
 #else // HDR_TONEMAP_PEAK_BRIGHTNESS
-static const float PeakWhiteNits = LumaSettings.ForceSDR ? ITU_WhiteLevelNits : LumaSettings.PeakWhiteNits;
+static const float PeakWhiteNits = LumaSettings.PeakWhiteNits;
 #endif // HDR_TONEMAP_PEAK_BRIGHTNESS

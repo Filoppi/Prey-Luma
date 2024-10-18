@@ -138,6 +138,11 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\src\dlss\DLSS.h" />
+    <ClInclude Include="..\src\utils\descriptor.hpp" />
+    <ClInclude Include="..\src\utils\display.hpp" />
+    <ClInclude Include="..\src\utils\format.hpp" />
+    <ClInclude Include="..\src\utils\pipeline.hpp" />
+    <ClInclude Include="..\src\utils\shader_compiler.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

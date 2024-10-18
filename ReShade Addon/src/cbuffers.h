@@ -89,7 +89,7 @@ namespace
     static_assert(CBPerViewGlobal_buffer_size > sizeof(CBPerViewGlobal));
 
     struct LumaFrameSettings {
-        uint32_t ForceSDR;
+        uint32_t DisplayMode;
         float ScenePeakWhite;
         float ScenePaperWhite;
         float UIPaperWhite;

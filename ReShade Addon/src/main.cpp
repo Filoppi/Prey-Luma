@@ -49,6 +49,7 @@
 #include "utils/format.hpp"
 #include "utils/pipeline.hpp"
 #include "utils/shader_compiler.hpp"
+#include "utils/display.hpp"
 
 #define ICON_FK_CANCEL reinterpret_cast<const char*>(u8"\uf00d")
 #define ICON_FK_OK reinterpret_cast<const char*>(u8"\uf00c")
@@ -523,9 +524,10 @@ bool tonemap_ui_background = true;
 Matrix44A reprojection_matrix;
 constexpr float tonemap_ui_background_amount = 0.25;
 constexpr float srgb_white_level = 80;
-constexpr float default_paper_white = 203;
+constexpr float default_paper_white = 203; // ITU White Level
 constexpr float default_peak_white = 1000;
-bool hdr_supported = false; //TODOFT: this requires more work to work properly
+bool hdr_enabled_display = false;
+bool hdr_supported_display = false;
 float default_user_peak_white = default_peak_white;
 std::unordered_set<uint32_t> shader_hashes_TiledShadingTiledDeferredShading;
 std::unordered_set<uint32_t> shader_hashes_MotionBlur;
@@ -663,40 +665,6 @@ void ToggleLiveWatching();
 void DumpShader(uint32_t shader_hash, bool auto_detect_type);
 void AutoDumpShaders();
 void AutoLoadShaders();
-
-// Returns false if failed or if HDR is not enaged (but the white luminance can still be used).
-bool GetHDRMaxLuminance(IDXGISwapChain3* swap_chain, float& max_luminance)
-{
-    max_luminance = srgb_white_level;
-    
-    IDXGIOutput* output = nullptr;
-    if (FAILED(swap_chain->GetContainingOutput(&output))) {
-        return false;
-    }
-
-    IDXGIOutput6* output6 = nullptr;
-    if (FAILED(output->QueryInterface(&output6))) {
-        return false;
-    }
-
-    DXGI_OUTPUT_DESC1 desc1;
-    if (FAILED(output6->GetDesc1(&desc1))) {
-        return false;
-    }
-
-    // Note: this might end up being outdated if a new display is added/removed,
-    // or if HDR is toggled on them after swapchain creation (though it seems to be consistent between SDR and HDR).
-    max_luminance = desc1.MaxLuminance;
-
-    // HDR is not supported (this only works if HDR is enaged on the monitor that currently contains the swapchain)
-    if (desc1.ColorSpace != DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020
-        && desc1.ColorSpace != DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709)
-    {
-        return false;
-    }
-
-    return true;
-}
 
 inline void GetD3DName(ID3D11DeviceChild* obj, std::string& name) {
   if (obj == nullptr) {
@@ -1426,10 +1394,27 @@ void OnInitSwapchain(reshade::api::swapchain* swapchain) {
   IDXGISwapChain3* native_swapchain3;
   hr = native_swapchain->QueryInterface(&native_swapchain3);
   ASSERT_ONCE(SUCCEEDED(hr));
+  // This is basically where we verify and update the user display settings
   if (native_swapchain3 != nullptr)
   {
-      hdr_supported = GetHDRMaxLuminance(native_swapchain3, default_user_peak_white);
-      cb_luma_frame_settings.ScenePeakWhite = default_user_peak_white;
+      //TODOFT: make these thread safe (settings read/write)
+      GetHDRMaxLuminance(native_swapchain3, default_user_peak_white, srgb_white_level);
+      hdr_supported_display = IsHDRSupported(swapchain_desc.OutputWindow);
+      hdr_enabled_display = IsHDREnabled(swapchain_desc.OutputWindow);
+
+      if (!hdr_enabled_display)
+      {
+          // Force the display mode to SDR if HDR is not engaged
+          cb_luma_frame_settings.DisplayMode = 0;
+          cb_luma_frame_settings.ScenePeakWhite = srgb_white_level;
+          cb_luma_frame_settings.ScenePaperWhite = srgb_white_level;
+          cb_luma_frame_settings.UIPaperWhite = srgb_white_level;
+      }
+      else
+      {
+          cb_luma_frame_settings.ScenePeakWhite = default_user_peak_white;
+      }
+
       native_swapchain3->Release();
   }
 }
@@ -2395,7 +2380,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
 
   LumaUIData ui_data;
 
-  ui_data.background_tonemapping_amount = (tonemap_ui_background && has_drawn_main_post_processing) ? tonemap_ui_background_amount : 0.0;
+  ui_data.background_tonemapping_amount = (cb_luma_frame_settings.DisplayMode == 1 && tonemap_ui_background && has_drawn_main_post_processing) ? tonemap_ui_background_amount : 0.0;
 
   com_ptr<ID3D11RenderTargetView> render_target_view;
   native_device_context->OMGetRenderTargets(1, &render_target_view, nullptr);
@@ -4196,34 +4181,28 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         }
         ImGui::EndDisabled();
 
-        if (ImGui::Checkbox("Tonemap UI Background", &tonemap_ui_background)) {
-            reshade::set_config_value(runtime, NAME, "TonemapUIBackground", tonemap_ui_background);
+        int display_mode = cb_luma_frame_settings.DisplayMode;
+        int display_mode_max = 1;
+#if DEVELOPMENT || TEST
+        display_mode_max++; // Add "SDR in HDR for HDR" mode
+#endif
+        const char* preset_strings[3] = {
+            "SDR", // SDR (80 nits) on scRGB HDR for SDR (gamma sRGB, because Windows interprets scRGB as sRGB)
+            "HDR",
+            "SDR on HDR", // (Fake) SDR (203 nits) on scRGB HDR for HDR (gamma 2.2) - Dev only, for quick comparisons
+        };
+        if (ImGui::SliderInt("Display Mode", &display_mode, 0, display_mode_max, preset_strings[display_mode], ImGuiSliderFlags_NoInput)) {
+            reshade::set_config_value(runtime, NAME, "DisplayMode", display_mode);
+            cb_luma_frame_settings.DisplayMode = display_mode;
+        }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("Recompile shaders needed to apply the changed settings");
         }
         ImGui::SameLine();
-        if (tonemap_ui_background != true) {
-            ImGui::PushID("Tonemap UI Background");
-            if (ImGui::SmallButton(ICON_FK_UNDO)) {
-                tonemap_ui_background = true;
-            }
-            ImGui::PopID();
-        }
-        else {
-            const auto& style = ImGui::GetStyle();
-            ImVec2 size = ImGui::CalcTextSize(ICON_FK_UNDO);
-            size.x += style.FramePadding.x;
-            size.y += style.FramePadding.y;
-            ImGui::InvisibleButton("", ImVec2(size.x, size.y));
-        }
-
-        int value = cb_luma_frame_settings.ForceSDR;
-        if (ImGui::SliderInt("Force SDR", &value, 0, 1)) {
-            reshade::set_config_value(runtime, NAME, "ForceSDR", value);
-        }
-        ImGui::SameLine();
-        if (value != false) {
+        if (display_mode != false) {
             ImGui::PushID("Force SDR");
             if (ImGui::SmallButton(ICON_FK_UNDO)) {
-                value = false;
+                display_mode = false;
             }
             ImGui::PopID();
         }
@@ -4234,66 +4213,91 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             size.y += style.FramePadding.y;
             ImGui::InvisibleButton("", ImVec2(size.x, size.y));
         }
-        cb_luma_frame_settings.ForceSDR = value;
 
-        if (ImGui::SliderFloat("Scene Peak White", &cb_luma_frame_settings.ScenePeakWhite, 400.0, 10000)) {
-            if (cb_luma_frame_settings.ScenePeakWhite == default_user_peak_white) {
-                reshade::set_config_value(runtime, NAME, "ScenePeakWhite", 0.f);
+        if (display_mode == 1) {
+            if (ImGui::SliderFloat("Scene Peak White", &cb_luma_frame_settings.ScenePeakWhite, 400.0, 10000.f)) {
+                if (cb_luma_frame_settings.ScenePeakWhite == default_user_peak_white) {
+                    reshade::set_config_value(runtime, NAME, "ScenePeakWhite", 0.f);
+                }
+                else {
+                    reshade::set_config_value(runtime, NAME, "ScenePeakWhite", cb_luma_frame_settings.ScenePeakWhite);
+                }
+            }
+            ImGui::SameLine();
+            if (cb_luma_frame_settings.ScenePeakWhite != default_user_peak_white) {
+                ImGui::PushID("Scene Peak White");
+                if (ImGui::SmallButton(ICON_FK_UNDO)) {
+                    cb_luma_frame_settings.ScenePeakWhite = default_user_peak_white;
+                }
+                ImGui::PopID();
             }
             else {
-                reshade::set_config_value(runtime, NAME, "ScenePeakWhite", cb_luma_frame_settings.ScenePeakWhite);
+                const auto& style = ImGui::GetStyle();
+                ImVec2 size = ImGui::CalcTextSize(ICON_FK_UNDO);
+                size.x += style.FramePadding.x;
+                size.y += style.FramePadding.y;
+                ImGui::InvisibleButton("", ImVec2(size.x, size.y));
             }
-        }
-        ImGui::SameLine();
-        if (cb_luma_frame_settings.ScenePeakWhite != default_user_peak_white) {
-            ImGui::PushID("Scene Peak White");
-            if (ImGui::SmallButton(ICON_FK_UNDO)) {
-                cb_luma_frame_settings.ScenePeakWhite = default_user_peak_white;
+            if (ImGui::SliderFloat("Scene Paper White", &cb_luma_frame_settings.ScenePaperWhite, srgb_white_level, 500.f)) {
+                reshade::set_config_value(runtime, NAME, "ScenePaperWhite", cb_luma_frame_settings.ScenePaperWhite);
             }
-            ImGui::PopID();
+            ImGui::SameLine();
+            if (cb_luma_frame_settings.ScenePaperWhite != default_paper_white) {
+                ImGui::PushID("Scene Paper White");
+                if (ImGui::SmallButton(ICON_FK_UNDO)) {
+                    cb_luma_frame_settings.ScenePaperWhite = default_paper_white;
+                }
+                ImGui::PopID();
+            }
+            else {
+                const auto& style = ImGui::GetStyle();
+                ImVec2 size = ImGui::CalcTextSize(ICON_FK_UNDO);
+                size.x += style.FramePadding.x;
+                size.y += style.FramePadding.y;
+                ImGui::InvisibleButton("", ImVec2(size.x, size.y));
+            }
+            if (ImGui::SliderFloat("UI Paper White", &cb_luma_frame_settings.UIPaperWhite, srgb_white_level, 500.f)) {
+                reshade::set_config_value(runtime, NAME, "UIPaperWhite", cb_luma_frame_settings.UIPaperWhite);
+            }
+            ImGui::SameLine();
+            if (cb_luma_frame_settings.UIPaperWhite != default_paper_white) {
+                ImGui::PushID("UI Paper White");
+                if (ImGui::SmallButton(ICON_FK_UNDO)) {
+                    cb_luma_frame_settings.UIPaperWhite = default_paper_white;
+                }
+                ImGui::PopID();
+            }
+            else {
+                const auto& style = ImGui::GetStyle();
+                ImVec2 size = ImGui::CalcTextSize(ICON_FK_UNDO);
+                size.x += style.FramePadding.x;
+                size.y += style.FramePadding.y;
+                ImGui::InvisibleButton("", ImVec2(size.x, size.y));
+            }
+
+            if (ImGui::Checkbox("Tonemap UI Background", &tonemap_ui_background)) {
+                reshade::set_config_value(runtime, NAME, "TonemapUIBackground", tonemap_ui_background);
+            }
+            ImGui::SameLine();
+            if (tonemap_ui_background != true) {
+                ImGui::PushID("Tonemap UI Background");
+                if (ImGui::SmallButton(ICON_FK_UNDO)) {
+                    tonemap_ui_background = true;
+                }
+                ImGui::PopID();
+            }
+            else {
+                const auto& style = ImGui::GetStyle();
+                ImVec2 size = ImGui::CalcTextSize(ICON_FK_UNDO);
+                size.x += style.FramePadding.x;
+                size.y += style.FramePadding.y;
+                ImGui::InvisibleButton("", ImVec2(size.x, size.y));
+            }
         }
         else {
-            const auto& style = ImGui::GetStyle();
-            ImVec2 size = ImGui::CalcTextSize(ICON_FK_UNDO);
-            size.x += style.FramePadding.x;
-            size.y += style.FramePadding.y;
-            ImGui::InvisibleButton("", ImVec2(size.x, size.y));
-        }
-        if (ImGui::SliderFloat("Scene Paper White", &cb_luma_frame_settings.ScenePaperWhite, srgb_white_level, 500.f)) {
-            reshade::set_config_value(runtime, NAME, "ScenePaperWhite", cb_luma_frame_settings.ScenePaperWhite);
-        }
-        ImGui::SameLine();
-        if (cb_luma_frame_settings.ScenePaperWhite != default_paper_white) {
-            ImGui::PushID("Scene Paper White");
-            if (ImGui::SmallButton(ICON_FK_UNDO)) {
-                cb_luma_frame_settings.ScenePaperWhite = default_paper_white;
-            }
-            ImGui::PopID();
-        }
-        else {
-            const auto& style = ImGui::GetStyle();
-            ImVec2 size = ImGui::CalcTextSize(ICON_FK_UNDO);
-            size.x += style.FramePadding.x;
-            size.y += style.FramePadding.y;
-            ImGui::InvisibleButton("", ImVec2(size.x, size.y));
-        }
-        if (ImGui::SliderFloat("UI Paper White", &cb_luma_frame_settings.UIPaperWhite, srgb_white_level, 500.f)) {
-            reshade::set_config_value(runtime, NAME, "UIPaperWhite", cb_luma_frame_settings.UIPaperWhite);
-        }
-        ImGui::SameLine();
-        if (cb_luma_frame_settings.UIPaperWhite != default_paper_white) {
-            ImGui::PushID("UI Paper White");
-            if (ImGui::SmallButton(ICON_FK_UNDO)) {
-                cb_luma_frame_settings.UIPaperWhite = default_paper_white;
-            }
-            ImGui::PopID();
-        }
-        else {
-            const auto& style = ImGui::GetStyle();
-            ImVec2 size = ImGui::CalcTextSize(ICON_FK_UNDO);
-            size.x += style.FramePadding.x;
-            size.y += style.FramePadding.y;
-            ImGui::InvisibleButton("", ImVec2(size.x, size.y));
+            cb_luma_frame_settings.ScenePeakWhite = display_mode == 0 ? srgb_white_level : default_paper_white;
+            cb_luma_frame_settings.ScenePaperWhite = display_mode == 0 ? srgb_white_level : default_paper_white;
+            cb_luma_frame_settings.UIPaperWhite = display_mode == 0 ? srgb_white_level : default_paper_white;
         }
 
 #if DEVELOPMENT
@@ -4584,7 +4588,11 @@ void Init() {
 
       reshade::get_config_value(runtime, NAME, "DLSSSuperResolution", dlss_sr);
       reshade::get_config_value(runtime, NAME, "TonemapUIBackground", tonemap_ui_background);
-      reshade::get_config_value(runtime, NAME, "ForceSDR", cb_luma_frame_settings.ForceSDR);
+      reshade::get_config_value(runtime, NAME, "DisplayMode", cb_luma_frame_settings.DisplayMode);
+#if DEVELOPMENT || TEST
+      display_mode_max++; // Add "SDR in HDR for HDR" mode
+#endif
+
       if (reshade::get_config_value(runtime, NAME, "ScenePeakWhite", cb_luma_frame_settings.ScenePeakWhite) && cb_luma_frame_settings.ScenePeakWhite <= 0.f) {
           cb_luma_frame_settings.ScenePeakWhite = default_user_peak_white;
       }
