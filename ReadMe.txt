@@ -5,7 +5,7 @@ The ReShade addon has the purpose of adding behaviour by hooking to their Direct
 ReShade per se isn't necessarily needed by Luma, we could hook to the DirectX functions ourselves, but it makes things easier and natively adds ImGUI and serialization features (plus it's widely compatible).
 
 Instructions:
-Run "setup.bat" to fully setup the Visual Studio projects and solution with cmake (part of the projects are pre-generated without cmake, because I couldn't bother to port everything to it).
+Run "setup.ps1" to fully setup the Visual Studio projects and solution with cmake (part of the projects are pre-generated without cmake, because I couldn't bother to port everything to it). This will also add the game installation environment variables.
 Open "Prey-Luma.sln" and build ...
 The code hot spots are in the main.cpp files etc etc etc...
 
