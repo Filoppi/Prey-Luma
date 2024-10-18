@@ -1,5 +1,6 @@
 /////////////////////////////////////////
 // Prey LUMA advanced settings
+// (note that the defaults might be mirrored in cpp, shader values will be overridden anyway)
 /////////////////////////////////////////
 
 // Whether we store the post process buffers in linear space scRGB or gamma space (2.2 or sRGB) (like in the vanilla game, though now we use FP16 textures as opposed to UNORM8 ones).
@@ -74,7 +75,7 @@
 #endif
 #define DELAY_DITHERING 1
 // If true, the motion vectors generated for dynamic objects are generated with both the current and previous jitters acknowledged in the calculations (and baked in their velocity, so they wouldn't be zero even if nothing was moving).
-// If false, motion vectors are generated (and then interpreted in Motion Blur and TAA) like in the vanilla code, so they kinda include the jitter of the current frame, but not the one from the previous frake, which isn't really great.
+// If false, motion vectors are generated (and then interpreted in Motion Blur and TAA) like in the vanilla code, so they kinda include the jitter of the current frame, but not the one from the previous frame, which isn't really great.
 #ifndef FORCE_MOTION_VECTORS_JITTERED
 #define FORCE_MOTION_VECTORS_JITTERED 0
 #endif
@@ -83,7 +84,9 @@
 #define ENABLE_CAMERA_MOTION_BLUR 0
 #endif
 // Do it higher than 8 bit for HDR
+#ifndef DITHERING_BIT_DEPTH
 #define DITHERING_BIT_DEPTH 9u
+#endif
 // 0 SSDO (Vanilla, CryEngine)
 // 1 GTAO (Luma)
 #ifndef SSAO_TYPE
@@ -92,14 +95,20 @@
 // 0 Vanilla
 // 1 High (best balance for 2024 GPUs)
 // 2 Extreme (bad performance)
+#ifndef SSAO_QUALITY
 #define SSAO_QUALITY 1
+#endif
 // Requires TAA enabled to not look terrible, but it still looks bad anyway
 #define ENABLE_SSAO_TEMPORAL 0
 // 0 Vanilla
 // 1 High
+#ifndef BLOOM_QUALITY
 #define BLOOM_QUALITY 1
+#endif
 // Disabled as we are now in HDR (10 or 16 bits)
+#ifndef ENABLE_DITHERING
 #define ENABLE_DITHERING 0
+#endif
 // Disables development features if off
 #ifndef DEVELOPMENT
 #define DEVELOPMENT 0
