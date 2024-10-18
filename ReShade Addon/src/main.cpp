@@ -309,12 +309,13 @@ static uint32_t defines_count = 0;
 static bool defines_need_recompilation = false;
 
 struct ShaderDefineData {
-    ShaderDefineData(const char* name = "", char value = '\0', bool _fixed_name = false, bool _fixed_value = false) :
+    ShaderDefineData(const char* name = "", char value = '\0', bool _fixed_name = false, bool _fixed_value = false, const char* _tooltip = "") :
         name_hint("Define " + std::to_string(defines_count) + " Name"),
         value_hint("Define " + std::to_string(defines_count) + " Value"),
         fixed_name(_fixed_name),
         fixed_value(_fixed_value),
-        default_data(name, value) {
+        default_data(name, value),
+        tooltip(_tooltip) {
         defines_count++;
         editable_data = default_data;
     }
@@ -324,8 +325,10 @@ struct ShaderDefineData {
     const std::string value_hint;
 
     // Set to true if you want the name of this define to be fixed
-    const bool fixed_name = false;
-    const bool fixed_value = false;
+    const bool fixed_name;
+    const bool fixed_value;
+
+    const char* tooltip;
 
     // The current (possibly editable) name and value
     ShaderDefine editable_data;
@@ -374,6 +377,8 @@ struct ShaderDefineData {
         strncpy(compiled_data.GetName(), editable_data.GetName(), SHADER_DEFINES_MAX_NAME_LENGTH);
         compiled_data.value[0] = editable_data.value[0];
     }
+
+    const char* GetTooltip() const { return tooltip; }
 
     static void Reset(std::vector<ShaderDefineData>& shader_defines_data) {
         for (uint32_t i = 0; i < shader_defines_data.size(); i++) {
@@ -4395,6 +4400,8 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         }
 #endif
 
+        bool show_tooltip = false;
+
         ImGui::PushID(shader_defines_data[i].name_hint.data());
         ImGuiInputTextFlags flags = ImGuiInputTextFlags_CharsNoBlank;
         if (!shader_defines_data[i].IsNameEditable()) {
@@ -4402,6 +4409,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         }
         // ImGUI doesn't work with std::string data, it seems to need c style char arrays.
         ImGui::InputTextWithHint("", shader_defines_data[i].name_hint.data(), shader_defines_data[i].editable_data.GetName(), std::size(shader_defines_data[i].editable_data.name) /*SHADER_DEFINES_MAX_NAME_LENGTH*/, flags); //TODOFT5: spacing
+        show_tooltip |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
         ImGui::PopID();
 
         ImGui::SameLine();
@@ -4411,11 +4419,16 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             flags |= ImGuiInputTextFlags_ReadOnly;
         }
         ImGui::InputTextWithHint("", shader_defines_data[i].value_hint.data(), shader_defines_data[i].editable_data.GetValue(), std::size(shader_defines_data[i].editable_data.value) /*SHADER_DEFINES_MAX_VALUE_LENGTH*/, flags);
+        show_tooltip |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
         // Avoid having empty values unless the default value also was empty
         if (shader_defines_data[i].editable_data.GetValue() == "") {
             shader_defines_data[i].editable_data.value[0] = shader_defines_data[i].default_data.value[0];
         }
         ImGui::PopID();
+
+        if (show_tooltip && shader_defines_data[i].GetTooltip() != "") {
+            ImGui::SetTooltip(shader_defines_data[i].GetTooltip());
+        }
       }
 
       ImGui::EndTabItem();
