@@ -92,7 +92,6 @@ if (!asserted_once && !(x)) { assert(x); asserted_once = true; } }
 #define ASSERT_ONCE(x)
 #endif
 
-//TODOFT5: fix cpp file formatting in general (and make sure it's all thread safe, but it should be)
 namespace {
 #if DEVELOPMENT || _DEBUG
     bool LaunchDebugger()
@@ -965,6 +964,8 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
       }
     }
 
+    CComPtr<ID3DBlob> uncompiled_code_blob;
+
     if (is_hlsl) {
         const auto previous_path = std::filesystem::current_path();
         // Set the current path to the shaders directory, it's needed by the DX compilers (specifically by the preprocess functions)
@@ -973,12 +974,11 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
 
         std::string compilation_error;
 
-        //TODOFT5: keep the preprocessed blob produced from this and feed it to the compiler, otherwise it will do the preprocess step twice
         // Skip compiling the shader if it didn't change
         // Note that this won't replace "custom_shader->compilation_error" unless there was any new error/warning, and that's kind of what we want
         // Note that this will not try to build the shader again if the last compilation failed and its files haven't changed
         bool error = false;
-        const bool needs_compilation = renodx::utils::shader::compiler::PreprocessShaderFromFile(entry_path.c_str(), entry_path.filename().c_str(), shader_target.c_str(), custom_shader->preprocessed_hash, shader_defines, error, &compilation_error);
+        const bool needs_compilation = renodx::utils::shader::compiler::PreprocessShaderFromFile(entry_path.c_str(), entry_path.filename().c_str(), shader_target.c_str(), custom_shader->preprocessed_hash, uncompiled_code_blob, shader_defines, error, &compilation_error);
 
         // Only overwrite the previous compilation error if we have any preprocessor errors
         if (!compilation_error.empty() || error) {
@@ -1039,6 +1039,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
       bool error = false;
       renodx::utils::shader::compiler::CompileShaderFromFile(
           custom_shader->code,
+          uncompiled_code_blob,
           entry_path.c_str(),
           shader_target.c_str(),
           shader_defines,
@@ -1945,6 +1946,7 @@ void SetPreyLumaConstantBuffers(reshade::api::command_list* cmd_list, reshade::a
 //TODOFT5: _DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR
 //TODOFT5: test gamma sRGB mode?
 //TODOFT5: (duplicate?) verify that the addon is being run with Prey and that the detected version is Steam. E.g. return false in "AddonInit()"?
+//TODOFT5: fix cpp file formatting in general (and make sure it's all thread safe, but it should be)
 
 //TODOFT5: comment
 bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = false) {
@@ -4000,7 +4002,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 #if !DEVELOPMENT && !TEST
   ImGui::BeginDisabled(!needs_compilation);
 #endif
-  // TODO: add a button to clear all the .cso shader binaries?
+  // TODO: add a button to clear all the .cso shader binaries? or simply to skip pre-loading compiled cso(s)
   //TODOFT: lock "shaders_compilation_errors"
   static const std::string reload_shaders_button_title_error = std::string("Reload Shaders ") + std::string(ICON_FK_WARNING);
   static const std::string reload_shaders_button_title_outdated = std::string("Reload Shaders ") + std::string(ICON_FK_REFRESH);
