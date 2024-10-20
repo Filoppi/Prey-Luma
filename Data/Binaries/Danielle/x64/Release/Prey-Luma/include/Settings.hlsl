@@ -151,11 +151,20 @@
 #define ENABLE_ARK_CUSTOM_POST_PROCESS (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
 #define ENABLE_LENS_OPTICS (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
 // Disable this for a softer image
+#if !defined(ENABLE_SHARPENING) || !DEVELOPMENT || !ENABLE_POST_PROCESS
+#undef ENABLE_SHARPENING
 #define ENABLE_SHARPENING (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
+#endif
 #define ENABLE_CHROMATIC_ABERRATION (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
+#if !defined(ENABLE_VIGNETTE) || !DEVELOPMENT || !ENABLE_POST_PROCESS
+#undef ENABLE_VIGNETTE
 #define ENABLE_VIGNETTE (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
+#endif
 // This is used for gameplay effects too, so it's best not disabled
+#if !defined(ENABLE_FILM_GRAIN) || !DEVELOPMENT || !ENABLE_POST_PROCESS
+#undef ENABLE_FILM_GRAIN
 #define ENABLE_FILM_GRAIN (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
+#endif
 // This might also disable decals interfaces (like computer screens) in the 3D scene
 #define ENABLE_UI (!DEVELOPMENT || 1)
 
@@ -223,7 +232,7 @@ cbuffer LumaSettings : register(b2)
 {
   struct
   {
-    //TODOFT0: Also properly add SDR support with a separate TM?
+    //TODOFT0: Also properly add SDR support with a separate TM? And disable many HDR exclusive effects with it
     // 0 for SDR (80 nits) (gamma sRGB output)
     // 1 for HDR
     // 2 for SDR on HDR (203 nits) (gamma 2.2 output)
@@ -232,7 +241,7 @@ cbuffer LumaSettings : register(b2)
     float GamePaperWhiteNits;
     float UIPaperWhiteNits;
     uint DLSS; // Is DLSS enabled (implies it engaged and it's compatible) (this is on even in fullscreen UI menus that don't use upscaling)
-#if DEVELOPMENT || 1 //TODOFT: disable these once done with dev
+#if DEVELOPMENT
     float DevSetting01;
     float DevSetting02;
     float DevSetting03;

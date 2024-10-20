@@ -57,6 +57,7 @@ float4 SSDOFetchDepths(Texture2D<float4> _texture, float4 tc[samplesGroupNum/2],
 	              _texture.SampleLevel(ssSSDODepth, tc[1].zw, 0)[component] );
 }
 
+#if DEVELOPMENT
 float4 GTAO(float4 WPos, float4 inBaseTC)
 {
 	//TODOFT1: best define all params and temporal/denoising, force asd.
@@ -192,11 +193,12 @@ float4 GTAO(float4 WPos, float4 inBaseTC)
 #endif // !ENABLE_SSAO
 	return outColor;
 }
+#endif
 
 // This draws bent normals ("rgb") and the "ambient occlusion" on "a"
 float4 DirOccPassPS(float4 WPos, float4 inBaseTC)
 {
-#if SSAO_TYPE >= 1 // LUMA FT: Added GTAO
+#if SSAO_TYPE >= 1 && DEVELOPMENT // LUMA FT: Added GTAO
 	return GTAO(WPos, inBaseTC);
 #else // SSAO_TYPE < 0
 

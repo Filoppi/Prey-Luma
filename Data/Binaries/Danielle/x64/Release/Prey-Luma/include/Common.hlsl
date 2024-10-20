@@ -97,7 +97,7 @@ cbuffer LumaData : register(b8)
 // This is hue conserving and only really affects highlights.
 // "SDRColor" is meant to be in "SDR range", as in, a value of 1 matching SDR white (something between 80, 100, 203, 300 nits, or whatever else)
 // https://github.com/Filoppi/PumboAutoHDR
-float3 PumboAutoHDR(float3 SDRColor, float _PeakWhiteNits, float _PaperWhiteNits, float ShoulderPow = 2.75)
+float3 PumboAutoHDR(float3 SDRColor, float _PeakWhiteNits, float _PaperWhiteNits, float ShoulderPow = 2.75f)
 {
 	const float SDRRatio = max(GetLuminance(SDRColor), 0.f);
 	// Limit AutoHDR brightness, it won't look good beyond a certain level.
@@ -249,11 +249,11 @@ void ApplyDithering(inout float3 color, float2 uv, bool gammaSpace = true, float
 }
 
 // Fix up sharpening/blurring when done on HDR images in post processing. In SDR, the source color could only be between 0 and 1,
-// so the halos (rings) that could result from rapidly changing colors were limited, but in HDR lights can go much brighter so the halos got noticeable with default settings.
+// so the halos (rings) that can appear around rapidly changing colors were limited, but in HDR lights can go much brighter so the halos got noticeable with default settings.
 // This should work with any "POST_PROCESS_SPACE_TYPE" setting.
 float3 FixUpSharpeningOrBlurring(float3 postSharpeningColor, float3 preSharpeningColor)
 {
-#if ENABLE_SHARPENING
+#if ENABLE_SHARPENING //TODOFT: skip this in SDR mode?
     // Either set it to 0.5, 0.75 or 1 to make results closer to SDR (this makes more sense when done in gamma space, but also works in linear space).
     // Lower values slightly diminish the effect of sharpening, but further avoid halos issues.
     static const float sharpeningMaxColorDifference = 0.5;

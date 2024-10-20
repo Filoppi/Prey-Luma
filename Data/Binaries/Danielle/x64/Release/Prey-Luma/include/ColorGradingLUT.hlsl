@@ -814,6 +814,7 @@ float3 SampleLUTWithExtrapolation(LUT_TEXTURE_TYPE lut, SamplerState samplerStat
         derivedLUTCenteredColor = oklab_to_oklch(derivedLUTCenteredColor);
         extrapolatedDerivedLUTColor = oklab_to_oklch(extrapolatedDerivedLUTColor);
 
+#if DEVELOPMENT
         // Avoid flipping ab direction, if we reached white, stay on white.
         // We only do it on colors that have some chroma and brightness.
         if (LumaSettings.DevSetting05 >= 0.5)
@@ -827,6 +828,7 @@ float3 SampleLUTWithExtrapolation(LUT_TEXTURE_TYPE lut, SamplerState samplerStat
             extrapolatedDerivedLUTColor.y = 0.f;
           }
         }
+#endif
 
         unclampedUVOklch = oklab_to_oklch(unclampedUVOklch);
         clampedUVOklch = oklab_to_oklch(clampedUVOklch);
@@ -1075,6 +1077,7 @@ float3 SampleLUTWithExtrapolation(LUT_TEXTURE_TYPE lut, SamplerState samplerStat
 #endif
 
         extrapolationRatio = abs(extrapolationRatio); // This one is worse (more broken gradients), I can't explain why (what about with the last changes!???)
+#if DEVELOPMENT
         if (LumaSettings.DevSetting05 > 0.5) // Seems to look better even if it makes little sense
         {
           //float3 unclampedUV_PQ = Linear_to_PQ2(neutralLUTColorLinear / PQNormalizationFactor, 3);
@@ -1083,6 +1086,7 @@ float3 SampleLUTWithExtrapolation(LUT_TEXTURE_TYPE lut, SamplerState samplerStat
           extrapolationRatio = centeringVectorAbs;
           //return (extrapolationRatio - centeringVectorAbs) * 100;
         }
+#endif
 
         extrapolationRatio /= extrapolationRatio.x + extrapolationRatio.y + extrapolationRatio.z;
         //extrapolationRatio = normalize(extrapolationRatio);
@@ -1286,7 +1290,7 @@ float3 DrawLUTTexture(LUT_TEXTURE_TYPE lut, SamplerState samplerState, float2 Pi
     LUTExtrapolationSettings extrapolationSettings = DefaultLUTExtrapolationSettings();
     extrapolationSettings.enableExtrapolation = bool(ENABLE_LUT_EXTRAPOLATION);
     extrapolationSettings.extrapolationQuality = LUT_EXTRAPOLATION_QUALITY;
-#if 1 // These match the settings defined in "HDRFinalScenePS" (in case you wanted to preview them)
+#if DEVELOPMENT && 1 // These match the settings defined in "HDRFinalScenePS" (in case you wanted to preview them)
     //extrapolationSettings.inputTonemapToPeakWhiteNits = 1000.0;
     extrapolationSettings.inputTonemapToPeakWhiteNits = 10000 * LumaSettings.DevSetting01;
     //extrapolationSettings.clampedLUTRestorationAmount = 1.0 / 4.0;

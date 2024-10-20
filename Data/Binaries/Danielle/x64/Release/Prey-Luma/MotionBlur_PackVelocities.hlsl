@@ -71,7 +71,7 @@ pixout PackVelocitiesPS(vtxOut IN)
 #if 1 
 		jitters -= LumaData.CameraJitters.xy * float2(0.5, -0.5);
 		jitters += LumaData.PreviousCameraJitters.xy * float2(0.5, -0.5);
-#else
+#elif DEVELOPMENT
 		jitters -= LumaData.CameraJitters.xy * float2(remap(LumaSettings.DevSetting01, 0.0, 1.0, -2.0, 2.0), remap(LumaSettings.DevSetting02, 0.0, 1.0, -2.0, 2.0)) * LumaSettings.DevSetting03;
 		jitters += LumaData.PreviousCameraJitters.xy * float2(remap(LumaSettings.DevSetting01, 0.0, 1.0, -2.0, 2.0), remap(LumaSettings.DevSetting02, 0.0, 1.0, -2.0, 2.0)) * LumaSettings.DevSetting04;
 #endif
