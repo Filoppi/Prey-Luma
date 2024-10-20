@@ -669,6 +669,10 @@ com_ptr<ID3D11Texture2D> copy_texture;
 com_ptr<ID3D11VertexShader> copy_vertex_shader;
 com_ptr<ID3D11PixelShader> copy_pixel_shader;
 
+std::recursive_mutex s_mutex_swapchain;
+// There's only one swapchain in Prey, but the game chances its configuration from different threads
+IDXGISwapChain3* native_swapchain3 = nullptr;
+
 HWND game_window = 0;
 
 static_assert(sizeof(Matrix44A) == sizeof(float4) * 4);
@@ -1430,6 +1434,7 @@ void OnDestroyDevice(reshade::api::device* device) {
   copy_texture = nullptr;
   copy_vertex_shader = nullptr;
   copy_pixel_shader = nullptr;
+  assert(!native_swapchain3);
 
   device->destroy_private_data<DeviceData>();
 }
@@ -1465,16 +1470,23 @@ void OnInitSwapchain(reshade::api::swapchain* swapchain) {
       render_resolution.x = output_resolution.x;
       render_resolution.y = output_resolution.y;
   }
-  
-  IDXGISwapChain3* native_swapchain3;
-  hr = native_swapchain->QueryInterface(&native_swapchain3);
-  ASSERT_ONCE(SUCCEEDED(hr));
+
+  IDXGISwapChain3* local_native_swapchain3;
+  {
+      const std::lock_guard<std::recursive_mutex> lock(s_mutex_swapchain);
+      ASSERT_ONCE(native_swapchain3 == nullptr);
+      native_swapchain3 = nullptr;
+      // The cast pointer is actually the same, we are just making sure the type is right.
+      hr = native_swapchain->QueryInterface(&native_swapchain3);
+      ASSERT_ONCE(SUCCEEDED(hr));
+      local_native_swapchain3 = native_swapchain3;
+  }
   // This is basically where we verify and update the user display settings
-  if (native_swapchain3 != nullptr)
+  if (local_native_swapchain3 != nullptr)
   {
       //TODOFT: make these thread safe (settings read/write)
-      GetHDRMaxLuminance(native_swapchain3, default_user_peak_white, srgb_white_level);
-      IsHDRSupportedAndEnabled(swapchain_desc.OutputWindow, hdr_supported_display, hdr_enabled_display);
+      GetHDRMaxLuminance(local_native_swapchain3, default_user_peak_white, srgb_white_level);
+      IsHDRSupportedAndEnabled(swapchain_desc.OutputWindow, hdr_supported_display, hdr_enabled_display, local_native_swapchain3);
       game_window = swapchain_desc.OutputWindow;
 
       if (!hdr_enabled_display)
@@ -1490,11 +1502,24 @@ void OnInitSwapchain(reshade::api::swapchain* swapchain) {
           cb_luma_frame_settings.ScenePeakWhite = default_user_peak_white;
       }
 
-      native_swapchain3->Release();
+      // We release the resource because the swapchain lifespan is, and should be, controlled by the game.
+      // We already have "OnDestroySwapchain()" to handle its destruction.
+      local_native_swapchain3->Release();
   }
 }
 
 void OnDestroySwapchain(reshade::api::swapchain* swapchain) {
+  {
+      const std::lock_guard<std::recursive_mutex> lock(s_mutex_swapchain);
+      assert(native_swapchain3 != nullptr);
+      if ((IDXGISwapChain*)(swapchain->get_native()) == native_swapchain3) {
+          native_swapchain3 = nullptr;
+      }
+      else {
+          assert(false); // There's seemengly more than one Swapchain?
+      }
+  }
+
   auto* device = swapchain->get_device();
   if (device != nullptr) {
     auto& device_data = device->get_private_data<DeviceData>();
@@ -3903,6 +3928,7 @@ void AutoLoadShaders() {
 }
 
 // @see https://pthom.github.io/imgui_manual_online/manual/imgui_manual.html
+// This runs within the swapchain "Present()" function, and thus it's thread safe
 void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 #if DEVELOPMENT
   const bool refresh_cloned_pipelines = cloned_pipelines_changed.exchange(false);
@@ -4272,14 +4298,14 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         }
         ImGui::EndDisabled();
 
-        auto ChangeDisplayMode = [&](int display_mode, bool enable_hdr_on_display = true) {
+        auto ChangeDisplayMode = [&](int display_mode, bool enable_hdr_on_display = true, IDXGISwapChain3* swapchain = nullptr) {
             reshade::set_config_value(runtime, NAME, "DisplayMode", display_mode);
             cb_luma_frame_settings.DisplayMode = display_mode;
             if (display_mode >= 1) {
                 if (enable_hdr_on_display) {
                     SetHDREnabled(game_window);
                     bool dummy_bool;
-                    IsHDRSupportedAndEnabled(game_window, dummy_bool, hdr_enabled_display); // This should always succeed, so we don't fallback to SDR in case it didn't
+                    IsHDRSupportedAndEnabled(game_window, dummy_bool, hdr_enabled_display, swapchain); // This should always succeed, so we don't fallback to SDR in case it didn't
                 }
                 if (reshade::get_config_value(runtime, NAME, "ScenePeakWhite", cb_luma_frame_settings.ScenePeakWhite) && cb_luma_frame_settings.ScenePeakWhite <= 0.f) {
                     cb_luma_frame_settings.ScenePeakWhite = default_user_peak_white;
@@ -4294,8 +4320,12 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             }
             };
 
-        // Note: this is fast enough that we can check it every frame
-        IsHDRSupportedAndEnabled(game_window, hdr_supported_display, hdr_enabled_display);
+        {
+            const std::lock_guard<std::recursive_mutex> lock(s_mutex_swapchain);
+            // Note: this is fast enough that we can check it every frame.
+            // There's probably no need for thread safety checks on "native_swapchain3", but we have a mutex anyway.
+            IsHDRSupportedAndEnabled(game_window, hdr_supported_display, hdr_enabled_display, native_swapchain3);
+        }
 
         int display_mode = cb_luma_frame_settings.DisplayMode;
         int display_mode_max = 1;
@@ -4311,8 +4341,10 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         };
         ImGui::BeginDisabled(!hdr_supported_display);
         if (ImGui::SliderInt("Display Mode", &display_mode, 0, display_mode_max, preset_strings[display_mode], ImGuiSliderFlags_NoInput)) {
-            ChangeDisplayMode(display_mode, true);
-
+            {
+                const std::lock_guard<std::recursive_mutex> lock(s_mutex_swapchain);
+                ChangeDisplayMode(display_mode, true, native_swapchain3);
+            }
         }
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -4324,7 +4356,10 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             ImGui::PushID("Display Mode");
             if (ImGui::SmallButton(ICON_FK_UNDO)) {
                 display_mode = hdr_enabled_display ? 1 : 0;
-                ChangeDisplayMode(display_mode, false);
+                {
+                    const std::lock_guard<std::recursive_mutex> lock(s_mutex_swapchain);
+                    ChangeDisplayMode(display_mode, false, native_swapchain3);
+                }
             }
             ImGui::PopID();
         }

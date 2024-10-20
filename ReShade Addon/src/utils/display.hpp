@@ -4,12 +4,12 @@ bool GetHDRMaxLuminance(IDXGISwapChain3* swapChain, float& maxLuminance, float d
 {
 	maxLuminance = defaultMaxLuminance;
     
-    IDXGIOutput* output = nullptr;
+    com_ptr<IDXGIOutput> output;
     if (FAILED(swapChain->GetContainingOutput(&output))) {
         return false;
     }
 
-    IDXGIOutput6* output6 = nullptr;
+    com_ptr<IDXGIOutput6> output6;
     if (FAILED(output->QueryInterface(&output6))) {
         return false;
     }
@@ -32,6 +32,17 @@ bool GetHDRMaxLuminance(IDXGISwapChain3* swapChain, float& maxLuminance, float d
     return true;
 }
 
+#ifndef NTDDI_WIN11_GE
+#define NTDDI_WIN11_GE 0x0A000010
+#endif
+
+// Only available from Windows 11 SDK 10.0.26100.0
+#if NTDDI_VERSION >= NTDDI_WIN11_GE
+#else
+// If c++ had "static warning" this would have been one.
+static_assert(false, "Your Windows SDK is too old and lacks some features to check/engage for HDR on the display. Either upgrade to \"Windows 11 SDK 10.0.26100.0\" or disable this assert locally (the code will fall back on older features that might not work as well).");
+#endif
+
 bool GetDisplayConfigPathInfo(HWND hwnd, DISPLAYCONFIG_PATH_INFO& outPathInfo)
 {
 	uint32_t pathCount, modeCount;
@@ -49,7 +60,9 @@ bool GetDisplayConfigPathInfo(HWND hwnd, DISPLAYCONFIG_PATH_INFO& outPathInfo)
 	for (auto& pathInfo : paths) {
 		if (pathInfo.flags & DISPLAYCONFIG_PATH_ACTIVE && pathInfo.sourceInfo.statusFlags & DISPLAYCONFIG_SOURCE_IN_USE) {
 			const bool bVirtual = pathInfo.flags & DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE;
-			const DISPLAYCONFIG_SOURCE_MODE& sourceMode = modes[bVirtual ? pathInfo.sourceInfo.sourceModeInfoIdx : pathInfo.sourceInfo.modeInfoIdx].sourceMode;
+			const uint32_t modeIndex = bVirtual ? pathInfo.sourceInfo.sourceModeInfoIdx : pathInfo.sourceInfo.modeInfoIdx;
+			assert(modes[modeIndex].infoType == DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE);
+			const DISPLAYCONFIG_SOURCE_MODE& sourceMode = modes[modeIndex].sourceMode;
 
 			RECT rect { sourceMode.position.x, sourceMode.position.y, sourceMode.position.x + (LONG)sourceMode.width, sourceMode.position.y + (LONG)sourceMode.height };
 			if (!IsRectEmpty(&rect)) {
@@ -62,15 +75,36 @@ bool GetDisplayConfigPathInfo(HWND hwnd, DISPLAYCONFIG_PATH_INFO& outPathInfo)
 		}
 	}
 
+#if 0 // Fall back on inactive paths (and fix up path target info)
+	// For some reason, after Windows has been running for a while (at least on Windows 11 24H2),
+	// some paths miss the "DISPLAYCONFIG_PATH_ACTIVE" flag despite being obviously active,
+	// and have a broken adapterId and id... Restarting the PC seems to fix the issue.
+	for (auto& pathInfo : paths) {
+		if (pathInfo.sourceInfo.statusFlags & DISPLAYCONFIG_SOURCE_IN_USE) {
+			const bool bVirtual = pathInfo.flags & DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE;
+			const uint32_t modeIndex = bVirtual ? pathInfo.sourceInfo.sourceModeInfoIdx : pathInfo.sourceInfo.modeInfoIdx;
+			assert(modes[modeIndex].infoType == DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE);
+			const DISPLAYCONFIG_SOURCE_MODE& sourceMode = modes[modeIndex].sourceMode;
+
+			RECT rect{ sourceMode.position.x, sourceMode.position.y, sourceMode.position.x + (LONG)sourceMode.width, sourceMode.position.y + (LONG)sourceMode.height };
+			if (!IsRectEmpty(&rect)) {
+				const HMONITOR monitorFromMode = MonitorFromRect(&rect, MONITOR_DEFAULTTONULL);
+				if (monitorFromMode != nullptr && monitorFromMode == monitorFromWindow) {
+					outPathInfo = pathInfo;
+					outPathInfo.targetInfo.adapterId = modes[pathInfo.sourceInfo.sourceModeInfoIdx].adapterId;
+					outPathInfo.targetInfo.id = modes[pathInfo.sourceInfo.sourceModeInfoIdx].id;
+					return true;
+				}
+			}
+		}
+	}
+#endif
+
+	// Note: for now, if we couldn't find the right monitor from the window, we simply return false.
+	// If ever necessary, we could force taking the first active path (monitor), increasing the overlap threshold.
+
 	return false;
 }
-
-// Only available from Windows 11 SDK 10.0.26100.0
-#if NTDDI_VERSION >= NTDDI_WIN11_GA
-#else
-// If c++ had "static warning" this would have been one.
-static_assert(false, "Your Windows SDK is too old and lacks some features to check/engage for HDR on the display. Either upgrade to \"Windows 11 SDK 10.0.26100.0\" or disable this assert locally (the code will fall back on older features that might not work as well).");
-#endif
 
 bool GetColorInfo(HWND hwnd, DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO& outColorInfo)
 {
@@ -90,19 +124,19 @@ bool GetColorInfo(HWND hwnd, DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO& outColorInfo
 	return false;
 }
 
-#if NTDDI_VERSION >= NTDDI_WIN11_GA
-bool GetColorInfo2(HWND hwnd, DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2& outColorInfo)
+#if NTDDI_VERSION >= NTDDI_WIN11_GE
+bool GetColorInfo2(HWND hwnd, DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2& outColorInfo2)
 {
 	DISPLAYCONFIG_PATH_INFO pathInfo{};
 	if (GetDisplayConfigPathInfo(hwnd, pathInfo)) {
-		DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2 colorInfo{};
-		colorInfo.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2;
-		colorInfo.header.size = sizeof(colorInfo);
-		colorInfo.header.adapterId = pathInfo.targetInfo.adapterId;
-		colorInfo.header.id = pathInfo.targetInfo.id;
-		auto result = DisplayConfigGetDeviceInfo(&colorInfo.header);
+		DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2 colorInfo2{};
+		colorInfo2.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2;
+		colorInfo2.header.size = sizeof(colorInfo2);
+		colorInfo2.header.adapterId = pathInfo.targetInfo.adapterId;
+		colorInfo2.header.id = pathInfo.targetInfo.id;
+		auto result = DisplayConfigGetDeviceInfo(&colorInfo2.header);
 		if (result == ERROR_SUCCESS) {
-			outColorInfo = colorInfo;
+			outColorInfo2 = colorInfo2;
 			return true;
 		}
 	}
@@ -110,10 +144,16 @@ bool GetColorInfo2(HWND hwnd, DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2& outColorI
 }
 #endif
 
-// If HRR is enabled, it's automatically also supported
-bool IsHDRSupportedAndEnabled(HWND hwnd, bool& supported, bool& enabled)
+// Pass in the game window (e.g. retrieve it from the swapchain).
+// Optionally pass in the swapchain pointer to fall back to checking on the swapchain.
+// If HDR is enabled, it's automatically also supported.
+bool IsHDRSupportedAndEnabled(HWND hwnd, bool& supported, bool& enabled, IDXGISwapChain3* swapChain = nullptr)
 {
-#if NTDDI_VERSION >= NTDDI_WIN11_GA
+	// Default to not supported for the unknown/failed states
+	supported = false;
+	enabled = false;
+
+#if NTDDI_VERSION >= NTDDI_WIN11_GE
 	// This will only succeed from Windows 11 24H2
 	DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2 colorInfo2{};
 	if (GetColorInfo2(hwnd, colorInfo2)) {
@@ -126,10 +166,8 @@ bool IsHDRSupportedAndEnabled(HWND hwnd, bool& supported, bool& enabled)
 		// assuming its even a separate state/mode in Windows anymore.
 		// Note that this variable can have a small amount of lag compared to the other ones ("DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2::highDynamicRangeUserEnabled" in particular).
 		enabled = colorInfo2.activeColorMode == DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR;
-#ifndef NDEBUG
 		// Verify all other related states are set consistently.
 		assert(!enabled || (colorInfo2.advancedColorSupported && !colorInfo2.advancedColorLimitedByPolicy && colorInfo2.highDynamicRangeSupported));
-#endif
 		// "HDR" falls under the umbrella of "Advanced Color" in Windows, thus if advanced color is "blocked" so is HDR (and WCG).
 		// This implies we don't need to check for "DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2::advancedColorSupported" as checking for HDR support is enough.
 		// The "DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2::highDynamicRangeUserEnabled" flag, while theoretically should only be true if a user manually enabled HDR on the display,
@@ -148,9 +186,33 @@ bool IsHDRSupportedAndEnabled(HWND hwnd, bool& supported, bool& enabled)
 		return true;
 	}
 
-	// Unknown/failed state, default to not supported
-	supported = false;
-	enabled = false;
+	if (swapChain) {
+		com_ptr<IDXGIOutput> output;
+		if (SUCCEEDED(swapChain->GetContainingOutput(&output))) {
+			com_ptr<IDXGIOutput6> output6;
+			if (SUCCEEDED(output->QueryInterface(&output6))) {
+				DXGI_OUTPUT_DESC1 desc1;
+				if (SUCCEEDED(output6->GetDesc1(&desc1))) {
+					// Note: we check for "DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709" (scRGB) even if it's not specified by the documentation.
+					// Hopefully this is future proof, and won't cause any damage.
+					enabled = desc1.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020 || desc1.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;
+					supported |= enabled;
+				}
+			}
+		}
+
+		UINT color_space_supported = 0;
+		if (SUCCEEDED(swapChain->CheckColorSpaceSupport(DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020, &color_space_supported))) {
+			supported |= color_space_supported & DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT;
+			color_space_supported = 0;
+		}
+		// Note that "DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709" doesn't seem to ever be supported on swapchains unless it's currently enabled.
+		// Hopefully checking it anyway is future proof, and won't cause any damage.
+		if (SUCCEEDED(swapChain->CheckColorSpaceSupport(DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709, &color_space_supported))) {
+			supported |= color_space_supported & DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT;
+		}
+	}
+
 	return false;
 }
 
@@ -158,7 +220,7 @@ bool IsHDRSupportedAndEnabled(HWND hwnd, bool& supported, bool& enabled)
 // Returns false in case of an unknown error.
 bool SetHDREnabled(HWND hwnd)
 {
-#if NTDDI_VERSION >= NTDDI_WIN11_GA
+#if NTDDI_VERSION >= NTDDI_WIN11_GE
 	// This will only succeed from Windows 11 24H2
 	DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2 colorInfo2{};
 	if (GetColorInfo2(hwnd, colorInfo2)) {
