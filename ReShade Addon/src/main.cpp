@@ -536,6 +536,8 @@ std::unordered_set<uint32_t> shader_hashes_PostAA;
 std::unordered_set<uint32_t> shader_hashes_PostAAComposites;
 uint32_t shader_hash_PostAAUpscaleImage;
 std::unordered_set<uint32_t> shader_hashes_LensOptics;
+const uint32_t shader_hash_copy_vertex = std::stoul("FFFFFFF0", nullptr, 16);
+const uint32_t shader_hash_copy_pixel = std::stoul("FFFFFFF1", nullptr, 16);
 
 //TODOFT3: clean up
 constexpr bool dlss_mv_jittered = true; //TODOFT4: test this, in case it ever looked better, but the dynamic objects motion vectors are always half jittered and we can't remove these jitters properly (we tried...) so it's better to just run jittered all along (we got it to look perfect across all cases)
@@ -3456,6 +3458,27 @@ bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource
                 //
                 // Prepare resources:
                 //
+                if (copy_vertex_shader == nullptr || copy_pixel_shader == nullptr) {
+                    const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
+                    if (custom_shaders_cache.contains(shader_hash_copy_vertex) && custom_shaders_cache.contains(shader_hash_copy_pixel)) {
+                        //TODOFT: these need to be loaded at all times, even when the user unloads the data?
+                        //Also they should be re-compiled when we modify them in the IDE? Also should we create these separately (e.g. put them in a "Luma Custom Shaders" folder and compile them in a separate array?)?
+                        CachedCustomShader* vertex_shader = custom_shaders_cache[shader_hash_copy_vertex];
+                        CachedCustomShader* pixel_shader = custom_shaders_cache[shader_hash_copy_pixel];
+                        copy_vertex_shader = nullptr;
+                        hr = native_device->CreateVertexShader(vertex_shader->code.data(), vertex_shader->code.size(), nullptr, &copy_vertex_shader);
+                        assert(SUCCEEDED(hr));
+                        copy_pixel_shader = nullptr;
+                        hr = native_device->CreatePixelShader(pixel_shader->code.data(), pixel_shader->code.size(), nullptr, &copy_pixel_shader);
+                        assert(SUCCEEDED(hr));
+                    }
+                    if (copy_vertex_shader == nullptr || copy_pixel_shader == nullptr) {
+                        ASSERT_ONCE(false); // The copy shaders failed to be found (they have either been unloaded or failed to compile, or simply missing in the files)
+                        // We can't continue, drawing with emtpy shaders would crash or skip it
+                        return false;
+                    }
+                }
+
                 assert((source_desc.BindFlags & D3D11_BIND_SHADER_RESOURCE) != 0);
                 com_ptr<ID3D11ShaderResourceView> source_resource_texture_view;
                 D3D11_SHADER_RESOURCE_VIEW_DESC source_srv_desc;
@@ -3492,18 +3515,22 @@ bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource
                     // Create the persisting texture copy if necessary (if anything changed from the last copy).
                     // Theoretically all these textures have the same resolution as the screen so having one persisten texture is ok.
                     //TODOFT: verify the above assumption
-                    if (!copy_texture.get()) {
-                        D3D11_TEXTURE2D_DESC proxy_target_desc;
+                    D3D11_TEXTURE2D_DESC proxy_target_desc;
+                    if (copy_texture.get() != nullptr) {
                         copy_texture->GetDesc(&proxy_target_desc);
-                        if (proxy_target_desc.Width != target_desc.Width || proxy_target_desc.Height != target_desc.Height || proxy_target_desc.Format != target_desc.Format) {
-                            proxy_target_desc = target_desc;
-                            proxy_target_desc.BindFlags |= D3D11_BIND_RENDER_TARGET;
-                            copy_texture = nullptr;
-                            hr = native_device->CreateTexture2D(&proxy_target_desc, nullptr, &copy_texture);
-                        }
+                    }
+                    if (copy_texture.get() == nullptr || proxy_target_desc.Width != target_desc.Width || proxy_target_desc.Height != target_desc.Height || proxy_target_desc.Format != target_desc.Format) {
+                        proxy_target_desc = target_desc;
+                        proxy_target_desc.BindFlags |= D3D11_BIND_RENDER_TARGET;
+                        proxy_target_desc.BindFlags &= ~D3D11_BIND_SHADER_RESOURCE;
+                        proxy_target_desc.BindFlags &= ~D3D11_BIND_UNORDERED_ACCESS;
+                        proxy_target_desc.CPUAccessFlags = 0;
+                        proxy_target_desc.Usage = D3D11_USAGE_DEFAULT;
+                        copy_texture = nullptr;
+                        hr = native_device->CreateTexture2D(&proxy_target_desc, nullptr, &copy_texture);
+                        assert(SUCCEEDED(hr));
                     }
                     proxy_target_resource_texture = copy_texture;
-                    assert(SUCCEEDED(hr));
                 }
                 else {
                     proxy_target_resource_texture = target_resource_texture;
@@ -3535,25 +3562,6 @@ bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource
                 hr = native_device->CreateRenderTargetView(proxy_target_resource_texture.get(), &target_rtv_desc, &target_resource_texture_view);
                 assert(SUCCEEDED(hr));
 
-                static const uint32_t copy_vertex_shader_hash = std::stoul("FFFFFFF0", nullptr, 16);
-                static const uint32_t copy_pixel_shader_hash = std::stoul("FFFFFFF1", nullptr, 16);
-                if (copy_vertex_shader == nullptr && copy_pixel_shader == nullptr) {
-                    const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
-                    if (custom_shaders_cache.contains(copy_vertex_shader_hash) && custom_shaders_cache.contains(copy_pixel_shader_hash)) {
-                        //TODOFT: these need to be loaded at all times, even when the user unloads the data?
-                        //Also they should be re-compiled when we modify them in the IDE? Also should we create these separately (e.g. put them in a "Luma Custom Shaders" folder and compile them in a separate array?)?
-                        CachedCustomShader* vertex_shader = custom_shaders_cache[copy_vertex_shader_hash];
-                        CachedCustomShader* pixel_shader = custom_shaders_cache[copy_pixel_shader_hash];
-                        hr = native_device->CreateVertexShader(vertex_shader->code.data(), vertex_shader->code.size(), nullptr, &copy_vertex_shader);
-                        assert(SUCCEEDED(hr));
-                        hr = native_device->CreatePixelShader(pixel_shader->code.data(), pixel_shader->code.size(), nullptr, &copy_pixel_shader);
-                        assert(SUCCEEDED(hr));
-                    }
-                    else {
-                        assert(false); // The copy shader failed to be found (maybe it has been unloaded?)
-                    }
-                }
-
                 //
                 // Cache aside the previous resources/states:
                 //
@@ -3561,8 +3569,8 @@ bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource
                 com_ptr<ID3D11PixelShader> prev_ps;
                 native_device_context->VSGetShader(&prev_vs, nullptr, 0);
                 native_device_context->PSGetShader(&prev_ps, nullptr, 0);
-                ID3D11RenderTargetView* prev_render_target_views[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
-                ID3D11DepthStencilView* prev_depth_stencil_views[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
+                ID3D11RenderTargetView* prev_render_target_views[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
+                ID3D11DepthStencilView* prev_depth_stencil_views[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
                 native_device_context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &prev_render_target_views[0], &prev_depth_stencil_views[0]);
                 D3D11_PRIMITIVE_TOPOLOGY prev_primitive_topology;
                 native_device_context->IAGetPrimitiveTopology(&prev_primitive_topology);
@@ -3747,6 +3755,11 @@ void OnReshadePresent(reshade::api::effect_runtime* runtime) {
     custom_shaders_cache.clear();
 #endif
     needs_unload_shaders = false;
+
+    // Unload customly created shader objects (from the shader code/binaries above),
+    // to make sure they will re-create
+    copy_vertex_shader = nullptr;
+    copy_pixel_shader = nullptr;
   }
   if (needs_load_shaders) {
     // Cache the defines at compilation time
