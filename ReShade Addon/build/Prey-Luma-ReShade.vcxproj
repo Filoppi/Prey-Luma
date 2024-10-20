@@ -141,6 +141,7 @@
     <ClInclude Include="..\src\includes\cbuffers.h" />
     <ClInclude Include="..\src\includes\math.h" />
     <ClInclude Include="..\src\includes\matrix.h" />
+    <ClInclude Include="..\src\includes\shader_define.h" />
     <ClInclude Include="..\src\utils\descriptor.hpp" />
     <ClInclude Include="..\src\utils\display.hpp" />
     <ClInclude Include="..\src\utils\format.hpp" />
