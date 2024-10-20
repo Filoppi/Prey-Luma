@@ -1718,7 +1718,6 @@ void SetPreyLumaConstantBuffers(reshade::api::command_list* cmd_list, reshade::a
 
 //TODOFT5: expose DLSS res range multipliers here or to game config
 //TODOFT5: DLSS pre-exposure (duplicate?)
-//TODOFT5: prey verify that the sun sprite size didn't already change with resolution on startup
 //TODOFT5: _DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR
 //TODOFT5: test gamma sRGB mode?
 //TODOFT5: (duplicate?) verify that the addon is being run with Prey and that the detected version is Steam. E.g. return false in "AddonInit()"?
@@ -4369,7 +4368,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         }
         ImGui::SetNextItemWidth(ImGui::CalcTextSize("0").x * (SHADER_DEFINES_MAX_NAME_LENGTH - 1));
         // ImGUI doesn't work with std::string data, it seems to need c style char arrays.
-        ImGui::InputTextWithHint("", shader_defines_data[i].name_hint.data(), shader_defines_data[i].editable_data.GetName(), std::size(shader_defines_data[i].editable_data.name) /*SHADER_DEFINES_MAX_NAME_LENGTH*/, flags);
+        bool name_edited = ImGui::InputTextWithHint("", shader_defines_data[i].name_hint.data(), shader_defines_data[i].editable_data.GetName(), std::size(shader_defines_data[i].editable_data.name) /*SHADER_DEFINES_MAX_NAME_LENGTH*/, flags);
         show_tooltip |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
         ImGui::PopID();
 
@@ -4400,10 +4399,11 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             flags |= ImGuiInputTextFlags_ReadOnly;
         }
         ImGui::SetNextItemWidth(ImGui::CalcTextSize("00").x);
-        ImGui::InputTextWithHint("", shader_defines_data[i].value_hint.data(), shader_defines_data[i].editable_data.GetValue(), std::size(shader_defines_data[i].editable_data.value) /*SHADER_DEFINES_MAX_VALUE_LENGTH*/, flags, ModulateValueText);
+        bool value_edited = ImGui::InputTextWithHint("", shader_defines_data[i].value_hint.data(), shader_defines_data[i].editable_data.GetValue(), std::size(shader_defines_data[i].editable_data.value) /*SHADER_DEFINES_MAX_VALUE_LENGTH*/, flags, ModulateValueText);
         show_tooltip |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
         // Avoid having empty values unless the default value also was empty. This is a worse implementation of the "ImGuiInputTextFlags_CallbackEdit" above, which we can't get to work.
-        if (shader_defines_data[i].IsValueEmpty()) {
+        // If the value was empty to begin with, we leave it, to avoid confusion.
+        if (value_edited && shader_defines_data[i].IsValueEmpty()) {
             // SHADER_DEFINES_MAX_VALUE_LENGTH
             shader_defines_data[i].editable_data.value[0] = shader_defines_data[i].default_data.value[0];
             shader_defines_data[i].editable_data.value[1] = shader_defines_data[i].default_data.value[1];
@@ -4414,6 +4414,12 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             }
 #endif
         }
+#if 0 // Disabled for now as this is not very user friendly and could accidentally happen if two defines start with the same name.
+        // Reset the define name if it matches another one
+        if (name_edited && ShaderDefineData::ContainsName(shader_defines_data, shader_defines_data[i].editable_data.GetName(), i)) {
+            shader_defines_data[i].Clear();
+        }
+#endif
         ImGui::PopID();
 
         if (show_tooltip && shader_defines_data[i].IsNameDefault() && shader_defines_data[i].GetTooltip() != "") {

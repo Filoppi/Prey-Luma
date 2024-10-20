@@ -83,7 +83,7 @@ public:
         return strcmp(editable_data.GetName(), "") == 0;
     }
     bool IsValueEmpty() const {
-        return editable_data.value[0] == '\0';
+        return editable_data.value[0] == '\0'; // The second character (SHADER_DEFINES_MAX_VALUE_LENGTH) doesn't matter
     }
     // Whether it's fully null/empty
     bool IsEmpty() const {
@@ -108,6 +108,11 @@ public:
         strncpy(editable_data.GetName(), default_data.GetName(), SHADER_DEFINES_MAX_NAME_LENGTH);
         editable_data.value[0] = default_data.value[0];
     }
+    void Clear() {
+        // No need to clear the remaining characters
+        editable_data.name[0] = '\0';
+        editable_data.value[0] = '\0';
+    }
     void OnCompilation() {
         strncpy(compiled_data.GetName(), editable_data.GetName(), SHADER_DEFINES_MAX_NAME_LENGTH);
         compiled_data.value[0] = editable_data.value[0];
@@ -125,6 +130,15 @@ public:
             shader_defines_data[i].OnCompilation();
         }
         defines_need_recompilation = false;
+    }
+
+    static bool ContainsName(const std::vector<ShaderDefineData>& shader_defines_data, const char* name, uint32_t excluded_index = UINT_MAX /*MAX_SHADER_DEFINES*/) {
+        for (uint32_t i = 0; i < shader_defines_data.size(); i++) {
+            if (i != excluded_index && strcmp(shader_defines_data[i].editable_data.GetName(), name) == 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     static void RemoveCustomData(std::vector<ShaderDefineData>& shader_defines_data, bool only_if_empty = false) {
@@ -166,18 +180,24 @@ public:
             bool is_editable = is_new_define || shader_defines_data[i].IsNameEditable();
             bool should_load_value = true;
             sprintf(&char_buffer[0], i < 10 ? "Define#%iName" : "Define%iName", i);
+            // If the current name (index) is "editable" (writable), load it directly
             if (is_editable) {
                 if (is_new_define) {
                     shader_defines_data.emplace_back();
                 }
                 size_t size = std::size(shader_defines_data[i].editable_data.name); // SHADER_DEFINES_MAX_NAME_LENGTH
                 reshade::get_config_value(runtime, NAME_ADVANCED_SETTINGS.c_str(), &char_buffer[0], shader_defines_data[i].editable_data.GetName(), &size);
-                if (!shader_defines_data[i].IsCustom() && strcmp(shader_defines_data[i].editable_data.GetName(), "") == 0) {
+                // If this name was already in the list (from another index), or is empty, ignore it and revert to default
+                if ((!shader_defines_data[i].IsCustom() && shader_defines_data[i].IsNameEmpty()) || ContainsName(shader_defines_data, shader_defines_data[i].editable_data.GetName(), i)) {
                     shader_defines_data[i].Reset();
+                    // If the defauled value was also already present (due to another define having loaded it), clear it completely
+                    if (ContainsName(shader_defines_data, shader_defines_data[i].editable_data.GetName(), i)) {
+                        shader_defines_data[i].Clear();
+                    }
                 }
             }
+            // In this case, we should only load the define actual value if the define name serialized in the config matched with our default one
             else {
-                // In this case, we should only load the define actual value if the define name serialized in the config matched with our default one
                 char name[SHADER_DEFINES_MAX_NAME_LENGTH] = "";
                 size_t size = std::size(name); // SHADER_DEFINES_MAX_NAME_LENGTH
                 reshade::get_config_value(runtime, NAME_ADVANCED_SETTINGS.c_str(), &char_buffer[0], &name[0], &size);
@@ -190,7 +210,7 @@ public:
                 sprintf(&char_buffer[0], i < 10 ? "Define#%iValue" : "Define%iValue", i);
                 size_t size = std::size(shader_defines_data[i].editable_data.value); // SHADER_DEFINES_MAX_VALUE_LENGTH
                 reshade::get_config_value(runtime, NAME_ADVANCED_SETTINGS.c_str(), &char_buffer[0], shader_defines_data[i].editable_data.GetValue(), &size);
-                if (!shader_defines_data[i].IsCustom() && strcmp(shader_defines_data[i].editable_data.GetValue(), "") == 0) {
+                if (!shader_defines_data[i].IsCustom() && shader_defines_data[i].IsValueEmpty()) {
                     shader_defines_data[i].Reset();
                 }
             }
@@ -199,7 +219,7 @@ public:
         // Clean up the ones that loaded up with empty values
         RemoveCustomData(shader_defines_data, true);
     }
-    static void Save(std::vector<ShaderDefineData>& shader_defines_data, reshade::api::effect_runtime* runtime = nullptr) {
+    static void Save(const std::vector<ShaderDefineData>& shader_defines_data, reshade::api::effect_runtime* runtime = nullptr) {
         char char_buffer[std::string_view("Define99Value ").size()]; // Hardcoded max length (see "MAX_SHADER_DEFINES")
         constexpr bool always_save_shader_defines = false;
         for (uint32_t i = 0; i < shader_defines_data.size(); i++) {
