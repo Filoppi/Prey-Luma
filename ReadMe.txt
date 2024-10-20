@@ -4,6 +4,11 @@ The native plugin has the purpose of hooking into the engine code and swapping t
 The ReShade addon has the purpose of adding behaviour by hooking to their DirectX functions, these include: replacing shaders (with versions that add HDR post processing support), change the resolution and quality of effects, add new passes (e.g. DLSS/GTAO), improve anisotropic filtering, ...
 ReShade per se isn't necessarily needed by Luma, we could hook to the DirectX functions ourselves, but it makes things easier and natively adds ImGUI and serialization features (plus it's widely compatible).
 
+Development requirements:
+Windows 11 (Windows 10 probably works fine too)
+Visual Studio 2022 (older versions might work too)
+Windows 11 SDK 10.0.26100.0 (older versions work, but don't support HDR as good)
+
 Instructions:
 Run "setup.ps1" to fully setup the Visual Studio projects and solution with cmake (part of the projects are pre-generated without cmake, because I couldn't bother to port everything to it). This will also add the game installation environment variables.
 Open "Prey-Luma.sln" and build ...
