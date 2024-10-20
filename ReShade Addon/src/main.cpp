@@ -615,7 +615,8 @@ std::vector<ShaderDefineData> shader_defines_data = {
   {"AUTO_HDR_VIDEOS", '1', false, false, "(HDR only) Generates some HDR highlights from SDR videos, for consistency\nThis is pretty lightweight so it won't really affect the artistic intent"},
   {"ENABLE_LUT_EXTRAPOLATION", '1', false, false, "LUT Extrapolation should be the best looking and most accurate SDR to HDR LUT adaptation mode,\nbut you can always turn it off for the its simpler fallback"},
 #if DEVELOPMENT || TEST
-  {"ENABLE_LINEAR_COLOR_GRADING_LUT", '0', false, false},
+  {"ENABLE_LINEAR_COLOR_GRADING_LUT", '1', false, false, "Whether (SDR) LUTs are stored in linear or gamma space"},
+  {"FORCE_NEUTRAL_COLOR_GRADING_LUT_TYPE", '0', false, false, "Can force a neutral LUT in different ways (color grading is still applied)"},
   {"DRAW_LUT", '0', false, (DEVELOPMENT || TEST) ? false : true},
 #endif
   {"SSAO_TYPE", '0', false, false, "0 - Vanilla\n1 - GTAO"},
@@ -624,10 +625,15 @@ std::vector<ShaderDefineData> shader_defines_data = {
 #if DEVELOPMENT || TEST
   {"FORCE_MOTION_VECTORS_JITTERED", prey_taa_jittered ? '1' : '0', false, false},
 #endif
+  {"ENABLE_POST_PROCESS", '1', false, false, "Allows you to disable all post processing (at once)"},
   {"ENABLE_CAMERA_MOTION_BLUR", '0', false, false, "Camera Motion Blur can look pretty botched in Prey, and can mess with DLSS/TAA, it's turned off by default in Luma"},
-  {"FORCE_NEUTRAL_COLOR_GRADING_LUT_TYPE", '0', false, false, "Allows you to disable color grading\n0 - Enabled\n1+ - Disabled"},
-  {"ENABLE_POST_PROCESS", '1', false, false, "Allows you to disable all post processing"},
-  {"ENABLE_DITHERING", '0', false, false, "Temporal dithering control. It doesn't seem to be needed in this game"},
+  {"ENABLE_COLOR_GRADING_LUT", '1', false, false, "Allows you to disable color grading\nDon't disable it unless you know what you are doing"},
+#if DEVELOPMENT || TEST //TODOFT: Disabled for final users for now because these require the "DEVELOPMENT" flag
+  {"ENABLE_SHARPENING", '1', false, false, "Allows you to disable sharpening\nDisabling it is not suggested, especially if you use TAA"},
+  {"ENABLE_VIGNETTE", '1', false, false, "Allows you to disable vignette\nIt's not that prominent in Prey, it's only used in certain cases to convey gameplay information,\nso don't disable it unless you know what you are doing"},
+  {"ENABLE_FILM_GRAIN", '1', false, false, "Allows you to disable color grading\nIt's not that prominent in Prey, it's only used in certain cases to convey gameplay information,\nso don't disable it unless you know what you are doing"},
+#endif
+  {"ENABLE_DITHERING", '0', false, false, "Temporal dithering control\nIt doesn't seem to be needed in this game so Luma disabled it by default"},
   {"DITHERING_BIT_DEPTH", '9', false, false, "Dithering quantization (values between 7 and 9 should be best)"},
 };
 constexpr uint32_t development_define_index = 0;
