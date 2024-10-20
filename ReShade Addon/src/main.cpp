@@ -3971,8 +3971,11 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 #if !DEVELOPMENT && !TEST
   ImGui::BeginDisabled(!needs_compilation);
 #endif
+  // TODO: add a button to clear all the .cso shader binaries?
   //TODOFT: lock "shaders_compilation_errors"
-  if (ImGui::Button(shaders_compilation_errors.empty() ? (cloned_pipeline_count ? (needs_compilation ? "Reload Shaders (*)" : "Reload Shaders") : "Load Shaders") : "Reload Shaders (!)")) {
+  static const std::string reload_shaders_button_title_error = std::string("Reload Shaders ") + std::string(ICON_FK_WARNING);
+  static const std::string reload_shaders_button_title_outdated = std::string("Reload Shaders ") + std::string(ICON_FK_REFRESH);
+  if (ImGui::Button(shaders_compilation_errors.empty() ? (cloned_pipeline_count ? (needs_compilation ? reload_shaders_button_title_outdated.c_str() : "Reload Shaders") : "Load Shaders") : reload_shaders_button_title_error.c_str())) {
     needs_unload_shaders = false;
     last_pressed_unload = false;
     needs_load_shaders = true;
@@ -4488,7 +4491,8 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
           }
           ImGui::PushID("Advanced Settings: Reset Defines");
           ImGui::BeginDisabled(is_default);
-          if (ImGui::Button("Reset")) {
+          static const std::string reset_button_title = std::string(ICON_FK_REFRESH) + std::string(" Reset");
+          if (ImGui::Button(reset_button_title.c_str())) {
               // Remove all newly added settings
               ShaderDefineData::RemoveCustomData(shader_defines_data);
 
@@ -4503,7 +4507,8 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
       if (shader_defines_data.size() < MAX_SHADER_DEFINES) {
           ImGui::SameLine();
           ImGui::PushID("Advanced Settings: Add Define");
-          if (ImGui::Button("Add")) {
+          static const std::string add_button_title = std::string(ICON_FK_PLUS) + std::string(" Add");
+          if (ImGui::Button(add_button_title.c_str())) {
               shader_defines_data.emplace_back();
           }
           ImGui::PopID();
@@ -4546,26 +4551,56 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         if (!shader_defines_data[i].IsNameEditable()) {
             flags |= ImGuiInputTextFlags_ReadOnly;
         }
+        ImGui::SetNextItemWidth(ImGui::CalcTextSize("0").x * (SHADER_DEFINES_MAX_NAME_LENGTH - 1));
         // ImGUI doesn't work with std::string data, it seems to need c style char arrays.
-        ImGui::InputTextWithHint("", shader_defines_data[i].name_hint.data(), shader_defines_data[i].editable_data.GetName(), std::size(shader_defines_data[i].editable_data.name) /*SHADER_DEFINES_MAX_NAME_LENGTH*/, flags); //TODOFT5: spacing
+        ImGui::InputTextWithHint("", shader_defines_data[i].name_hint.data(), shader_defines_data[i].editable_data.GetName(), std::size(shader_defines_data[i].editable_data.name) /*SHADER_DEFINES_MAX_NAME_LENGTH*/, flags);
         show_tooltip |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
         ImGui::PopID();
+
+        // TODO: fix this, it doesn't seem to work
+        auto ModulateValueText = [](ImGuiInputTextCallbackData* data) -> int {
+#if 0
+            if (data->EventFlag == ImGuiInputTextFlags_CallbackEdit) {
+                if (data->Buf[0] == '\0') {
+                    // SHADER_DEFINES_MAX_VALUE_LENGTH
+#if 0 // Better implementation (actually resets to default when the text was cleaned (invalid value)
+                    data->Buf[0] = shader_defines_data[i].default_data.value[0];
+                    data->Buf[1] = shader_defines_data[i].default_data.value[1];
+#else
+                    data->Buf[0] == '0';
+                    data->Buf[1] == '\0';
+#endif
+                    data->BufDirty = true;
+                };
+            };
+#endif
+            return 0;
+            };
 
         ImGui::SameLine();
         ImGui::PushID(shader_defines_data[i].value_hint.data());
-        flags = ImGuiInputTextFlags_CharsDecimal | ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_AlwaysOverwrite | ImGuiInputTextFlags_AutoSelectAll | ImGuiInputTextFlags_NoUndoRedo;
+        flags = ImGuiInputTextFlags_CharsDecimal | ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_AlwaysOverwrite | ImGuiInputTextFlags_AutoSelectAll | ImGuiInputTextFlags_NoUndoRedo | ImGuiInputTextFlags_CallbackEdit;
         if (!shader_defines_data[i].IsValueEditable()) {
             flags |= ImGuiInputTextFlags_ReadOnly;
         }
-        ImGui::InputTextWithHint("", shader_defines_data[i].value_hint.data(), shader_defines_data[i].editable_data.GetValue(), std::size(shader_defines_data[i].editable_data.value) /*SHADER_DEFINES_MAX_VALUE_LENGTH*/, flags);
+        ImGui::SetNextItemWidth(ImGui::CalcTextSize("00").x);
+        ImGui::InputTextWithHint("", shader_defines_data[i].value_hint.data(), shader_defines_data[i].editable_data.GetValue(), std::size(shader_defines_data[i].editable_data.value) /*SHADER_DEFINES_MAX_VALUE_LENGTH*/, flags, ModulateValueText);
         show_tooltip |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
-        // Avoid having empty values unless the default value also was empty
-        if (shader_defines_data[i].editable_data.GetValue() == "") {
+        // Avoid having empty values unless the default value also was empty. This is a worse implementation of the "ImGuiInputTextFlags_CallbackEdit" above, which we can't get to work.
+        if (shader_defines_data[i].IsValueEmpty()) {
+            // SHADER_DEFINES_MAX_VALUE_LENGTH
             shader_defines_data[i].editable_data.value[0] = shader_defines_data[i].default_data.value[0];
+            shader_defines_data[i].editable_data.value[1] = shader_defines_data[i].default_data.value[1];
+#if 0 // This would only appear for 1 frame at the moment
+            if (show_tooltip) {
+                ImGui::SetTooltip(shader_defines_data[i].value_hint.c_str());
+                show_tooltip = false;
+            }
+#endif
         }
         ImGui::PopID();
 
-        if (show_tooltip && shader_defines_data[i].GetTooltip() != "") {
+        if (show_tooltip && shader_defines_data[i].IsNameDefault() && shader_defines_data[i].GetTooltip() != "") {
             ImGui::SetTooltip(shader_defines_data[i].GetTooltip());
         }
       }
