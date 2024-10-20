@@ -52,6 +52,7 @@ bool GetDisplayConfigPathInfo(HWND hwnd, DISPLAYCONFIG_PATH_INFO& outPathInfo)
 
 	std::vector<DISPLAYCONFIG_PATH_INFO> paths(pathCount);
 	std::vector<DISPLAYCONFIG_MODE_INFO> modes(modeCount);
+	// Note: the "/Zc:enumTypes" compiler flag breaks these enums (their padding changes and they end up offsetted)
 	if (ERROR_SUCCESS != QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &pathCount, paths.data(), &modeCount, modes.data(), nullptr)) {
 		return false;
 	}
@@ -74,31 +75,6 @@ bool GetDisplayConfigPathInfo(HWND hwnd, DISPLAYCONFIG_PATH_INFO& outPathInfo)
 			}
 		}
 	}
-
-#if 0 // Fall back on inactive paths (and fix up path target info)
-	// For some reason, after Windows has been running for a while (at least on Windows 11 24H2),
-	// some paths miss the "DISPLAYCONFIG_PATH_ACTIVE" flag despite being obviously active,
-	// and have a broken adapterId and id... Restarting the PC seems to fix the issue.
-	for (auto& pathInfo : paths) {
-		if (pathInfo.sourceInfo.statusFlags & DISPLAYCONFIG_SOURCE_IN_USE) {
-			const bool bVirtual = pathInfo.flags & DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE;
-			const uint32_t modeIndex = bVirtual ? pathInfo.sourceInfo.sourceModeInfoIdx : pathInfo.sourceInfo.modeInfoIdx;
-			assert(modes[modeIndex].infoType == DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE);
-			const DISPLAYCONFIG_SOURCE_MODE& sourceMode = modes[modeIndex].sourceMode;
-
-			RECT rect{ sourceMode.position.x, sourceMode.position.y, sourceMode.position.x + (LONG)sourceMode.width, sourceMode.position.y + (LONG)sourceMode.height };
-			if (!IsRectEmpty(&rect)) {
-				const HMONITOR monitorFromMode = MonitorFromRect(&rect, MONITOR_DEFAULTTONULL);
-				if (monitorFromMode != nullptr && monitorFromMode == monitorFromWindow) {
-					outPathInfo = pathInfo;
-					outPathInfo.targetInfo.adapterId = modes[pathInfo.sourceInfo.sourceModeInfoIdx].adapterId;
-					outPathInfo.targetInfo.id = modes[pathInfo.sourceInfo.sourceModeInfoIdx].id;
-					return true;
-				}
-			}
-		}
-	}
-#endif
 
 	// Note: for now, if we couldn't find the right monitor from the window, we simply return false.
 	// If ever necessary, we could force taking the first active path (monitor), increasing the overlap threshold.

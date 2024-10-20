@@ -1441,7 +1441,11 @@ void OnDestroyDevice(reshade::api::device* device) {
   copy_texture = nullptr;
   copy_vertex_shader = nullptr;
   copy_pixel_shader = nullptr;
-  assert(!native_swapchain3);
+
+  {
+      const std::lock_guard<std::recursive_mutex> lock(s_mutex_swapchain);
+      assert(!native_swapchain3);
+  }
 
   device->destroy_private_data<DeviceData>();
 }
