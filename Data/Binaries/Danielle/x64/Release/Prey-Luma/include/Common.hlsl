@@ -39,11 +39,20 @@ static const float BinkVideosAutoHDRPeakWhiteNits = 400; // Values beyond 700 wi
 // The higher it is, the "later" highlights start
 static const float BinkVideosAutoHDRShoulderPow = 2.75; // A somewhat conservative value
 
+float3 RestoreLuminance(float3 targetColor, float3 sourceColor)
+{
+  float sourceColorLuminance = GetLuminance(sourceColor);
+  float targetColorLuminance = GetLuminance(targetColor);
+  return targetColor * max(safeDivision(sourceColorLuminance, targetColorLuminance, 1), 0.0);
+}
+
 // Formulas that either uses 2.2 or sRGB gamma depending on a global definition.
 // Note that converting between linear and gamma space back and forth results in quality loss, especially over very high and very low values.
 float3 game_gamma_to_linear_mirrored(float3 Color)
 {
-#if ENABLE_GAMMA_CORRECTION
+#if GAMMA_CORRECTION_TYPE >= 2
+  return RestoreLuminance(gamma_sRGB_to_linear_mirrored(Color), gamma_to_linear_mirrored(Color));
+#elif GAMMA_CORRECTION_TYPE == 1
 	return gamma_to_linear_mirrored(Color);
 #else
   return gamma_sRGB_to_linear_mirrored(Color);
@@ -51,7 +60,9 @@ float3 game_gamma_to_linear_mirrored(float3 Color)
 }
 float3 linear_to_game_gamma_mirrored(float3 Color)
 {
-#if ENABLE_GAMMA_CORRECTION
+#if GAMMA_CORRECTION_TYPE >= 2
+	return RestoreLuminance(linear_to_sRGB_gamma_mirrored(Color), linear_to_gamma_mirrored(Color));
+#elif GAMMA_CORRECTION_TYPE == 1
 	return linear_to_gamma_mirrored(Color);
 #else
   return linear_to_sRGB_gamma_mirrored(Color);

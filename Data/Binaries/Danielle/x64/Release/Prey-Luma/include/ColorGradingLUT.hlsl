@@ -31,6 +31,7 @@
 // NOTE: it's possible to add more of these, like PQ or Log3.
 #define LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB 0
 #define LUT_EXTRAPOLATION_TRANSFER_FUNCTION_GAMMA_2_2 1
+#define LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB_WITH_GAMMA_2_2_LUMINANCE 2
 #define DEFAULT_LUT_EXTRAPOLATION_TRANSFER_FUNCTION LUT_EXTRAPOLATION_TRANSFER_FUNCTION_GAMMA_2_2
 
 uint3 ConditionalConvert3DTo2DLUTCoordinates(uint3 Coordinates3D, uint lutSize = LUT_SIZE)
@@ -119,13 +120,6 @@ float3 RestoreHue(float3 targetColor, float3 sourceColor, float amount = 0.5)
   return oklch_to_linear_srgb(correctedTargetOklch);
 }
 
-float3 RestoreLuminance(float3 targetColor, float3 sourceColor)
-{
-  float sourceColorLuminance = GetLuminance(sourceColor);
-  float targetColorLuminance = GetLuminance(targetColor);
-  return targetColor * max(safeDivision(sourceColorLuminance, targetColorLuminance, 1), 0.0);
-}
-
 // Takes any original color (before some post process is applied to it) and re-applies the same transformation the post process had applied to it on a different (but similar) color.
 // The images are expected to have roughly the same mid gray.
 // It can be used for example to apply any SDR LUT or SDR color correction on an HDR color.
@@ -160,9 +154,13 @@ float3 ColorGradingLUTTransferFunctionIn(float3 col, uint transferFunction, bool
   {
     return mirrored ? linear_to_sRGB_gamma_mirrored(col) : linear_to_sRGB_gamma(col);
   }
-  else // LUT_EXTRAPOLATION_TRANSFER_FUNCTION_GAMMA_2_2
+  else if (transferFunction == LUT_EXTRAPOLATION_TRANSFER_FUNCTION_GAMMA_2_2)
   {
     return mirrored ? linear_to_gamma_mirrored(col) : linear_to_gamma(col);
+  }
+  else // LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB_WITH_GAMMA_2_2_LUMINANCE
+  {
+    return mirrored ? RestoreLuminance(linear_to_sRGB_gamma_mirrored(col), linear_to_gamma_mirrored(col)) : RestoreLuminance(linear_to_sRGB_gamma(col), linear_to_gamma(col));
   }
 }
 // Decode.
@@ -172,9 +170,13 @@ float3 ColorGradingLUTTransferFunctionOut(float3 col, uint transferFunction, boo
   {
     return mirrored ? gamma_sRGB_to_linear_mirrored(col) : gamma_sRGB_to_linear(col);
   }
-  else // LUT_EXTRAPOLATION_TRANSFER_FUNCTION_GAMMA_2_2
+  else if (transferFunction == LUT_EXTRAPOLATION_TRANSFER_FUNCTION_GAMMA_2_2)
   {
     return mirrored ? gamma_to_linear_mirrored(col) : gamma_to_linear(col);
+  }
+  else // LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB_WITH_GAMMA_2_2_LUMINANCE
+  {
+    return mirrored ? RestoreLuminance(gamma_sRGB_to_linear_mirrored(col), gamma_to_linear_mirrored(col)) : RestoreLuminance(gamma_sRGB_to_linear(col), gamma_to_linear(col));
   }
 }
 
@@ -1301,7 +1303,7 @@ float3 DrawLUTTexture(LUT_TEXTURE_TYPE lut, SamplerState samplerState, float2 Pi
     extrapolationSettings.transferFunctionIn = LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB;
 // We might not want gamma correction on the debug LUT, gamma correction comes after extrapolation and isn't directly a part of the LUT, so it shouldn't affect its "raw" visualization
 #if 1
-    extrapolationSettings.transferFunctionOut = (bool(POST_PROCESS_SPACE_TYPE == 1) && bool(ENABLE_GAMMA_CORRECTION)) ? LUT_EXTRAPOLATION_TRANSFER_FUNCTION_GAMMA_2_2 : extrapolationSettings.transferFunctionIn;
+    extrapolationSettings.transferFunctionOut = (bool(POST_PROCESS_SPACE_TYPE == 1) && bool(GAMMA_CORRECTION_TYPE)) ? (GAMMA_CORRECTION_TYPE == 1 ? LUT_EXTRAPOLATION_TRANSFER_FUNCTION_GAMMA_2_2 : LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB_WITH_GAMMA_2_2_LUMINANCE) : extrapolationSettings.transferFunctionIn;
 #else
     extrapolationSettings.transferFunctionOut = extrapolationSettings.transferFunctionIn;
 #endif
