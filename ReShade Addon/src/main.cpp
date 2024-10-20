@@ -58,6 +58,7 @@
 #define ICON_FK_UNDO reinterpret_cast<const char*>(u8"\uf0e2")
 #define ICON_FK_SEARCH reinterpret_cast<const char*>(u8"\uf002")
 #define ICON_FK_WARNING reinterpret_cast<const char*>(u8"\uf071")
+#define ICON_FK_FILE_CODE reinterpret_cast<const char*>(u8"\uf1c9")
 
 #define ImTextureID ImU64
 
@@ -278,7 +279,7 @@ const uint32_t HASH_CHARACTERS_LENGTH = 8;
 
 const std::string NAME_ADVANCED_SETTINGS = std::string(NAME) + " Advanced";
 
-constexpr uint32_t MAX_SHADER_DEFINES = 25; // Avoid setting this too big as it bloats the ReShade config whether used or not. Don't go beyond 99 (max array length 100) without changing core related to this.
+constexpr uint32_t MAX_SHADER_DEFINES = 33; // Avoid setting this too big as it bloats the ReShade config whether used or not. Don't go beyond 99 (max array length 100) without changing core related to this.
 constexpr uint32_t SHADER_DEFINES_MAX_NAME_LENGTH = 50 + 1; // Increase if necessary (+ 1 is for to null terminate the string)
 constexpr uint32_t SHADER_DEFINES_MAX_VALUE_LENGTH = 1 + 1; // 1 character (+ 1 is for to null terminate the string)
 
@@ -325,12 +326,14 @@ struct ShaderDefineData {
     const std::string name_hint;
     const std::string value_hint;
 
+private:
     // Set to true if you want the name of this define to be fixed
     const bool fixed_name;
     const bool fixed_value;
 
     const char* tooltip;
 
+public:
     // The current (possibly editable) name and value
     ShaderDefine editable_data;
     // The default name and value
@@ -357,13 +360,25 @@ struct ShaderDefineData {
     bool IsCustom() const {
         return strcmp(default_data.GetName(), "") == 0;
     }
+    bool IsNameEmpty() const {
+        return strcmp(editable_data.GetName(), "") == 0;
+    }
+    bool IsValueEmpty() const {
+        return editable_data.value[0] == '\0';
+    }
     // Whether it's fully null/empty
     bool IsEmpty() const {
-        return strcmp(editable_data.GetName(), "") == 0 && (editable_data.value[0] == '\0');
+        return IsNameEmpty() && IsValueEmpty();
+    }
+    bool IsNameDefault() const {
+        return strcmp(editable_data.GetName(), default_data.GetName()) == 0;
+    }
+    bool IsValueDefault() const {
+        return editable_data.value[0] == default_data.value[0];
     }
     // Whether is has the default name/value
     bool IsDefault() const {
-        return strcmp(editable_data.GetName(), default_data.GetName()) == 0 && (editable_data.value[0] == default_data.value[0]);
+        return IsNameDefault() && IsValueDefault();
     }
     // Whether it needs to be compiled for the values to apply (it's "dirty")
     bool NeedsCompilation() const {
@@ -438,7 +453,7 @@ struct ShaderDefineData {
                 }
                 size_t size = std::size(shader_defines_data[i].editable_data.name); // SHADER_DEFINES_MAX_NAME_LENGTH
                 reshade::get_config_value(runtime, NAME_ADVANCED_SETTINGS.c_str(), &char_buffer[0], shader_defines_data[i].editable_data.GetName(), &size);
-                if (!shader_defines_data[i].IsCustom() && shader_defines_data[i].editable_data.GetName() == "") {
+                if (!shader_defines_data[i].IsCustom() && strcmp(shader_defines_data[i].editable_data.GetName(), "") == 0) {
                     shader_defines_data[i].Reset();
                 }
             }
@@ -456,7 +471,7 @@ struct ShaderDefineData {
                 sprintf(&char_buffer[0], i < 10 ? "Define#%iValue" : "Define%iValue", i);
                 size_t size = std::size(shader_defines_data[i].editable_data.value); // SHADER_DEFINES_MAX_VALUE_LENGTH
                 reshade::get_config_value(runtime, NAME_ADVANCED_SETTINGS.c_str(), &char_buffer[0], shader_defines_data[i].editable_data.GetValue(), &size);
-                if (!shader_defines_data[i].IsCustom() && shader_defines_data[i].editable_data.GetValue() == "") {
+                if (!shader_defines_data[i].IsCustom() && strcmp(shader_defines_data[i].editable_data.GetValue(), "") == 0) {
                     shader_defines_data[i].Reset();
                 }
             }
@@ -4595,6 +4610,80 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         ImGui::EndTabItem(); // Info
     }
 #endif // DEVELOPMENT || TEST
+
+    if (ImGui::BeginTabItem("About")) {
+        ImGui::Text("Luma is developed by Pumbo and Ersh and is open source and free.\nIf you enjoy it, consider donating.", "");
+
+        const auto button_color = ImGui::GetStyleColorVec4(ImGuiCol_Button);
+        const auto button_hovered_color = ImGui::GetStyleColorVec4(ImGuiCol_ButtonHovered);
+        const auto button_active_color = ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive);
+        ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(70, 134, 0, 255));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(70 + 9, 134 + 9, 0, 255));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(70 + 18, 134 + 18, 0, 255));
+        static const std::string donation_link_pumbo = std::string("Buy Pumbo a Coffee ") + std::string(ICON_FK_OK);
+        if (ImGui::Button(donation_link_pumbo.c_str())) {
+            system("start https://buymeacoffee.com/realfiloppi");
+        }
+        ImGui::SameLine();
+        static const std::string donation_link_ersh = std::string("Buy Ersh a Coffee ") + std::string(ICON_FK_OK);
+        if (ImGui::Button(donation_link_ersh.c_str())) {
+            system("start https://ko-fi.com/ershin");
+        }
+        ImGui::PopStyleColor(3);
+        // Restore the previous color, otherwise the state we set would persist even if we popped it
+        ImGui::PushStyleColor(ImGuiCol_Button, button_color);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, button_hovered_color);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, button_active_color);
+#if 0 //TODOFT: update
+        if (ImGui::Button("Nexus Mods")) {
+            system("start https://www.nexusmods.com/starfield/mods/4821");
+        }
+#endif
+        static const std::string contributing_link = std::string("Contribute on Github ") + std::string(ICON_FK_FILE_CODE);
+        if (ImGui::Button(contributing_link.c_str())) {
+            system("start https://github.com/Filoppi/Prey-Luma");
+        }
+        static const std::string social_link = std::string("Join our \"HDR Den\" Discord ") + std::string(ICON_FK_SEARCH);
+        if (ImGui::Button(social_link.c_str())) {
+            static const std::string obfuscated_link = std::string("start https://discord.gg/5WZX") + std::string("DpmbpP");
+            system(obfuscated_link.c_str());
+        }
+        ImGui::PopStyleColor(3);
+
+        ImGui::NewLine();
+        ImGui::Text("Credits:"
+            "\n\nMain:"
+            "\nPumbo (Graphics)"
+            "\nErsh (Reverse engineering)"
+
+            "\n\nThird Party:"
+            "\nReShade"
+            "\nImGui"
+            "\nRenoDX"
+            "\nNvidia (DLSS)"
+            "\nOklab"
+            "\nFubaxiusz (Perfect Perspective)"
+            "\nIntel (Xe)GTAO"
+            "\nDarktable UCS"
+            "\nAMD RCAS"
+            "\nDICE (HDR tonemapper)"
+            "\nCrytek (CryEngine)"
+            "\nArkane (Prey)"
+
+            "\n\nThanks:"
+            "\nShortFuse (support)"
+            "\nLilium (support)"
+            "\nKoKlusz (testing)"
+            "\nMusa (testing)"
+            "\ncrosire (support)"
+            "\nRegevitamins (support)"
+            "\nMartysMods (support)"
+            "\nKaldaien (support)"
+            "\nnd4spd (testing)"
+            , "");
+
+        ImGui::EndTabItem(); // About
+    }
 
     ImGui::EndTabBar(); // TabBar
   }
