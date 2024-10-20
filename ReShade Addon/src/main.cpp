@@ -1896,7 +1896,6 @@ void SetPreyLumaConstantBuffers(reshade::api::command_list* cmd_list, reshade::a
     }
 }
 
-//TODOFT5: where is glass drawns
 //TODOFT5: expose DLSS res range multipliers here or to game config
 //TODOFT5: DLSS pre-exposure (duplicate?)
 //TODOFT5: prey verify that the sun sprite size didn't already change with resolution on startup
@@ -2561,7 +2560,7 @@ bool OnDrawOrDispatchIndirect(
   return HandlePreDraw(cmd_list, is_dispatch);
 }
 
-//TODOFT: use the native ReShade sampler desc instead? Probably not
+// TODO: use the native ReShade sampler desc instead? It's not really necessary
 com_ptr<ID3D11SamplerState> CreateCustomSampler(reshade::api::device* device, D3D11_SAMPLER_DESC desc)
 {
     if (samplers_upgrade_mode <= 0)
