@@ -34,8 +34,12 @@ void main(
   // LUMA FT: fixed sun shafts not scaling correctly by aspect ratio.
   // They exclusively scaled properly with the FOV, so (e.g.) at 32:9 they'd look the same at 16:9 as long as the same horizontal FOV was the same (e.g. ~82), but that would cause major cropping of the picture in UW,
   // so this code assumes the user has scaled the FOV properly for their UW resolution, matching the 16:9 vertical FOV.
-  // Ideally these calculations would be done by comparing vanilla FOV/AR and current FOV/AR but we don't have all that information accessible here.
+  // Ideally these calculations would be done by comparing vanilla FOV/AR and current FOV/AR but we don't have all that information accessible here,
+  // and we especially don't know what the baseline FOV is for any point (e.g. it can be different in cutscenes and after specific gameplay actions).
+  // This also means that when the sprint or do other things that increase the FOV, the sun shafts don't scale in size in screen space,
+  // which isn't really a great thing, but then again they are so rate in Prey that it doesn't particularly matter.
   // Note that this adjustment results in a perfect match, it doesn't need to work in FOV tangent space.
+  //TODOFT: if we added perspective correction and increased the baseline FOV, we should add a FOV scale modifier here, to avoid the sun shafts looking huge.
   float screenAspectRatio = CV_ScreenSize.w / CV_ScreenSize.z;
   float aspectRatioCorrection = max(screenAspectRatio / NativeAspectRatio, 1.0);
   
