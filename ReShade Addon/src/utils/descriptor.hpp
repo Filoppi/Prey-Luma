@@ -62,7 +62,7 @@ struct HashPair {
   }
 };
 
-struct __declspec(uuid("018fa2c9-7a8b-76dc-bc84-87c53574223f")) DeviceData {
+struct __declspec(uuid("4f54685a-0bb6-4742-a0b4-151db600f0cc")) DeviceData {
   // <descriptor_table.handle[index], <resourceView.handle>>
   std::unordered_map<std::pair<uint64_t, uint32_t>, reshade::api::descriptor_table_update, HashPair> table_descriptor_resource_views;
   // Index of table_descriptor_resource_views

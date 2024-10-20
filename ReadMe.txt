@@ -13,12 +13,14 @@ Instructions:
 Run "setup.ps1" to fully setup the Visual Studio projects and solution with cmake (part of the projects are pre-generated without cmake, because I couldn't bother to port everything to it). This will also add the game installation environment variables.
 Open "Prey-Luma.sln" and build ...
 The code hot spots are in the main.cpp files etc etc etc...
+Run "deploy (*).bat" to run the game. The Steam version of the game can't be launched from the exe, so that bat automatically closes the previous instance of the game, copies the new files and launches the game through Steam.
 
 To upgrade the native plugin version, open ".\Native Plugin\Plugin\CMakeLists.txt" and update the "VERSION" number there.
 The ReShade addon version is stored in ...
+There's a "DEVELOPMENT" and "TEST" flag in main.cpp. They automatically spread to shaders on the next load/compile. Building in Debug (as opposed to Release), simply adds debug symbols etc, but no additional development features.
 
 The game's original shaders code can be found in the ... pak in the GOG version of the game (extract the zip).
-Luma shaders can be found in ".\Data\Binaries\Danielle\x64\Release\renodx-dev\live".
+Luma shaders can be found in ".\Data\Binaries\Danielle\x64\Release\Prey-Luma\".
 
 Luma inherits code from the following repositories:
 https://github.com/ersh1/Luma-Prey/

@@ -58,4 +58,4 @@ Thanks:
 KoKlusz (testing), Musa (testing), ShortFuse (RenoDX and support), Lilium (support), Regevitamins (support), MartysMods (support), crosire (ReShade and support)
 
 Third party:
-Oklab, (Xe)GTAO, Darktable UCS, AMD RCAS, DICE HDR code, CryEngine and Arkane code
+Fubaxiusz (Perfect Perspective), Oklab, (Xe)GTAO, Darktable UCS, AMD RCAS, DICE HDR code, CryEngine and Arkane code
