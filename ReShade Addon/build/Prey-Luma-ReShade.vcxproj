@@ -138,6 +138,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\src\dlss\DLSS.h" />
+    <ClInclude Include="..\src\includes\cbuffers.h" />
+    <ClInclude Include="..\src\includes\math.h" />
+    <ClInclude Include="..\src\includes\matrix.h" />
     <ClInclude Include="..\src\utils\descriptor.hpp" />
     <ClInclude Include="..\src\utils\display.hpp" />
     <ClInclude Include="..\src\utils\format.hpp" />

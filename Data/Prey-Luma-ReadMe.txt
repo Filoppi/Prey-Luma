@@ -1,7 +1,7 @@
 Luma (Prey (2017)) aims to rewrite the game post processing phase to improve the look of the game without drifting from the original artistic vision.
 The highlight feature is adding HDR support, though benefits are not restricted to HDR users, there's a lot more, and it's akin to a small Remastered.
 
-Luma was created by Pumbo (graphics) and Ersh (binaries reverse engineering and hooks).
+Luma was created by Pumbo (graphics) and Ersh (reverse engineering).
 Join our discord here: https://discord.gg/DNGfMZgH3f
 
 List of features:
@@ -55,7 +55,7 @@ https://www.paypal.com/donate?hosted_button_id=BFT6XUJPRL6YC (Pumbo)
 https://ko-fi.com/ershin (Ersh)
 
 Thanks:
-KoKlusz (testing), Musa (testing), ShortFuse (RenoDX and support), Lilium (support), Regevitamins (support), MartysMods (support), crosire (ReShade and support)
+ShortFuse (support), Lilium (support), KoKlusz (testing), Musa (testing), crosire (support), Regevitamins (support), MartysMods (support), Kaldaien (support), nd4spd (testing)
 
 Third party:
-Fubaxiusz (Perfect Perspective), Oklab, (Xe)GTAO, Darktable UCS, AMD RCAS, DICE HDR code, CryEngine and Arkane code
+ReShade, ImGui, RenoDX, Nvidia (DLSS), Fubaxiusz (Perfect Perspective), Oklab, Intel (Xe)GTAO, Darktable UCS, AMD RCAS, DICE (HDR tonemapper), Crytek (CryEngine) and Arkane (Prey)
