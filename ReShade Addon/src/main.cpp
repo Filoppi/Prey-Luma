@@ -63,6 +63,7 @@
 #define ImTextureID ImU64
 
 #define ENABLE_NGX 1
+// Depends on "DEVELOPMENT"
 #define TEST_DLSS 0
 
 #define DLSS_TARGET_TEXTURE_WAS_UAV 0
@@ -203,9 +204,9 @@ struct CachedCustomShader {
 
 // For "pipeline_cache_by_pipeline_handle", "pipeline_caches_by_shader_hash", "shader_cache", "pipelines_to_destroy"
 std::recursive_mutex s_mutex_generic;
-// For "shaders_to_dump", "dumped_shaders", "shader_cache"
+// For "shaders_to_dump", "dumped_shaders", "shader_cache". In general for dumping shaders to disk
 std::recursive_mutex s_mutex_dumping;
-// For "custom_shaders_cache", "pipelines_to_reload"
+// For "custom_shaders_cache", "pipelines_to_reload". In general for loading shaders from disk and compiling them.
 std::recursive_mutex s_mutex_loading;
 
 std::thread thread_auto_dumping;
@@ -2191,6 +2192,8 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
           //TODOFT: skip SMAA edge detection and edge AA passes, or just disable SMAA in menu
           //TODOFT: skip the texture copy into ps_shader_resources[1] after TAA if DLSS is running? It's not really necessary AFAIK (though it might be used by other things in the game, it's not clear, but likely not...)
           //TODOFT: Enable "DLSS_TARGET_TEXTURE_WAS_UAV" by changing the buffer to UAV with Luma DLL?
+          //TODOFT: add DLSS transparency mask (e.g. glass, decals, emissive) by caching the g-buffers before and after this stuff draws near the end?
+          //TODOFT: add DLSS bias mask (to ignore animated textures) by marking up some shaders(materials)/textures hashes with it?
           //TODOFT1: force preset E even with DLAA? Nah, F looks better it seems? Right now preset F is used for DRS (or is it?)!! (try C instead of F in that case though!). Or simply expose it to users, or at least try it for dev settings.
           
           //TODO LUMA: move DLSS before tonemapping, depth of field, bloom and blur. It wouldn't be easy because exposure is calculated after blur in CryEngine,
