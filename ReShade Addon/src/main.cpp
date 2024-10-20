@@ -967,10 +967,13 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
     CComPtr<ID3DBlob> uncompiled_code_blob;
 
     if (is_hlsl) {
+        constexpr bool compile_from_current_path = false; // Set this to true to include headers from the current directory instead of the file root folder
+
         const auto previous_path = std::filesystem::current_path();
-        // Set the current path to the shaders directory, it's needed by the DX compilers (specifically by the preprocess functions)
-        //TODOFT5: this changes where Prey saves its log files: solution here https://github.com/clshortfuse/renodx/blob/4e368e50e612d57ca6ee13314fe931722f8e6403/src/utils/shader_compiler.hpp#L39 (and L341)
-        std::filesystem::current_path(directory);
+        if (compile_from_current_path) {
+            // Set the current path to the shaders directory, it can be needed by the DX compilers (specifically by the preprocess functions)
+            std::filesystem::current_path(directory);
+        }
 
         std::string compilation_error;
 
@@ -978,7 +981,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
         // Note that this won't replace "custom_shader->compilation_error" unless there was any new error/warning, and that's kind of what we want
         // Note that this will not try to build the shader again if the last compilation failed and its files haven't changed
         bool error = false;
-        const bool needs_compilation = renodx::utils::shader::compiler::PreprocessShaderFromFile(entry_path.c_str(), entry_path.filename().c_str(), shader_target.c_str(), custom_shader->preprocessed_hash, uncompiled_code_blob, shader_defines, error, &compilation_error);
+        const bool needs_compilation = renodx::utils::shader::compiler::PreprocessShaderFromFile(entry_path.c_str(), compile_from_current_path ? entry_path.filename().c_str() : entry_path.c_str(), shader_target.c_str(), custom_shader->preprocessed_hash, uncompiled_code_blob, shader_defines, error, &compilation_error);
 
         // Only overwrite the previous compilation error if we have any preprocessor errors
         if (!compilation_error.empty() || error) {
@@ -1002,8 +1005,10 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
             shaders_compilation_errors.append(custom_shader->compilation_error);
         }
 
-        // Restore it to avoid unknown consequences
-        std::filesystem::current_path(previous_path);
+        if (compile_from_current_path) {
+            // Restore it to avoid unknown consequences
+            std::filesystem::current_path(previous_path);
+        }
 
         if (!needs_compilation) {
           continue;

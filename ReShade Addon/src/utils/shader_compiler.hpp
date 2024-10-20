@@ -130,8 +130,9 @@ void FillDefines(const std::vector<std::string>& in_defines, std::vector<D3D_SHA
 
 static std::unordered_map<LPCWSTR, HMODULE> d3d_compiler;
 
-// Returns true if the shader changed (or if we can't compare it)
-bool PreprocessShaderFromFile(LPCWSTR file_path, LPCWSTR shader_name_w, LPCSTR shader_target, std::size_t& preprocessed_hash, CComPtr<ID3DBlob>& uncompiled_code_blob, const std::vector<std::string>& defines = {}, bool& error = dummy_bool, std::string* out_error = nullptr, LPCWSTR fxc_library = L"D3DCompiler_47.dll") {
+// Returns true if the shader changed (or if we can't compare it).
+// Pass in "shader_name_w" as the full path to avoid needing to set the current directory.
+bool PreprocessShaderFromFile(LPCWSTR file_path, LPCWSTR shader_name_w, LPCSTR shader_target, std::size_t& preprocessed_hash /*= 0*/, CComPtr<ID3DBlob>& uncompiled_code_blob, const std::vector<std::string>& defines = {}, bool& error = dummy_bool, std::string* out_error = nullptr, LPCWSTR fxc_library = L"D3DCompiler_47.dll") {
   std::vector<D3D_SHADER_MACRO> local_defines;
   FillDefines(defines, local_defines);
 
