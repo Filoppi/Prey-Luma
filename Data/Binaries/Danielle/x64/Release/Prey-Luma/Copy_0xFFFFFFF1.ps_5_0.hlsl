@@ -4,7 +4,7 @@ Texture2D<float4> sourceTexture : register(t0);
 float4 main(float4 pos : SV_Position0) : SV_Target0
 {
 #if 0 // TEST
-	return float4(1.f, 0.f, 0.f, 1.f);
+	return float4(1, 0, 0, 1);
 #else
 	return sourceTexture.Load((int3)pos.xyz);
 #endif

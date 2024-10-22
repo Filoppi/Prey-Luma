@@ -35,7 +35,7 @@ Issues and limitations:
 -This is currently only compatible with the Steam version of the game (the game data is across all game releases, so one could theoretically force use the Steam executable even on GOG or other game releases).
 -The SDR mode is currently contained in an HDR output, so if looked at from an SDR display, it will have a gamma 2.2/sRGB mismatch.
 -Prey Luma settings aren't saved so they need to be changed on every boot.
--The UI will look a bit different from Vanilla due to it using HDR/linear blending modes.
+-The UI will look a bit different from Vanilla due to Luma using HDR/linear blending modes by default. Set "POST_PROCESS_SPACE_TYPE" to 0 or 2 in the advanced settings to make it behave like Vanilla.
 -Anti Aliasing might show as "None" in the game settings menu even if it internally is engaged to TAA.
 -Super-sampling is not supported with Luma.
 -Changing the resolution after starting the game is not suggested, as some effects get initialized for the original resolution without being resized (vanilla issue).

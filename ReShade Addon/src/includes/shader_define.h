@@ -118,6 +118,18 @@ public:
         compiled_data.value[0] = editable_data.value[0];
     }
 
+    // This assumes the value was numerical to begin with (it usually is)
+    uint8_t GetNumericalCompiledValue() const {
+        if (compiled_data.value[0] == '\0') {
+            // Default to 0 if we have no default value
+            if (default_data.value[0] == '\0') {
+                return 0;
+            }
+            return default_data.value[0] - '0';
+        }
+        return compiled_data.value[0] - '0';
+    }
+
     const char* GetTooltip() const { return tooltip; }
 
     static void Reset(std::vector<ShaderDefineData>& shader_defines_data) {

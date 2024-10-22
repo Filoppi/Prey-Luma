@@ -69,6 +69,8 @@
 #define DLSS_TARGET_TEXTURE_WAS_UAV 0
 #define DLSS_KEEP_DLL_LOADED 1
 
+#define FORCE_KEEP_CUSTOM_SHADERS_LOADED 1
+
 #define OLD_GLOBAL_BUFFER_INTERCEPT_METHOD 0
 #define DLSS_UPSCALE_LENS_EFFECTS 1
 #define REPLACE_SAMPLERS_LIVE 1
@@ -207,6 +209,8 @@ std::recursive_mutex s_mutex_generic;
 std::recursive_mutex s_mutex_dumping;
 // For "custom_shaders_cache", "pipelines_to_reload". In general for loading shaders from disk and compiling them.
 std::recursive_mutex s_mutex_loading;
+// Mutex for created shader DX objects
+std::recursive_mutex s_mutex_shader_objects;
 
 std::thread thread_auto_dumping;
 std::atomic<bool> thread_auto_dumping_running = false;
@@ -320,6 +324,7 @@ uint32_t shader_hash_PostAAUpscaleImage;
 std::unordered_set<uint32_t> shader_hashes_LensOptics;
 const uint32_t shader_hash_copy_vertex = std::stoul("FFFFFFF0", nullptr, 16);
 const uint32_t shader_hash_copy_pixel = std::stoul("FFFFFFF1", nullptr, 16);
+const uint32_t shader_hash_transform_function_copy_pixel = std::stoul("FFFFFFF2", nullptr, 16);
 
 //TODOFT3: clean up
 constexpr bool dlss_mv_jittered = true; //TODOFT4: test this, in case it ever looked better, but the dynamic objects motion vectors are always half jittered and we can't remove these jitters properly (we tried...) so it's better to just run jittered all along (we got it to look perfect across all cases)
@@ -433,16 +438,105 @@ com_ptr<ID3D11Texture2D> dlss_motion_vectors;
 com_ptr<ID3D11RenderTargetView> dlss_motion_vectors_rtv;
 #endif // ENABLE_NGX
 com_ptr<ID3D11Texture2D> copy_texture;
+com_ptr<ID3D11Texture2D> transfer_function_copy_texture;
+com_ptr<ID3D11ShaderResourceView> transfer_function_copy_shader_resource_view;
 com_ptr<ID3D11VertexShader> copy_vertex_shader;
 com_ptr<ID3D11PixelShader> copy_pixel_shader;
+com_ptr<ID3D11PixelShader> transfer_function_copy_pixel_shader;
 
-std::recursive_mutex s_mutex_swapchain;
+com_ptr<ID3D11BlendState> default_blend_state;
+
+// For "native_swapchain3" and "global_native_device"
+std::recursive_mutex s_mutex_device;
 // There's only one swapchain in Prey, but the game chances its configuration from different threads
 IDXGISwapChain3* native_swapchain3 = nullptr;
+ID3D11Device* global_native_device = nullptr;
 
 HWND game_window = 0;
 
 static_assert(sizeof(Matrix44A) == sizeof(float4) * 4);
+
+// Caches all the states we might need to modify to draw a simple pixel shader.
+// First call "Cache()" (once) and then call "Restore()" (once).
+struct DrawStateStack {
+    // Cache aside the previous resources/states:
+    void Cache(ID3D11DeviceContext* device_context) {
+        device_context->OMGetBlendState(&blend_state, blend_factor, &blend_sample_mask); //TODOFT: blend_factor!? I guess it's passed in as a ptr already
+        device_context->IAGetPrimitiveTopology(&primitive_topology);
+        device_context->RSGetScissorRects(&scissor_rects_num, nullptr); // This will get the number of scissor rects used
+        device_context->RSGetScissorRects(&scissor_rects_num, &scissor_rects[0]);
+        device_context->RSGetViewports(&viewports_num, nullptr); // This will get the number of viewports used
+        device_context->RSGetViewports(&viewports_num, &viewports[0]);
+        device_context->PSGetShaderResources(0, 1, &shader_resource_view); // Only cache the first one
+        device_context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &render_target_views[0], &depth_stencil_views[0]);
+        device_context->VSGetShader(&vs, ps_instances, &ps_instances_count); // Prey doesn't seem to use the optional shader instances (classes) but we do it anyway for extra safety
+        device_context->PSGetShader(&ps, vs_instances, &vs_instances_count);
+        ASSERT_ONCE(ps_instances_count == 0 && vs_instances_count == 0); //TODOFT5
+
+#if 0 // These are not needed until proven otherwise, we don't change, nor rely on these states
+        ID3D11RasterizerState* RS;
+        UINT StencilRef;
+        ID3D11DepthStencilState* DepthStencilState;
+        ID3D11SamplerState* PSSampler;
+        ID3D11Buffer* IndexBuffer;
+        ID3D11Buffer* VertexBuffer;
+        ID3D11Buffer* VSConstantBuffer;
+        UINT IndexBufferOffset, VertexBufferStride, VertexBufferOffset;
+        DXGI_FORMAT IndexBufferFormat;
+        ID3D11InputLayout* InputLayout;
+
+        device_context->RSGetState(&RS);
+        device_context->OMGetDepthStencilState(&DepthStencilState, &StencilRef);
+        device_context->PSGetSamplers(0, 1, &PSSampler);
+        device_context->VSGetConstantBuffers(0, 1, &VSConstantBuffer);
+        device_context->IAGetIndexBuffer(&IndexBuffer, &IndexBufferFormat, &IndexBufferOffset);
+        device_context->IAGetVertexBuffers(0, 1, &VertexBuffer, &VertexBufferStride, &VertexBufferOffset);
+        device_context->IAGetInputLayout(&InputLayout);
+#endif
+    }
+
+    // Restore the previous resources/states:
+    void Restore(ID3D11DeviceContext* device_context) {
+        device_context->OMSetBlendState(blend_state.get(), blend_factor, blend_sample_mask);
+        device_context->IASetPrimitiveTopology(primitive_topology);
+        device_context->RSSetScissorRects(scissor_rects_num, &scissor_rects[0]);
+        device_context->RSSetViewports(viewports_num, &viewports[0]);
+        ID3D11ShaderResourceView* const shader_resource_view_const = shader_resource_view.get();
+        device_context->PSSetShaderResources(0, 1, &shader_resource_view_const);
+        device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &render_target_views[0], depth_stencil_views[0]);
+        for (UINT i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; i++) {
+            if (render_target_views[i] != nullptr) {
+                render_target_views[i]->Release();
+                render_target_views[i] = nullptr;
+            }
+            if (depth_stencil_views[i] != nullptr) {
+                depth_stencil_views[i]->Release();
+                depth_stencil_views[i] = nullptr;
+            }
+        }
+        device_context->VSSetShader(vs.get(), ps_instances, ps_instances_count);
+        device_context->PSSetShader(ps.get(), vs_instances, vs_instances_count);
+    }
+
+    com_ptr<ID3D11BlendState> blend_state;
+    FLOAT blend_factor[4] = { 1.f, 1.f, 1.f, 1.f };
+    UINT blend_sample_mask;
+    com_ptr<ID3D11VertexShader> vs;
+    com_ptr<ID3D11PixelShader> ps;
+    // 256 is max according to PSSetShader documentation
+    UINT ps_instances_count = 256;
+    UINT vs_instances_count = 256;
+    ID3D11ClassInstance* ps_instances[256];
+    ID3D11ClassInstance* vs_instances[256];
+    D3D11_PRIMITIVE_TOPOLOGY primitive_topology;
+    ID3D11RenderTargetView* render_target_views[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
+    ID3D11DepthStencilView* depth_stencil_views[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
+    com_ptr<ID3D11ShaderResourceView> shader_resource_view;
+    D3D11_RECT scissor_rects[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
+    UINT scissor_rects_num = 1;
+    D3D11_VIEWPORT viewports[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
+    UINT viewports_num = 1;
+};
 
 bool last_pressed_unload = false;
 bool trace_scheduled = false;
@@ -630,6 +724,16 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
       shaders_compilation_errors.clear();
   }
 
+  const auto directory = GetShaderPath();
+  if (!std::filesystem::exists(directory)) {
+      if (!std::filesystem::create_directory(directory)) {
+          shaders_compilation_errors = "Cannot find nor create shaders directory";
+          return;
+      }
+  }
+
+  std::unordered_set<uint32_t> changed_shaders_hashes;
+
   for (const auto& entry : std::filesystem::directory_iterator(directory)) {
     if (!entry.is_regular_file()) {
       reshade::log::message(reshade::log::level::warning, "loadCustomShaders(not a regular file)");
@@ -726,6 +830,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
               custom_shader->file_path = entry_path;
               custom_shader->is_hlsl = is_hlsl;
               custom_shader->preprocessed_hash = preprocessed_hash;
+              changed_shaders_hashes.emplace(shader_hash);
               // Theoretically at this point, the shader pre-processor below should skip re-compiling this shader unless the hash changed
           }
       }
@@ -781,6 +886,10 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
           continue;
         }
     }
+
+    // If we reached this place, we can consider this shader as "changed" even if it will fail compiling.
+    // We don't care to avoid adding duplicate elements to this list.
+    changed_shaders_hashes.emplace(shader_hash);
 
     // For extra safety, just clear everything that will be re-assigned below if this custom shader already existed
     if (has_custom_shader) {
@@ -866,9 +975,50 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
     }
   }
 
-  // Only save after compiling, to make sure the config data aligns with the serialized compiled shaders data (blobs)
-  {
+  if (pipelines_filter.empty()) {
+      // Only save after compiling, to make sure the config data aligns with the serialized compiled shaders data (blobs)
       ShaderDefineData::Save(shader_defines_data);
+  }
+
+  auto CreateShaderObject = [&]<typename T>(uint32_t shader_hash, com_ptr<T>& shader_object, bool force_delete_previous = true) {
+      if (changed_shaders_hashes.contains(shader_hash)) {
+          if (force_delete_previous) {
+              // The shader changed, so we should clear its previous version resource anyway (to avoid keeping an outdated version)
+              shader_object = nullptr;
+          }
+          if (custom_shaders_cache.contains(shader_hash)) {
+              // Delay the deletition
+              if (!force_delete_previous) {
+                  shader_object = nullptr;
+              }
+
+              const CachedCustomShader* shader_cache = custom_shaders_cache[shader_hash];
+
+              const std::lock_guard<std::recursive_mutex> lock(s_mutex_device);
+
+              if constexpr (typeid(T) == typeid(ID3D11VertexShader)) {
+                  assert(SUCCEEDED(global_native_device->CreateVertexShader(shader_cache->code.data(), shader_cache->code.size(), nullptr, &shader_object)));
+              }
+              else if constexpr (typeid(T) == typeid(ID3D11PixelShader)) {
+                  assert(SUCCEEDED(global_native_device->CreatePixelShader(shader_cache->code.data(), shader_cache->code.size(), nullptr, &shader_object)));
+              }
+              else if constexpr (typeid(T) == typeid(ID3D11ComputeShader)) {
+                  assert(SUCCEEDED(global_native_device->CreateComputeShader(shader_cache->code.data(), shader_cache->code.size(), nullptr, &shader_object)));
+              }
+              else {
+                  static_assert(false);
+              }
+          }
+      }
+      };
+
+  // Refresh the persistent custom shaders we have.
+  // Note that the hash can be "fake" on custom shaders, as we decide it trough the file names.
+  {
+      const std::lock_guard<std::recursive_mutex> lock(s_mutex_shader_objects);
+      CreateShaderObject(shader_hash_copy_vertex, copy_vertex_shader, !(bool)FORCE_KEEP_CUSTOM_SHADERS_LOADED);
+      CreateShaderObject(shader_hash_copy_pixel, copy_pixel_shader, !(bool)FORCE_KEEP_CUSTOM_SHADERS_LOADED);
+      CreateShaderObject(shader_hash_transform_function_copy_pixel, transfer_function_copy_pixel_shader, !(bool)FORCE_KEEP_CUSTOM_SHADERS_LOADED);
   }
 }
 
@@ -1130,6 +1280,12 @@ void ToggleLiveWatching() {
 void OnInitDevice(reshade::api::device* device) {
   auto& device_data = device->create_private_data<DeviceData>();
   device_data.device_api = device->get_api();
+  ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
+  {
+      const std::lock_guard<std::recursive_mutex> lock(s_mutex_device);
+      assert(!global_native_device);
+      global_native_device = native_device;
+  }
 
   reshade::api::pipeline_layout_param pipeline_layout_param = reshade::api::pipeline_layout_param();
   pipeline_layout_param.type = reshade::api::pipeline_layout_param_type::push_constants;  // We could be using "reshade::api::pipeline_layout_param_type::push_descriptors" in cbuffer mode too but this is simpler
@@ -1144,10 +1300,23 @@ void OnInitDevice(reshade::api::device* device) {
   pipeline_layout_param.push_constants.dx_register_index = ui_cbuffer_index;
   result = device->create_pipeline_layout(1, &pipeline_layout_param, &device_data.ui_pipeline_layout);
 
+  D3D11_BLEND_DESC blend_state_desc;
+  blend_state_desc.AlphaToCoverageEnable = FALSE;
+  blend_state_desc.IndependentBlendEnable = FALSE;
+  // We only need RT 0
+  blend_state_desc.RenderTarget[0].BlendEnable = FALSE;
+  blend_state_desc.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
+  blend_state_desc.RenderTarget[0].DestBlend = D3D11_BLEND_ZERO;
+  blend_state_desc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+  blend_state_desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+  blend_state_desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
+  blend_state_desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+  blend_state_desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+  native_device->CreateBlendState(&blend_state_desc, &default_blend_state);
+
 #if ENABLE_NGX
   assert(!NGX::DLSS::HasInit()); // DLSS is only supported on one device at a time
   if (dlss_sr) {
-      ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
       com_ptr<IDXGIDevice> native_dxgi_device;
       HRESULT hr = native_device->QueryInterface(&native_dxgi_device);
       com_ptr<IDXGIAdapter> native_adapter;
@@ -1206,12 +1375,22 @@ void OnDestroyDevice(reshade::api::device* device) {
 #endif // NGX
 
   copy_texture = nullptr;
-  copy_vertex_shader = nullptr;
-  copy_pixel_shader = nullptr;
+  transfer_function_copy_texture = nullptr;
+  transfer_function_copy_shader_resource_view = nullptr;
+  {
+      const std::lock_guard<std::recursive_mutex> lock(s_mutex_shader_objects);
+      copy_vertex_shader = nullptr;
+      copy_pixel_shader = nullptr;
+      transfer_function_copy_pixel_shader = nullptr;
+  }
+
+  default_blend_state = nullptr;
 
   {
-      const std::lock_guard<std::recursive_mutex> lock(s_mutex_swapchain);
+      const std::lock_guard<std::recursive_mutex> lock(s_mutex_device);
       assert(!native_swapchain3);
+      assert(global_native_device);
+      global_native_device = nullptr;
   }
 
   device->destroy_private_data<DeviceData>();
@@ -1251,7 +1430,7 @@ void OnInitSwapchain(reshade::api::swapchain* swapchain) {
 
   IDXGISwapChain3* local_native_swapchain3;
   {
-      const std::lock_guard<std::recursive_mutex> lock(s_mutex_swapchain);
+      const std::lock_guard<std::recursive_mutex> lock(s_mutex_device);
       ASSERT_ONCE(native_swapchain3 == nullptr);
       native_swapchain3 = nullptr;
       // The cast pointer is actually the same, we are just making sure the type is right.
@@ -1288,7 +1467,7 @@ void OnInitSwapchain(reshade::api::swapchain* swapchain) {
 
 void OnDestroySwapchain(reshade::api::swapchain* swapchain) {
   {
-      const std::lock_guard<std::recursive_mutex> lock(s_mutex_swapchain);
+      const std::lock_guard<std::recursive_mutex> lock(s_mutex_device);
       assert(native_swapchain3 != nullptr);
       if ((IDXGISwapChain*)(swapchain->get_native()) == native_swapchain3) {
           native_swapchain3 = nullptr;
@@ -1579,6 +1758,36 @@ void OnBindPipeline(
 #endif // DEVELOPMENT
 }
 
+void DrawCustomPixelShader(ID3D11DeviceContext* device_context, ID3D11BlendState* blend_state, ID3D11VertexShader* vs, ID3D11PixelShader* ps, ID3D11ShaderResourceView* source_resource_texture_view, ID3D11RenderTargetView* target_resource_texture_view, UINT width, UINT height) {
+    // Set the new resources/states:
+    constexpr FLOAT blend_factor[4] = { 1.f, 1.f, 1.f, 1.f };
+    device_context->OMSetBlendState(blend_state, blend_factor, 0xFFFFFFFF);
+    // Note: we don't seem to need to call (and cache+restore) IASetVertexBuffers().
+    // That's either because Prey always has vertices buffers set in there already, or because DX is tolerant enough (we are not seeing any etc errors in the DX log).
+    device_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY::D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+    D3D11_RECT scissor_rect;
+    scissor_rect.left = 0;
+    scissor_rect.top = 0;
+    scissor_rect.right = width;
+    scissor_rect.bottom = height;
+    device_context->RSSetScissorRects(1, &scissor_rect);
+    D3D11_VIEWPORT viewport;
+    viewport.TopLeftX = 0;
+    viewport.TopLeftY = 0;
+    viewport.Width = width;
+    viewport.Height = height;
+    viewport.MinDepth = 0;
+    viewport.MaxDepth = 1;
+    device_context->RSSetViewports(1, &viewport);
+    device_context->PSSetShaderResources(0, 1, &source_resource_texture_view);
+    device_context->OMSetRenderTargets(1, &target_resource_texture_view, nullptr);
+    device_context->VSSetShader(vs, nullptr, 0);
+    device_context->PSSetShader(ps, nullptr, 0);
+
+    // Finally draw:
+    device_context->Draw(4, 0);
+}
+
 void OnPresent(
     reshade::api::command_queue* queue,
     reshade::api::swapchain* swapchain,
@@ -1586,6 +1795,88 @@ void OnPresent(
     const reshade::api::rect* dest_rect,
     uint32_t dirty_rect_count,
     const reshade::api::rect* dirty_rects) {
+    ID3D11Device* native_device = (ID3D11Device*)(queue->get_device()->get_native());
+    ID3D11DeviceContext* native_device_context = (ID3D11DeviceContext*)(queue->get_immediate_command_list()->get_native());
+
+    // "POST_PROCESS_SPACE_TYPE" 0 and 2 mean that the final image was stored textures in gamma space,
+    // so we need to linearize it for scRGB HDR (linear) output
+    if (shader_defines_data[post_process_space_define_index].GetNumericalCompiledValue() != 1) {
+        const std::lock_guard<std::recursive_mutex> lock_shader_objects(s_mutex_shader_objects);
+        if (copy_vertex_shader && transfer_function_copy_pixel_shader) {
+            IDXGISwapChain* native_swapchain = (IDXGISwapChain*)(swapchain->get_native());
+            com_ptr<ID3D11Texture2D> back_buffer;
+            native_swapchain->GetBuffer(0, IID_PPV_ARGS(&back_buffer)); // DX11 only ever has 1 buffer for games
+            assert(back_buffer != nullptr);
+        
+            D3D11_TEXTURE2D_DESC target_desc;
+            back_buffer->GetDesc(&target_desc);
+            ASSERT_ONCE((target_desc.BindFlags & D3D11_BIND_RENDER_TARGET) != 0);
+            // For now we only support this format, nothing else wouldn't realy make sense
+            ASSERT_ONCE(target_desc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT);
+
+            D3D11_TEXTURE2D_DESC proxy_target_desc;
+            if (transfer_function_copy_texture.get() != nullptr) {
+                transfer_function_copy_texture->GetDesc(&proxy_target_desc);
+            }
+            if (transfer_function_copy_texture.get() == nullptr || proxy_target_desc.Width != target_desc.Width || proxy_target_desc.Height != target_desc.Height /*|| proxy_target_desc.Format != target_desc.Format*/) {
+                proxy_target_desc = target_desc;
+                proxy_target_desc.BindFlags |= D3D11_BIND_SHADER_RESOURCE;
+                proxy_target_desc.BindFlags &= ~D3D11_BIND_RENDER_TARGET;
+                proxy_target_desc.BindFlags &= ~D3D11_BIND_UNORDERED_ACCESS;
+                proxy_target_desc.CPUAccessFlags = 0;
+                proxy_target_desc.Usage = D3D11_USAGE_DEFAULT;
+                transfer_function_copy_texture = nullptr;
+                assert(SUCCEEDED(native_device->CreateTexture2D(&proxy_target_desc, nullptr, &transfer_function_copy_texture)));
+
+                D3D11_SHADER_RESOURCE_VIEW_DESC source_srv_desc;
+                source_srv_desc.Format = target_desc.Format;
+                source_srv_desc.ViewDimension = D3D11_SRV_DIMENSION::D3D11_SRV_DIMENSION_TEXTURE2D;
+                source_srv_desc.Texture2D.MipLevels = 1;
+                source_srv_desc.Texture2D.MostDetailedMip = 0;
+                transfer_function_copy_shader_resource_view = nullptr;
+                assert(SUCCEEDED(native_device->CreateShaderResourceView(transfer_function_copy_texture.get(), &source_srv_desc, &transfer_function_copy_shader_resource_view)));
+            }
+
+            // We need to copy the texture to read back from it, even if we only exclusively write to the same pixel we read and thus there couldn't be any race condition. Unfortunately DX works like that.
+            native_device_context->CopyResource(transfer_function_copy_texture.get(), back_buffer.get());
+
+            DrawStateStack draw_state_stack;
+            draw_state_stack.Cache(native_device_context);
+
+            com_ptr<ID3D11RenderTargetView> target_resource_texture_view;
+            // If we already had a render target, we can assume it was already set to the swapchain,
+            // but it's good to make sure of it nonetheless.
+            if (draw_state_stack.render_target_views[0] != nullptr) {
+#if DEVELOPMENT || TEST
+                com_ptr<ID3D11Resource> render_target_resource;
+                draw_state_stack.render_target_views[0]->GetResource(&render_target_resource);
+                assert(render_target_resource.get() == back_buffer.get());
+#endif
+                target_resource_texture_view = draw_state_stack.render_target_views[0];
+            }
+            else { // This case doesn't seem to happen (ever?) so we don't bother caching the "ID3D11RenderTargetView"
+                D3D11_RENDER_TARGET_VIEW_DESC target_rtv_desc;
+                target_rtv_desc.Format = target_desc.Format;
+                target_rtv_desc.ViewDimension = D3D11_RTV_DIMENSION::D3D11_RTV_DIMENSION_TEXTURE2D;
+                target_rtv_desc.Texture2D.MipSlice = 0;
+                assert(SUCCEEDED(native_device->CreateRenderTargetView(back_buffer.get(), &target_rtv_desc, &target_resource_texture_view)));
+            }
+
+            // Note: we don't need to re-apply our custom cbuffers as in Prey, they are on indexes that are never used by the game's code
+            DrawCustomPixelShader(native_device_context, default_blend_state.get(), copy_vertex_shader.get(), transfer_function_copy_pixel_shader.get(), transfer_function_copy_shader_resource_view.get(), target_resource_texture_view.get(), target_desc.Width, target_desc.Height);
+
+            draw_state_stack.Restore(native_device_context);
+        }
+        else {
+            ASSERT_ONCE(false); // The custom shaders failed to be found (they have either been unloaded or failed to compile, or simply missing in the files)
+        }
+    }
+    else {
+        transfer_function_copy_texture = nullptr;
+        transfer_function_copy_shader_resource_view = nullptr;
+    }
+
+  // Update all variables as this is on the only thing guaranteed to run once per frame:
   ASSERT_ONCE(!has_drawn_main_post_processing || found_per_view_globals); // We failed to find and assign global cbuffer 13 this frame //TODOFT4: this can trigger once when enabling/disabling dynamic resolution. Just ignore it for 1 frame or find a hook for it? (there's another identical TODO somewhere). It probably fails the threshold checks we have for the cbuffer 13 values (fixed?)
   ASSERT_ONCE(has_drawn_composed_gbuffers == has_drawn_main_post_processing); // Why is g-buffer composition drawing but post processing isn't?
   //TODOFT3: replace some instances of "has_drawn_main_post_processing" and "has_drawn_main_post_processing_previous" with "has_drawn_composed_gbuffers" (and its previous state)?
@@ -1630,8 +1921,6 @@ void OnPresent(
 #endif // DEVELOPMENT
 
 #if ENABLE_NGX
-  auto* device = queue->get_device();
-  ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
   // We wouldn't really need to do anything other than clearing "dlss_output_color",
   // but to avoid wasting memory allocated by DLSS texture and other resources,
   // clear it up once disabled.
@@ -2020,8 +2309,8 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                       
                       ASSERT_ONCE(std::lrintf(output_resolution.x) == output_texture_desc.Width && std::lrintf(output_resolution.y) == output_texture_desc.Height);
                       std::array<uint32_t, 2> dlss_render_resolution = FindClosestIntegerResolutionForAspectRatio((double)output_texture_desc.Width * (double)dlss_sr_render_resolution, (double)output_texture_desc.Height * (double)dlss_sr_render_resolution, (double)output_texture_desc.Width / (double)output_texture_desc.Height);
-                      // The "HDR" flag in DLSS SR actually means whether the color is in linear space or "sRGB gamma" (SDR) space
-                      bool dlss_hdr = uint8_t(shader_defines_data[post_process_space_define_index].compiled_data.value[0] - '0') >= 1; // "POST_PROCESS_SPACE_TYPE" (we are assuming the value was always a number and not empty)
+                      // The "HDR" flag in DLSS SR actually means whether the color is in linear space or "sRGB gamma" (SDR) space, colors beyond 0-1 don't seem to be clipped either way
+                      bool dlss_hdr = shader_defines_data[post_process_space_define_index].GetNumericalCompiledValue() >= 1; // "POST_PROCESS_SPACE_TYPE" (we are assuming the value was always a number and not empty)
 
 #if (DEVELOPMENT || TEST) && TEST_DLSS
                       com_ptr<ID3D11VertexShader> vs;
@@ -3271,6 +3560,13 @@ bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource
             // do the copy in shader
             /*if (((isUnorm8(target_desc.Format) || isFloat11(target_desc.Format)) && isFloat16(source_desc.Format))
                 || ((isUnorm8(source_desc.Format) || isFloat11(source_desc.Format)) && isFloat16(target_desc.Format)))*/ {
+                const std::lock_guard<std::recursive_mutex> lock(s_mutex_shader_objects);
+                if (copy_vertex_shader == nullptr || copy_pixel_shader == nullptr) {
+                    ASSERT_ONCE(false); // The custom shaders failed to be found (they have either been unloaded or failed to compile, or simply missing in the files)
+                    // We can't continue, drawing with emtpy shaders would crash or skip the call
+                    return false;
+                }
+
                 const auto* device = cmd_list->get_device();
                 ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
                 ID3D11DeviceContext* native_device_context = (ID3D11DeviceContext*)(cmd_list->get_native());
@@ -3278,27 +3574,6 @@ bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource
                 //
                 // Prepare resources:
                 //
-                if (copy_vertex_shader == nullptr || copy_pixel_shader == nullptr) {
-                    const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
-                    if (custom_shaders_cache.contains(shader_hash_copy_vertex) && custom_shaders_cache.contains(shader_hash_copy_pixel)) {
-                        //TODOFT: these need to be loaded at all times, even when the user unloads the data?
-                        //Also they should be re-compiled when we modify them in the IDE? Also should we create these separately (e.g. put them in a "Luma Custom Shaders" folder and compile them in a separate array?)?
-                        CachedCustomShader* vertex_shader = custom_shaders_cache[shader_hash_copy_vertex];
-                        CachedCustomShader* pixel_shader = custom_shaders_cache[shader_hash_copy_pixel];
-                        copy_vertex_shader = nullptr;
-                        hr = native_device->CreateVertexShader(vertex_shader->code.data(), vertex_shader->code.size(), nullptr, &copy_vertex_shader);
-                        assert(SUCCEEDED(hr));
-                        copy_pixel_shader = nullptr;
-                        hr = native_device->CreatePixelShader(pixel_shader->code.data(), pixel_shader->code.size(), nullptr, &copy_pixel_shader);
-                        assert(SUCCEEDED(hr));
-                    }
-                    if (copy_vertex_shader == nullptr || copy_pixel_shader == nullptr) {
-                        ASSERT_ONCE(false); // The copy shaders failed to be found (they have either been unloaded or failed to compile, or simply missing in the files)
-                        // We can't continue, drawing with emtpy shaders would crash or skip it
-                        return false;
-                    }
-                }
-
                 assert((source_desc.BindFlags & D3D11_BIND_SHADER_RESOURCE) != 0);
                 com_ptr<ID3D11ShaderResourceView> source_resource_texture_view;
                 D3D11_SHADER_RESOURCE_VIEW_DESC source_srv_desc;
@@ -3333,8 +3608,9 @@ bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource
                 // to the new copy we made, but for now this works)
                 if ((target_desc.BindFlags & D3D11_BIND_RENDER_TARGET) == 0) {
                     // Create the persisting texture copy if necessary (if anything changed from the last copy).
-                    // Theoretically all these textures have the same resolution as the screen so having one persisten texture is ok.
-                    //TODOFT: verify the above assumption
+                    // Theoretically all these textures have the same resolution as the screen so having one persisten texture should be ok.
+                    // TODO: create more than one texture (one per format and one per resolution?) if ever needed
+                    //TODOFT5: verify the above assumption, testing whether this texture is actually constantly re-created
                     D3D11_TEXTURE2D_DESC proxy_target_desc;
                     if (copy_texture.get() != nullptr) {
                         copy_texture->GetDesc(&proxy_target_desc);
@@ -3382,58 +3658,10 @@ bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource
                 hr = native_device->CreateRenderTargetView(proxy_target_resource_texture.get(), &target_rtv_desc, &target_resource_texture_view);
                 assert(SUCCEEDED(hr));
 
-                //
-                // Cache aside the previous resources/states:
-                //
-                com_ptr<ID3D11VertexShader> prev_vs;
-                com_ptr<ID3D11PixelShader> prev_ps;
-                native_device_context->VSGetShader(&prev_vs, nullptr, 0);
-                native_device_context->PSGetShader(&prev_ps, nullptr, 0);
-                ID3D11RenderTargetView* prev_render_target_views[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
-                ID3D11DepthStencilView* prev_depth_stencil_views[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
-                native_device_context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &prev_render_target_views[0], &prev_depth_stencil_views[0]);
-                D3D11_PRIMITIVE_TOPOLOGY prev_primitive_topology;
-                native_device_context->IAGetPrimitiveTopology(&prev_primitive_topology);
-                com_ptr<ID3D11ShaderResourceView> prev_shader_resource_view;
-                native_device_context->PSGetShaderResources(0, 1, &prev_shader_resource_view);
-                D3D11_RECT prev_scissor_rects[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
-                UINT prev_scissor_rects_num = 1;
-                native_device_context->RSGetScissorRects(&prev_scissor_rects_num, nullptr); // This will get the number of scissor rects used
-                native_device_context->RSGetScissorRects(&prev_scissor_rects_num, &prev_scissor_rects[0]);
-                D3D11_VIEWPORT prev_viewports[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
-                UINT prev_viewports_num = 1;
-                native_device_context->RSGetViewports(&prev_viewports_num, nullptr); // This will get the number of viewports used
-                native_device_context->RSGetViewports(&prev_viewports_num, &prev_viewports[0]);
+                DrawStateStack draw_state_stack;
+                draw_state_stack.Cache(native_device_context);
 
-                //
-                // Set the new resources/states:
-                //
-                native_device_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY::D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP); //TODOFT: do we need to call IASetVertexBuffers()?
-                D3D11_RECT scissor_rect; /*= prev_scissor_rects[0]*/
-                scissor_rect.left = 0;
-                scissor_rect.top = 0;
-                scissor_rect.right = target_desc.Width;
-                scissor_rect.bottom = target_desc.Height;
-                native_device_context->RSSetScissorRects(1, &scissor_rect);
-                D3D11_VIEWPORT viewport; /*= prev_viewports[0]*/
-                viewport.TopLeftX = 0;
-                viewport.TopLeftY = 0;
-                viewport.Width = target_desc.Width;
-                viewport.Height = target_desc.Height;
-                viewport.MinDepth = 0;
-                viewport.MaxDepth = 1;
-                native_device_context->RSSetViewports(1, &viewport);
-                ID3D11ShaderResourceView* const shader_resource_view_const = source_resource_texture_view.get();
-                native_device_context->PSSetShaderResources(0, 1, &shader_resource_view_const);
-                ID3D11RenderTargetView* const render_target_view_const = target_resource_texture_view.get();
-                native_device_context->OMSetRenderTargets(1, &render_target_view_const, nullptr);
-                native_device_context->VSSetShader(copy_vertex_shader.get(), nullptr, 0);
-                native_device_context->PSSetShader(copy_pixel_shader.get(), nullptr, 0);
-
-                //
-                // Finally draw:
-                //
-                native_device_context->Draw(4, 0);
+                DrawCustomPixelShader(native_device_context, default_blend_state.get(), copy_vertex_shader.get(), copy_pixel_shader.get(), source_resource_texture_view.get(), target_resource_texture_view.get(), target_desc.Width, target_desc.Height);
 
                 //
                 // Copy our render target target resource into the non render target target resource if necessary:
@@ -3442,27 +3670,7 @@ bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource
                     native_device_context->CopyResource(target_resource_texture.get(), proxy_target_resource_texture.get());
                 }
 
-                //
-                // Restore the previous resources/states:
-                //
-                native_device_context->IASetPrimitiveTopology(prev_primitive_topology);
-                native_device_context->RSSetScissorRects(prev_scissor_rects_num, &prev_scissor_rects[0]);
-                native_device_context->RSSetViewports(prev_viewports_num, &prev_viewports[0]);
-                ID3D11ShaderResourceView* const prev_shader_resource_view_const = prev_shader_resource_view.get();
-                native_device_context->PSSetShaderResources(0, 1, &prev_shader_resource_view_const);
-                native_device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &prev_render_target_views[0], prev_depth_stencil_views[0]);
-                for (UINT i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; i++) {
-                    if (prev_render_target_views[i] != nullptr) {
-                        prev_render_target_views[i]->Release();
-                        prev_render_target_views[i] = nullptr;
-                    }
-                    if (prev_depth_stencil_views[i] != nullptr) {
-                        prev_depth_stencil_views[i]->Release();
-                        prev_depth_stencil_views[i] = nullptr;
-                    }
-                }
-                native_device_context->VSSetShader(prev_vs.get(), nullptr, 0);
-                native_device_context->PSSetShader(prev_ps.get(), nullptr, 0);
+                draw_state_stack.Restore(native_device_context);
                 return true;
             }
         }
@@ -3571,15 +3779,23 @@ void OnReshadePresent(reshade::api::effect_runtime* runtime) {
     shaders_compilation_errors.clear(); //TODOFT: thread safe
     UnloadCustomShaders();
 #if 1 // Optionally unload all custom shaders data
-    const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
-    custom_shaders_cache.clear();
+    {
+        const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
+        custom_shaders_cache.clear();
+    }
 #endif
     needs_unload_shaders = false;
 
+#if !FORCE_KEEP_CUSTOM_SHADERS_LOADED
     // Unload customly created shader objects (from the shader code/binaries above),
     // to make sure they will re-create
-    copy_vertex_shader = nullptr;
-    copy_pixel_shader = nullptr;
+    {
+        const std::lock_guard<std::recursive_mutex> lock(s_mutex_shader_objects);
+        copy_vertex_shader = nullptr;
+        copy_pixel_shader = nullptr;
+        transfer_function_copy_pixel_shader = nullptr;
+    }
+#endif
   }
   if (needs_load_shaders) {
     // Cache the defines at compilation time
