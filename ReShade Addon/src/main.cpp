@@ -1756,6 +1756,55 @@ void OnBindPipeline(
 #endif // DEVELOPMENT
 }
 
+enum LumaConstantBufferType {
+    LumaSettings,
+    LumaData,
+    LumaLumaUIData
+};
+
+void SetPreyLumaConstantBuffers(reshade::api::command_list* cmd_list, reshade::api::shader_stage stages, reshade::api::pipeline_layout layout, LumaConstantBufferType type) {
+    switch (type) {
+    case LumaConstantBufferType::LumaSettings: {
+        const std::lock_guard<std::recursive_mutex> lock_reshade(s_mutex_reshade);
+        cmd_list->push_constants(
+            stages,
+            layout,
+            0,
+            0,
+            sizeof(LumaFrameSettings) / sizeof(uint32_t),
+            &cb_luma_frame_settings);
+        break;
+    }
+    case LumaConstantBufferType::LumaData: {
+        LumaFrameData frame_data;
+        frame_data.PostEarlyUpscaling = has_drawn_dlss_sr && !has_drawn_upscaling;
+        frame_data.DummyPadding = 0;
+        frame_data.CameraJitters = projection_jitters;
+        frame_data.PreviousCameraJitters = previous_projection_jitters;
+        frame_data.RenderResolutionScale.x = render_resolution.x / output_resolution.x;
+        frame_data.RenderResolutionScale.y = render_resolution.y / output_resolution.y;
+        // Always do this relative to the current output resolution
+        frame_data.PreviousRenderResolutionScale.x = previous_render_resolution.x / output_resolution.x;
+        frame_data.PreviousRenderResolutionScale.y = previous_render_resolution.y / output_resolution.y;
+        frame_data.ViewProjectionMatrix = cb_per_view_global.CV_ViewProjMatr; //TODOFT3: delete? are we using these?
+        frame_data.PreviousViewProjectionMatrix = cb_per_view_global_previous.CV_ViewProjMatr;
+        frame_data.ReprojectionMatrix = reprojection_matrix;
+        cmd_list->push_constants(
+            stages,
+            layout,
+            0,
+            0,
+            sizeof(LumaFrameData) / sizeof(uint32_t),
+            &frame_data);
+        break;
+    }
+    case LumaConstantBufferType::LumaLumaUIData: {
+        ASSERT_ONCE(false); // Not implemented (yet?)
+        break;
+    }
+    }
+}
+
 void DrawCustomPixelShader(ID3D11DeviceContext* device_context, ID3D11BlendState* blend_state, ID3D11VertexShader* vs, ID3D11PixelShader* ps, ID3D11ShaderResourceView* source_resource_texture_view, ID3D11RenderTargetView* target_resource_texture_view, UINT width, UINT height) {
     // Set the new resources/states:
     constexpr FLOAT blend_factor[4] = { 1.f, 1.f, 1.f, 1.f };
@@ -1860,6 +1909,13 @@ void OnPresent(
                 assert(SUCCEEDED(native_device->CreateRenderTargetView(back_buffer.get(), &target_rtv_desc, &target_resource_texture_view)));
             }
 
+            auto& device_data = queue->get_device()->create_private_data<DeviceData>();
+            // Push our settings cbuffer in case where no other custom shader run this frame
+            {
+                const std::unique_lock lock(device_data.mutex);
+                SetPreyLumaConstantBuffers(queue->get_immediate_command_list(), reshade::api::shader_stage::pixel, device_data.settings_pipeline_layout, LumaConstantBufferType::LumaSettings);
+            }
+
             // Note: we don't need to re-apply our custom cbuffers as in Prey, they are on indexes that are never used by the game's code
             DrawCustomPixelShader(native_device_context, default_blend_state.get(), copy_vertex_shader.get(), transfer_function_copy_pixel_shader.get(), transfer_function_copy_shader_resource_view.get(), target_resource_texture_view.get(), target_desc.Width, target_desc.Height);
 
@@ -1878,13 +1934,11 @@ void OnPresent(
   ASSERT_ONCE(!has_drawn_main_post_processing || found_per_view_globals); // We failed to find and assign global cbuffer 13 this frame //TODOFT4: this can trigger once when enabling/disabling dynamic resolution. Just ignore it for 1 frame or find a hook for it? (there's another identical TODO somewhere). It probably fails the threshold checks we have for the cbuffer 13 values (fixed?)
   ASSERT_ONCE(has_drawn_composed_gbuffers == has_drawn_main_post_processing); // Why is g-buffer composition drawing but post processing isn't?
   //TODOFT3: replace some instances of "has_drawn_main_post_processing" and "has_drawn_main_post_processing_previous" with "has_drawn_composed_gbuffers" (and its previous state)?
-  if (has_drawn_main_post_processing)
-  {
+  if (has_drawn_main_post_processing) {
       previous_prey_taa_enabled[1] = previous_prey_taa_enabled[0];
       previous_prey_taa_enabled[0] = prey_taa_enabled;
   }
-  else
-  {
+  else {
       previous_prey_taa_enabled[1] = false;
       previous_prey_taa_enabled[0] = false;
 #if 0 // We leave this flag on as it's just for ImGUI stuff
@@ -1950,60 +2004,6 @@ void OnPresent(
 #endif // NGX
 }
 
-enum LumaConstantBufferType {
-    LumaSettings,
-    LumaData,
-    LumaLumaUIData
-};
-
-void SetPreyLumaConstantBuffers(reshade::api::command_list* cmd_list, reshade::api::shader_stage stages, reshade::api::pipeline_layout layout, LumaConstantBufferType type)
-{
-    switch (type)
-    {
-    case LumaConstantBufferType::LumaSettings:
-    {
-        const std::lock_guard<std::recursive_mutex> lock_reshade(s_mutex_reshade);
-        cmd_list->push_constants(
-            stages,
-            layout,
-            0,
-            0,
-            sizeof(LumaFrameSettings) / sizeof(uint32_t),
-            &cb_luma_frame_settings);
-        break;
-    }
-    case LumaConstantBufferType::LumaData:
-    {
-        LumaFrameData frame_data;
-        frame_data.PostEarlyUpscaling = has_drawn_dlss_sr && !has_drawn_upscaling;
-        frame_data.DummyPadding = 0;
-        frame_data.CameraJitters = projection_jitters;
-        frame_data.PreviousCameraJitters = previous_projection_jitters;
-        frame_data.RenderResolutionScale.x = render_resolution.x / output_resolution.x;
-        frame_data.RenderResolutionScale.y = render_resolution.y / output_resolution.y;
-        // Always do this relative to the current output resolution
-        frame_data.PreviousRenderResolutionScale.x = previous_render_resolution.x / output_resolution.x;
-        frame_data.PreviousRenderResolutionScale.y = previous_render_resolution.y / output_resolution.y;
-        frame_data.ViewProjectionMatrix = cb_per_view_global.CV_ViewProjMatr; //TODOFT3: delete? are we using these?
-        frame_data.PreviousViewProjectionMatrix = cb_per_view_global_previous.CV_ViewProjMatr;
-        frame_data.ReprojectionMatrix = reprojection_matrix;
-        cmd_list->push_constants(
-            stages,
-            layout,
-            0,
-            0,
-            sizeof(LumaFrameData) / sizeof(uint32_t),
-            &frame_data);
-        break;
-    }
-    case LumaConstantBufferType::LumaLumaUIData:
-    {
-        ASSERT_ONCE(false); // Not implemented (yet?)
-        break;
-    }
-    }
-}
-
 //TODOFT5: expose DLSS res range multipliers here or to game config
 //TODOFT5: DLSS pre-exposure (duplicate?)
 //TODOFT5: "_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR"?
@@ -2012,10 +2012,10 @@ void SetPreyLumaConstantBuffers(reshade::api::command_list* cmd_list, reshade::a
 //TODOFT5: Do LUTs extrapolation in Log2
 //TODOFT5: DICE inverse
 //TODOFT5: merge two DLLs
-//TODOFT5: remove native DLL dependency and just rely on RenoDX?
+//TODOFT5: remove native DLL dependency and just rely on RenoDX? If so, make sure that our CopyTexture() func works!
 //TODOFT5: finish SDR output. test gamma sRGB mode?
 //TODOFT5: comment "HandlePreDraw"
-//TODOFT5: Add "UpdateSubresource"?
+//TODOFT5: Add "UpdateSubresource" to check whether they map buffers with that?
 
 bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = false) {
   const auto* device = cmd_list->get_device();
