@@ -706,11 +706,6 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
     std::filesystem::create_directory(directory);
   }
 
-  if (!std::filesystem::exists(directory)) {
-    std::filesystem::create_directory(directory);
-    return;
-  }
-
   std::vector<std::string> shader_defines;
   {
       const std::lock_guard<std::recursive_mutex> lock(s_mutex_generic); //TODOFT5: thread safe? all around
@@ -1108,7 +1103,7 @@ void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = st
 
         new_desc->code_size = custom_shader->code.size();
         new_desc->code = malloc(custom_shader->code.size());
-        // TODO(clshortfuse): Workaround leak
+        //TODOFT: Workaround leak (malloc) (clshortfuse)?
         std::memcpy(const_cast<void*>(new_desc->code), custom_shader->code.data(), custom_shader->code.size());
 
         const auto new_hash = compute_crc32(static_cast<const uint8_t*>(new_desc->code), new_desc->code_size);
@@ -1188,7 +1183,8 @@ std::aligned_storage_t<1U << 18, std::max<size_t>(alignof(FILE_NOTIFY_EXTENDED_I
 
 void CALLBACK HandleEventCallback(DWORD error_code, DWORD bytes_transferred, LPOVERLAPPED overlapped) {
   reshade::log::message(reshade::log::level::info, "Live callback.");
-  // TODO: only re-load the shaders that were changed to improve performance, and also verify this is safe. Replacing shaders from another thread at a random time could break as we need to wait one frame or the pipeline binding could hang.
+  // TODO: only re-load the shaders that were changed to improve performance, and also verify this is safe (we kinda already do as we have the preprocessor to check them, checking a single file isn't enough as they have includes).
+  // Replacing shaders from another thread at a random time could break as we need to wait one frame or the pipeline binding could hang.
   LoadCustomShaders();
   // Trigger the watch again as the event is only triggered once
   ToggleLiveWatching();
@@ -1419,8 +1415,7 @@ void OnInitSwapchain(reshade::api::swapchain* swapchain) {
   DXGI_SWAP_CHAIN_DESC swapchain_desc;
   HRESULT hr = native_swapchain->GetDesc(&swapchain_desc);
   ASSERT_ONCE(SUCCEEDED(hr));
-  if (SUCCEEDED(hr))
-  {
+  if (SUCCEEDED(hr)) {
       output_resolution.x = swapchain_desc.BufferDesc.Width;
       output_resolution.y = swapchain_desc.BufferDesc.Height;
       //ASSERT_ONCE(output_resolution.x != output_resolution.y); // Square resolutions are NOT supported on the swapchain by Luma, as we use that information to identify if some passes are shadow map projections (separate views) //TODOFT: delete? we aren't relying on this anymore
@@ -1439,22 +1434,19 @@ void OnInitSwapchain(reshade::api::swapchain* swapchain) {
       local_native_swapchain3 = native_swapchain3;
   }
   // This is basically where we verify and update the user display settings
-  if (local_native_swapchain3 != nullptr)
-  {
       //TODOFT: make these thread safe (settings read/write)
+  if (local_native_swapchain3 != nullptr) {
       GetHDRMaxLuminance(local_native_swapchain3, default_user_peak_white, srgb_white_level);
       IsHDRSupportedAndEnabled(swapchain_desc.OutputWindow, hdr_supported_display, hdr_enabled_display, local_native_swapchain3);
       game_window = swapchain_desc.OutputWindow;
 
-      if (!hdr_enabled_display)
-      {
+      if (!hdr_enabled_display) {
           // Force the display mode to SDR if HDR is not engaged
           cb_luma_frame_settings.DisplayMode = 0;
           cb_luma_frame_settings.ScenePeakWhite = srgb_white_level;
           cb_luma_frame_settings.ScenePaperWhite = srgb_white_level;
           cb_luma_frame_settings.UIPaperWhite = srgb_white_level;
-      }
-      else
+      } else
       {
           cb_luma_frame_settings.ScenePeakWhite = default_user_peak_white;
       }
@@ -1800,7 +1792,7 @@ void OnPresent(
 
     // "POST_PROCESS_SPACE_TYPE" 0 and 2 mean that the final image was stored textures in gamma space,
     // so we need to linearize it for scRGB HDR (linear) output
-    if (shader_defines_data[post_process_space_define_index].GetNumericalCompiledValue() != 1) {
+    if (shader_defines_data[post_process_space_define_index].GetNumericalCompiledValue() != 1 || cloned_pipeline_count == 0) {
         const std::lock_guard<std::recursive_mutex> lock_shader_objects(s_mutex_shader_objects);
         if (copy_vertex_shader && transfer_function_copy_pixel_shader) {
             IDXGISwapChain* native_swapchain = (IDXGISwapChain*)(swapchain->get_native());
@@ -2007,12 +1999,17 @@ void SetPreyLumaConstantBuffers(reshade::api::command_list* cmd_list, reshade::a
 
 //TODOFT5: expose DLSS res range multipliers here or to game config
 //TODOFT5: DLSS pre-exposure (duplicate?)
-//TODOFT5: _DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR
-//TODOFT5: test gamma sRGB mode?
-//TODOFT5: (duplicate?) verify that the addon is being run with Prey and that the detected version is Steam. E.g. return false in "AddonInit()"?
+//TODOFT5: "_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR"?
+//TODOFT5: verify that the addon is being run with Prey and that the detected version is Steam. E.g. return false in "AddonInit()"?
 //TODOFT5: fix cpp file formatting in general (and make sure it's all thread safe, but it should be)
+//TODOFT5: Do LUTs extrapolation in Log2
+//TODOFT5: DICE inverse
+//TODOFT5: merge two DLLs
+//TODOFT5: remove native DLL dependency and just rely on RenoDX?
+//TODOFT5: finish SDR output. test gamma sRGB mode?
+//TODOFT5: comment "HandlePreDraw"
+//TODOFT5: Add "UpdateSubresource"?
 
-//TODOFT5: comment
 bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = false) {
   const auto* device = cmd_list->get_device();
   auto device_api = device->get_api();
@@ -2252,7 +2249,8 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
       }
 
 #if ENABLE_NGX
-      if (is_custom_pass && dlss_sr) {
+      // Don't even try to run DLSS if we have no custom shaders loaded, we need them for DLSS to work properly (it might somewhat work even without them, but it's untested and unneeded)
+      if (is_custom_pass && dlss_sr && cloned_pipeline_count != 0) {
           //TODOFT (TODO LUMA): make sure DLSS lets scRGB colors pass through, or move this before tonemap/blur (after exposure)...
           //TODOFT: add sharpening if we did DLSS? It's already in! Do RCAS?
           //TODOFT: skip SMAA edge detection and edge AA passes, or just disable SMAA in menu
@@ -2515,8 +2513,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                               return true; // "Cancel" the previously set draw call, DLSS will take care of it
                           }
                           // Restore the render target, hoping that if DLSS failed, it didn't already start changing cbuffers or texture resources bindings or viewport etc.
-                          else
-                          {
+                          else {
                               ASSERT_ONCE(false); // DLSS FAILED
                               ID3D11RenderTargetView* const render_target_view_const = render_target_view.get();
                               native_device_context->OMSetRenderTargets(1, &render_target_view_const, depth_stencil_view.get());
@@ -3454,8 +3451,7 @@ void OnPushDescriptors(
     }
 }
 
-void OnMapBufferRegion(reshade::api::device* device, reshade::api::resource resource, uint64_t offset, uint64_t size, reshade::api::map_access access, void** data)
-{
+void OnMapBufferRegion(reshade::api::device* device, reshade::api::resource resource, uint64_t offset, uint64_t size, reshade::api::map_access access, void** data) {
     ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
     ID3D11Buffer* buffer = reinterpret_cast<ID3D11Buffer*>(resource.handle);
     // No need to convert to native DX11 flags
@@ -3482,8 +3478,7 @@ void OnMapBufferRegion(reshade::api::device* device, reshade::api::resource reso
     }
 }
 
-void OnUnmapBufferRegion(reshade::api::device* device, reshade::api::resource resource)
-{
+void OnUnmapBufferRegion(reshade::api::device* device, reshade::api::resource resource) {
     ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
     ID3D11Buffer* buffer = reinterpret_cast<ID3D11Buffer*>(resource.handle);
     bool is_global_cbuffer = cb_per_view_global_buffer != nullptr && cb_per_view_global_buffer == buffer;
@@ -3504,8 +3499,7 @@ void OnUnmapBufferRegion(reshade::api::device* device, reshade::api::resource re
     }
 }
 
-bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource source, reshade::api::resource dest)
-{
+bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource source, reshade::api::resource dest) {
     ID3D11Resource* source_resource = reinterpret_cast<ID3D11Resource*>(source.handle);
     com_ptr<ID3D11Texture2D> source_resource_texture;
     HRESULT hr = source_resource->QueryInterface(&source_resource_texture);
@@ -3679,16 +3673,14 @@ bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource
     return false;
 }
 
-bool OnCopyTextureRegion(reshade::api::command_list* cmd_list, reshade::api::resource source, uint32_t source_subresource, const reshade::api::subresource_box* source_box, reshade::api::resource dest, uint32_t dest_subresource, const reshade::api::subresource_box* dest_box, reshade::api::filter_mode filter /*Unused in DX11*/)
-{
+bool OnCopyTextureRegion(reshade::api::command_list* cmd_list, reshade::api::resource source, uint32_t source_subresource, const reshade::api::subresource_box* source_box, reshade::api::resource dest, uint32_t dest_subresource, const reshade::api::subresource_box* dest_box, reshade::api::filter_mode filter /*Unused in DX11*/) {
     if (source_subresource == 0 && dest_subresource == 0 && (!source_box || (source_box->left == 0 && source_box->top == 0)) && (!dest_box || (dest_box->left == 0 && dest_box->top == 0)) && (!dest_box || !source_box || (source_box->width() == dest_box->width() && source_box->height() == dest_box->height()))) {
         return OnCopyResource(cmd_list, source, dest);
     }
     return false;
 }
 
-void OnBindViewports(reshade::api::command_list* cmd_list, uint32_t first, uint32_t count, const reshade::api::viewport* viewports)
-{
+void OnBindViewports(reshade::api::command_list* cmd_list, uint32_t first, uint32_t count, const reshade::api::viewport* viewports) {
     if (count <= 0) return;
 
 #if DLSS_UPSCALE_LENS_EFFECTS // We moved the code below directly in the "before draw call" function
@@ -4007,7 +3999,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
   if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
 #if !DEVELOPMENT
       if (shaders_compilation_errors.empty()) {
-          ImGui::SetTooltip((cloned_pipeline_count && needs_compilation) ? "Shaders recompilation is needed for the changed settings to apply" : "Compiles shaders");
+          ImGui::SetTooltip((cloned_pipeline_count && needs_compilation) ? "Shaders recompilation is needed for the changed settings to apply" : "(Re)Compiles shaders");
       }
       else
 #endif
@@ -4317,7 +4309,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             };
 
         {
-            const std::lock_guard<std::recursive_mutex> lock(s_mutex_swapchain);
+            const std::lock_guard<std::recursive_mutex> lock(s_mutex_device);
             // Note: this is fast enough that we can check it every frame.
             // There's probably no need for thread safety checks on "native_swapchain3", but we have a mutex anyway.
             IsHDRSupportedAndEnabled(game_window, hdr_supported_display, hdr_enabled_display, native_swapchain3);
@@ -4338,7 +4330,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         ImGui::BeginDisabled(!hdr_supported_display);
         if (ImGui::SliderInt("Display Mode", &display_mode, 0, display_mode_max, preset_strings[display_mode], ImGuiSliderFlags_NoInput)) {
             {
-                const std::lock_guard<std::recursive_mutex> lock(s_mutex_swapchain);
+                const std::lock_guard<std::recursive_mutex> lock(s_mutex_device);
                 ChangeDisplayMode(display_mode, true, native_swapchain3);
             }
         }
@@ -4353,7 +4345,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             if (ImGui::SmallButton(ICON_FK_UNDO)) {
                 display_mode = hdr_enabled_display ? 1 : 0;
                 {
-                    const std::lock_guard<std::recursive_mutex> lock(s_mutex_swapchain);
+                    const std::lock_guard<std::recursive_mutex> lock(s_mutex_device);
                     ChangeDisplayMode(display_mode, false, native_swapchain3);
                 }
             }
@@ -4567,6 +4559,15 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
       }
 #endif
 
+      uint8_t longest_shader_define_name_length = 0;
+#if 1 // Enables automatic sizing
+      for (uint32_t i = 0; i < shader_defines_data.size(); i++) {
+          longest_shader_define_name_length = max(longest_shader_define_name_length, strlen(shader_defines_data[i].editable_data.GetName()));
+      }
+      longest_shader_define_name_length += 1; // Add an extra space to avoid it looking too crammed and lagging by one frame
+#else
+      uint8_t longest_shader_define_name_length = SHADER_DEFINES_MAX_NAME_LENGTH - 1; // Remove the null termination
+#endif
       for (uint32_t i = 0; i < shader_defines_data.size(); i++) {
 #if !DEVELOPMENT && !TEST
         // Don't render empty text fields that couldn't be filled due to them not being editable
@@ -4582,7 +4583,8 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         if (!shader_defines_data[i].IsNameEditable()) {
             flags |= ImGuiInputTextFlags_ReadOnly;
         }
-        ImGui::SetNextItemWidth(ImGui::CalcTextSize("0").x * (SHADER_DEFINES_MAX_NAME_LENGTH - 1));
+        // All characters should (roughly) have the same length
+        ImGui::SetNextItemWidth(ImGui::CalcTextSize("0").x * longest_shader_define_name_length);
         // ImGUI doesn't work with std::string data, it seems to need c style char arrays.
         bool name_edited = ImGui::InputTextWithHint("", shader_defines_data[i].name_hint.data(), shader_defines_data[i].editable_data.GetName(), std::size(shader_defines_data[i].editable_data.name) /*SHADER_DEFINES_MAX_NAME_LENGTH*/, flags);
         show_tooltip |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
@@ -4703,6 +4705,8 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             system("start https://ko-fi.com/ershin");
         }
         ImGui::PopStyleColor(3);
+
+        ImGui::NewLine();
         // Restore the previous color, otherwise the state we set would persist even if we popped it
         ImGui::PushStyleColor(ImGuiCol_Button, button_color);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, button_hovered_color);
@@ -4712,14 +4716,15 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             system("start https://www.nexusmods.com/starfield/mods/4821");
         }
 #endif
+        static const std::string social_link = std::string("Join our \"HDR Den\" Discord ") + std::string(ICON_FK_SEARCH);
+        if (ImGui::Button(social_link.c_str())) {
+            // Unique link for Prey Luma (to track the origin of people joining), do not share for other purposes
+            static const std::string obfuscated_link = std::string("start https://discord.gg/J9fM") + std::string("3EVuEZ");
+            system(obfuscated_link.c_str());
+        }
         static const std::string contributing_link = std::string("Contribute on Github ") + std::string(ICON_FK_FILE_CODE);
         if (ImGui::Button(contributing_link.c_str())) {
             system("start https://github.com/Filoppi/Prey-Luma");
-        }
-        static const std::string social_link = std::string("Join our \"HDR Den\" Discord ") + std::string(ICON_FK_SEARCH);
-        if (ImGui::Button(social_link.c_str())) {
-            static const std::string obfuscated_link = std::string("start https://discord.gg/5WZX") + std::string("DpmbpP");
-            system(obfuscated_link.c_str());
         }
         ImGui::PopStyleColor(3);
 
