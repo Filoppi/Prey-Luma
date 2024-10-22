@@ -207,10 +207,14 @@ struct CachedCustomShader {
 std::recursive_mutex s_mutex_generic;
 // For "shaders_to_dump", "dumped_shaders", "shader_cache". In general for dumping shaders to disk
 std::recursive_mutex s_mutex_dumping;
-// For "custom_shaders_cache", "pipelines_to_reload". In general for loading shaders from disk and compiling them.
+// For "custom_shaders_cache", "pipelines_to_reload". In general for loading shaders from disk and compiling them
 std::recursive_mutex s_mutex_loading;
 // Mutex for created shader DX objects
 std::recursive_mutex s_mutex_shader_objects;
+// Mutex for shader defines ("shader_defines_data")
+std::recursive_mutex s_mutex_shader_defines;
+// Mutex to deal with data shader with ReShade, like ini/config saving and loading
+std::recursive_mutex s_mutex_reshade;
 
 std::thread thread_auto_dumping;
 std::atomic<bool> thread_auto_dumping_running = false;
@@ -701,27 +705,28 @@ void UnloadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = 
 }
 
 void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = std::unordered_set<uint64_t>()) {
-  auto directory = GetShaderPath();
-  if (!std::filesystem::exists(directory)) {
-    std::filesystem::create_directory(directory);
-  }
-
   std::vector<std::string> shader_defines;
   {
-      const std::lock_guard<std::recursive_mutex> lock(s_mutex_generic); //TODOFT5: thread safe? all around
-      shader_defines.assign(shader_defines_data.size() * 2, "");
-      for (uint32_t i = 0; i < shader_defines_data.size(); i++) {
-          shader_defines[(i*2)] = shader_defines_data[i].compiled_data.name;
-          shader_defines[(i*2)+1] = shader_defines_data[i].compiled_data.value;
+      {
+          const std::lock_guard<std::recursive_mutex> lock(s_mutex_shader_defines);
+          shader_defines.assign(shader_defines_data.size() * 2, "");
+          for (uint32_t i = 0; i < shader_defines_data.size(); i++) {
+              shader_defines[(i * 2)] = shader_defines_data[i].compiled_data.name;
+              shader_defines[(i * 2) + 1] = shader_defines_data[i].compiled_data.value;
+          }
       }
 
       // We need to clear this every time "CompileCustomShaders()" is called as we can't clear previous logs from it
-      shaders_compilation_errors.clear();
+      {
+          const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
+          shaders_compilation_errors.clear();
+      }
   }
 
   const auto directory = GetShaderPath();
   if (!std::filesystem::exists(directory)) {
       if (!std::filesystem::create_directory(directory)) {
+          const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
           shaders_compilation_errors = "Cannot find nor create shaders directory";
           return;
       }
@@ -809,7 +814,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
     char config_name[std::string_view("Shader#").size() + HASH_CHARACTERS_LENGTH + 1] = "";
     sprintf(&config_name[0], "Shader#%s", hash_string.c_str());
 
-    const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
+    const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading); // Don't lock until now as we didn't access any shared data
     auto& custom_shader = custom_shaders_cache[shader_hash]; // Add default initialized shader
     const bool has_custom_shader = (custom_shaders_cache.find(shader_hash) != custom_shaders_cache.end()) && (custom_shader != nullptr);
     if (!has_custom_shader) {
@@ -971,6 +976,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
   }
 
   if (pipelines_filter.empty()) {
+      const std::lock_guard<std::recursive_mutex> lock(s_mutex_shader_defines);
       // Only save after compiling, to make sure the config data aligns with the serialized compiled shaders data (blobs)
       ShaderDefineData::Save(shader_defines_data);
   }
@@ -1434,8 +1440,8 @@ void OnInitSwapchain(reshade::api::swapchain* swapchain) {
       local_native_swapchain3 = native_swapchain3;
   }
   // This is basically where we verify and update the user display settings
-      //TODOFT: make these thread safe (settings read/write)
   if (local_native_swapchain3 != nullptr) {
+      const std::lock_guard<std::recursive_mutex> lock_reshade(s_mutex_reshade);
       GetHDRMaxLuminance(local_native_swapchain3, default_user_peak_white, srgb_white_level);
       IsHDRSupportedAndEnabled(swapchain_desc.OutputWindow, hdr_supported_display, hdr_enabled_display, local_native_swapchain3);
       game_window = swapchain_desc.OutputWindow;
@@ -1956,6 +1962,7 @@ void SetPreyLumaConstantBuffers(reshade::api::command_list* cmd_list, reshade::a
     {
     case LumaConstantBufferType::LumaSettings:
     {
+        const std::lock_guard<std::recursive_mutex> lock_reshade(s_mutex_reshade);
         cmd_list->push_constants(
             stages,
             layout,
@@ -2544,6 +2551,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
 
   LumaUIData ui_data;
 
+  // No need to lock "s_mutex_reshade" for "cb_luma_frame_settings" here
   ui_data.background_tonemapping_amount = (cb_luma_frame_settings.DisplayMode == 1 && tonemap_ui_background && has_drawn_main_post_processing) ? tonemap_ui_background_amount : 0.0;
 
   com_ptr<ID3D11RenderTargetView> render_target_view;
@@ -3768,7 +3776,10 @@ void OnReshadePresent(reshade::api::effect_runtime* runtime) {
   }
 
   if (needs_unload_shaders) {
-    shaders_compilation_errors.clear(); //TODOFT: thread safe
+    {
+        const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
+        shaders_compilation_errors.clear();
+    }
     UnloadCustomShaders();
 #if 1 // Optionally unload all custom shaders data
     {
@@ -3792,6 +3803,7 @@ void OnReshadePresent(reshade::api::effect_runtime* runtime) {
   if (needs_load_shaders) {
     // Cache the defines at compilation time
     {
+        const std::lock_guard<std::recursive_mutex> lock(s_mutex_shader_defines);
         ShaderDefineData::OnCompilation(shader_defines_data);
     }
     LoadCustomShaders();
@@ -3977,6 +3989,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 
   bool needs_compilation = false;
   {
+    const std::lock_guard<std::recursive_mutex> lock(s_mutex_shader_defines);
     needs_compilation = defines_need_recompilation;
     for (uint32_t i = 0; i < shader_defines_data.size() && !needs_compilation; i++) {
       needs_compilation |= shader_defines_data[i].NeedsCompilation();
@@ -3986,9 +3999,9 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
   ImGui::BeginDisabled(!needs_compilation);
 #endif
   // TODO: add a button to clear all the .cso shader binaries? or simply to skip pre-loading compiled cso(s)
-  //TODOFT: lock "shaders_compilation_errors"
   static const std::string reload_shaders_button_title_error = std::string("Reload Shaders ") + std::string(ICON_FK_WARNING);
   static const std::string reload_shaders_button_title_outdated = std::string("Reload Shaders ") + std::string(ICON_FK_REFRESH);
+  // We skip locking "s_mutex_loading" just to read the size of "shaders_compilation_errors"
   if (ImGui::Button(shaders_compilation_errors.empty() ? (cloned_pipeline_count ? (needs_compilation ? reload_shaders_button_title_outdated.c_str() : "Reload Shaders") : "Load Shaders") : reload_shaders_button_title_error.c_str())) {
     needs_unload_shaders = false;
     last_pressed_unload = false;
@@ -3997,6 +4010,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
     pipelines_to_reload.clear();
   }
   if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+      const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
 #if !DEVELOPMENT
       if (shaders_compilation_errors.empty()) {
           ImGui::SetTooltip((cloned_pipeline_count && needs_compilation) ? "Shaders recompilation is needed for the changed settings to apply" : "(Re)Compiles shaders");
@@ -4253,6 +4267,8 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 #endif // DEVELOPMENT
 
     if (ImGui::BeginTabItem("Settings")) {
+        const std::lock_guard<std::recursive_mutex> lock_reshade(s_mutex_reshade); // Lock the entire scope for extra safety, though we are mainly only interested in keeping "cb_luma_frame_settings" safe
+
         ImGui::BeginDisabled(!dlss_sr_supported);
         if (ImGui::Checkbox("DLSS Super Resolution", &dlss_sr)) {
             reshade::set_config_value(runtime, NAME, "DLSSSuperResolution", dlss_sr);
@@ -4505,6 +4521,8 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
       {
           ImGui::SetTooltip("Shader Defines: reload shaders after changing these for the changes to apply (and save).\nSome settings are only editable in debug modes, and only apply if the \"DEVELOPMENT\" flag is turned on.\nDo not change unless you know what you are doing.");
       }
+
+      const std::lock_guard<std::recursive_mutex> lock_shader_defines(s_mutex_shader_defines);
 
       // Show reset button
       {
@@ -4853,6 +4871,8 @@ void Init() {
 
   // Load settings
   {
+      const std::lock_guard<std::recursive_mutex> lock_reshade(s_mutex_reshade);
+
       reshade::api::effect_runtime* runtime = nullptr;
       uint32_t config_version = VERSION;
       reshade::get_config_value(runtime, NAME, "Version", config_version);
@@ -4876,10 +4896,14 @@ void Init() {
       reshade::get_config_value(runtime, NAME, "ScenePaperWhite", cb_luma_frame_settings.ScenePaperWhite);
       reshade::get_config_value(runtime, NAME, "UIPaperWhite", cb_luma_frame_settings.UIPaperWhite);
 
+      const std::lock_guard<std::recursive_mutex> lock_shader_defines(s_mutex_shader_defines);
       ShaderDefineData::Load(shader_defines_data, runtime);
   }
 
-  ShaderDefineData::OnCompilation(shader_defines_data);
+  {
+      const std::lock_guard<std::recursive_mutex> lock_shader_defines(s_mutex_shader_defines);
+      ShaderDefineData::OnCompilation(shader_defines_data);
+  }
 
   // Pre-load all shaders to minimize the wait before replacing them after they are found in game ("auto_load"),
   // and to fill the list of shaders we customized, so we can know which ones we need replace on the spot.
