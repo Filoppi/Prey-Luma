@@ -1,3 +1,7 @@
+#define _RT_SAMPLE2 0
+#define _RT_SAMPLE3 0
+#define _RT_SAMPLE4 1
+
 cbuffer PER_BATCH : register(b0)
 {
   float4 lensDetailParams : packoffset(c0);
@@ -12,7 +16,7 @@ Texture2D<float4> orbMap : register(t0);
 Texture2D<float4> lensMap : register(t2);
 
 // CameraLensPS
-// This one seems to draw some kind of vertical streak, but the intensity is always ~0 so it's not visible
+// This one seems to draw some kind of vertical streak (modulated by an orb?), but the intensity is always ~0 so it's not visible
 void main(
   float4 v0 : SV_Position0,
   float2 v1 : TEXCOORD0,
