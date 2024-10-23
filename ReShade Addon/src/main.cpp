@@ -640,9 +640,7 @@ void DestroyPipelineSubojects(reshade::api::pipeline_subobject* subojects, uint3
 
     switch (suboject.type) {
       case reshade::api::pipeline_subobject_type::vertex_shader:
-        [[fallthrough]];
       case reshade::api::pipeline_subobject_type::compute_shader:
-        [[fallthrough]];
       case reshade::api::pipeline_subobject_type::pixel_shader: {
         auto* desc = static_cast<reshade::api::shader_desc*>(suboject.data);
         delete desc->code;
@@ -704,6 +702,7 @@ void UnloadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = 
   }
 }
 
+// Compiles all the "custom" shaders we have in our shaders folder
 void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = std::unordered_set<uint64_t>()) {
   std::vector<std::string> shader_defines;
   {
@@ -1023,6 +1022,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
   }
 }
 
+// Optionally compiles all the shaders we have in our data folder and links them with the game rendering pipelines
 void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = std::unordered_set<uint64_t>(), bool recompile_shaders = true, bool immediate_load = true, bool immediate_unload = false) {
   reshade::log::message(reshade::log::level::debug, "loadCustomShaders()");
 
@@ -1109,7 +1109,6 @@ void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = st
 
         new_desc->code_size = custom_shader->code.size();
         new_desc->code = malloc(custom_shader->code.size());
-        //TODOFT: Workaround leak (malloc) (clshortfuse)?
         std::memcpy(const_cast<void*>(new_desc->code), custom_shader->code.data(), custom_shader->code.size());
 
         const auto new_hash = compute_crc32(static_cast<const uint8_t*>(new_desc->code), new_desc->code_size);
@@ -3829,7 +3828,7 @@ void DumpShader(uint32_t shader_hash, bool auto_detect_type = true) {
   }
 
   wchar_t hash_string[11];
-  swprintf_s(hash_string, L"0x%08X", shader_hash);
+  swprintf_s(hash_string, L"0x%08X", shader_hash); // Note: "std::format("{:x}", shader_hash)" would be better and is already used elsewhere
 
   dump_path /= hash_string;
 
@@ -4001,7 +4000,8 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
   // TODO: add a button to clear all the .cso shader binaries? or simply to skip pre-loading compiled cso(s)
   static const std::string reload_shaders_button_title_error = std::string("Reload Shaders ") + std::string(ICON_FK_WARNING);
   static const std::string reload_shaders_button_title_outdated = std::string("Reload Shaders ") + std::string(ICON_FK_REFRESH);
-  // We skip locking "s_mutex_loading" just to read the size of "shaders_compilation_errors"
+  // We skip locking "s_mutex_loading" just to read the size of "shaders_compilation_errors".
+  // We could maybe check "last_pressed_unload" instead of "cloned_pipeline_count", but that wouldn't work in case unloading shaders somehow failed.
   if (ImGui::Button(shaders_compilation_errors.empty() ? (cloned_pipeline_count ? (needs_compilation ? reload_shaders_button_title_outdated.c_str() : "Reload Shaders") : "Load Shaders") : reload_shaders_button_title_error.c_str())) {
     needs_unload_shaders = false;
     last_pressed_unload = false;
