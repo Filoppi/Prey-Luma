@@ -19,11 +19,21 @@ cbuffer LumaUIData : register(b7)
   } LumaUIData : packoffset(c0);
 }
 
+//TODOFT3: looks good? Probably not
 // Whether to use the most theoretically mathematically accurate formulas, so the ones that actually look best (or generally better) in Prey's use case.
 #define EMPYRICAL_UI_BLENDING 0
 
 // Guessed value of the average background color (or scene/UI brightness)
 static const float AverageUIBackgroundColorGammaSpace = 1.0 / 3.0;
+
+float UIColorIntensity(float3 Color)
+{
+#if 1 //TODOFT3: do blends by luminance (or inverse luminance) instead? (it looks about the same)
+	return GetLuminance(Color);
+#else
+	return average(Color);
+#endif
+}
 
 float4 ConditionalLinearizeUI(float4 UIColor, bool ForceStraightAlphaBlend = false)
 {
@@ -58,12 +68,13 @@ float4 ConditionalLinearizeUI(float4 UIColor, bool ForceStraightAlphaBlend = fal
 		// while when its near white, we modulate it in the opposite direction.
 		// The result is is always as close as it can be to gamma space blends, especially when the UI color is near black,
 		// and when the background color is either black or white.
-		// Note that we take the average of the UI color as the lerp alpha, instead of the luminance, because luminance
-		// doesn't really matter here, and we wouldn't want green to react different from blue (ideally we'd have 3 alphas, one of each channel, but we don't).
+		// Note that arguably, we should take the average of the UI color as the lerp alpha, instead of its luminance, because luminance
+		// shouldn't really matter, and we wouldn't want green to react different from blue (ideally we'd have 3 alphas, one of each channel, but we don't),
+		// but, at the same time luminance also makes sense as the average of a color is completely meaningless and depends on its color space (color primaries).
 		// Note that if we wanted, we could always guess that the background is mid gray (or something like that) and modulate our alpha based on that assumption,
 		// but while that would look better in some/most cases, it would look worse (possibly a lot worse) in other cases, so we prefer to do something
 		// more conservative that never looks that bad.
-		float targetBackgroundAlpha = lerp(1.0 - safePow(1.0 - UIColor.a, DefaultGamma), targetUIAlpha, saturate(average(UIColor.rgb))); //TODOFT3: do blends by luminance (or inverse luminance) instead? (it looks about the same)
+		float targetBackgroundAlpha = lerp(1.0 - safePow(1.0 - UIColor.a, DefaultGamma), targetUIAlpha, saturate(UIColorIntensity(UIColor.rgb)));
 #else // This alternative is simpler but always worse. Generally it's 50% accurate, and revolves around the target result when the UI color goes from black to white.
 		float targetBackgroundAlpha = UIColor.a;
 #endif
@@ -92,9 +103,9 @@ float4 ConditionalLinearizeUI(float4 UIColor, bool ForceStraightAlphaBlend = fal
 		float3 prePreMultipliedAlphaUIColor = UIColor.a != 0 ? (UIColor.rgb / UIColor.a) : UIColor.rgb;
 		float targetUIAlpha = safePow(UIColor.a, DefaultGamma); // Same as "gamma_to_linear_mirrored()"
 #if EMPYRICAL_UI_BLENDING // This case seems to look ~identical to vanilla in Prey
-		float targetBackgroundAlpha = lerp(1.0 - safePow(1.0 - UIColor.a, DefaultGamma), targetUIAlpha, saturate(average(UIColor.rgb)));
+		float targetBackgroundAlpha = lerp(1.0 - safePow(1.0 - UIColor.a, DefaultGamma), targetUIAlpha, saturate(ColorIntensity(UIColor.rgb)));
 #else // Theoretically this is more "mathematically accurate" and should provide the best results possible (except it doesn't, at least in the Prey use cases)
-		float targetBackgroundAlpha = lerp(1.0 - safePow(1.0 - UIColor.a, DefaultGamma), targetUIAlpha, saturate(average(prePreMultipliedAlphaUIColor)));
+		float targetBackgroundAlpha = lerp(1.0 - safePow(1.0 - UIColor.a, DefaultGamma), targetUIAlpha, saturate(UIColorIntensity(prePreMultipliedAlphaUIColor)));
 #endif
 		
 		targetBackgroundAlpha = lerp(targetBackgroundAlpha, max(targetBackgroundAlpha, 1), LumaUIData.BackgroundTonemappingAmount * saturate(UIColor.a));

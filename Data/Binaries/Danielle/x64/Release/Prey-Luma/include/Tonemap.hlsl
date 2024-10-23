@@ -35,6 +35,7 @@ float3 Tonemap_Hable_Inverse_Eval(in float3 x, float inShoulderScale, float inLi
 	return max(part1 - part2, part1 + part2); // Take the max of the two, it's likely always the right one (we could probably discard the one with the subtraction)
 }
 
+// Note: Hable is 100% per channel so you can pass in a single channel and exclusively retrieve the result on that if you don't need three channels.
 float3 Tonemap_Hable_Inverse(in float3 compressedCol, float inShoulderScale = HableShoulderScale, float inLinearScale = HableLinearScale, float inToeScale = HableToeScale, float inWhitepoint = HableWhitepoint)
 {
 	float3 colorSigns = float3(compressedCol.x >= 0.0 ? 1.0 : -1.0, compressedCol.y >= 0.0 ? 1.0 : -1.0, compressedCol.z >= 0.0 ? 1.0 : -1.0);

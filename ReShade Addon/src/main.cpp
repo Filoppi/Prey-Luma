@@ -400,7 +400,7 @@ std::string shaders_compilation_errors; // errors and warning log
 // TODO: add grey out conditions (another define, by name, whether its value is > 0)
 std::vector<ShaderDefineData> shader_defines_data = {
   {"DEVELOPMENT", DEVELOPMENT ? '1' : '0', true, DEVELOPMENT ? false : true, "Enables some development/debug features that are otherwise not allowed"}, // development_define_index
-  {"POST_PROCESS_SPACE_TYPE", '1', true, false, "0 - Gamma space\n1 - Linear space\n2 - Linear space until UI (then gamma space)\n\nSelect \"2\" if you want the UI to look exactly like it did in Vanilla"}, // post_process_space_define_index
+  {"POST_PROCESS_SPACE_TYPE", '1', true, false, "0 - Gamma space\n1 - Linear space\n2 - Linear space until UI (then gamma space)\n\nSelect \"2\" if you want the UI to look exactly like it did in Vanilla\nSekect\"1\" for the highest possible quality"}, // post_process_space_define_index
   {"GAMMA_CORRECTION_TYPE", '1', false, false, "This is best left on unless you have crushed blacks\n0 - sRGB\n1 - Gamma 2.2\n2 - sRGB (color hues) with gamma 2.2 luminance"},
   {"TONEMAP_TYPE", '1', false, false, "0 - Vanilla SDR\n1 - Luma HDR (Vanilla+)\n2 - Raw HDR (Untonemapped)"},
   {"SUNSHAFTS_LOOK_TYPE", '2', false, false, "0 - Raw Vanilla\n1 - Vanilla+\n2 - Luma HDR"},
@@ -463,6 +463,16 @@ static_assert(sizeof(Matrix44A) == sizeof(float4) * 4);
 // Caches all the states we might need to modify to draw a simple pixel shader.
 // First call "Cache()" (once) and then call "Restore()" (once).
 struct DrawStateStack {
+    // This is the max according to PSSetShader documentation
+    static constexpr UINT max_shader_class_instances = 256;
+
+    DrawStateStack() {
+        std::memset(&ps_instances, 0, sizeof(void*) * max_shader_class_instances);
+        std::memset(&vs_instances, 0, sizeof(void*) * max_shader_class_instances);
+        std::memset(&render_target_views, 0, sizeof(void*) * D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT);
+        std::memset(&depth_stencil_views, 0, sizeof(void*) * D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT);
+    }
+
     // Cache aside the previous resources/states:
     void Cache(ID3D11DeviceContext* device_context) {
         device_context->OMGetBlendState(&blend_state, blend_factor, &blend_sample_mask); //TODOFT: blend_factor!? I guess it's passed in as a ptr already
@@ -473,9 +483,14 @@ struct DrawStateStack {
         device_context->RSGetViewports(&viewports_num, &viewports[0]);
         device_context->PSGetShaderResources(0, 1, &shader_resource_view); // Only cache the first one
         device_context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &render_target_views[0], &depth_stencil_views[0]);
+#if 1
         device_context->VSGetShader(&vs, ps_instances, &ps_instances_count); // Prey doesn't seem to use the optional shader instances (classes) but we do it anyway for extra safety
         device_context->PSGetShader(&ps, vs_instances, &vs_instances_count);
         ASSERT_ONCE(ps_instances_count == 0 && vs_instances_count == 0); //TODOFT5
+#else
+        device_context->VSGetShader(&vs, ps_instances, 0);
+        device_context->PSGetShader(&ps, vs_instances, 0);
+#endif
 
 #if 0 // These are not needed until proven otherwise, we don't change, nor rely on these states
         ID3D11RasterizerState* RS;
@@ -518,8 +533,23 @@ struct DrawStateStack {
                 depth_stencil_views[i] = nullptr;
             }
         }
+#if 1
         device_context->VSSetShader(vs.get(), ps_instances, ps_instances_count);
         device_context->PSSetShader(ps.get(), vs_instances, vs_instances_count);
+#else
+        device_context->VSSetShader(vs.get(), nullptr, 0);
+        device_context->PSSetShader(ps.get(), nullptr, 0);
+#endif
+        for (UINT i = 0; i < max_shader_class_instances; i++) {
+            if (ps_instances[i] != nullptr) {
+                ps_instances[i]->Release();
+                ps_instances[i] = nullptr;
+            }
+            if (vs_instances[i] != nullptr) {
+                vs_instances[i]->Release();
+                vs_instances[i] = nullptr;
+            }
+        }
     }
 
     com_ptr<ID3D11BlendState> blend_state;
@@ -527,14 +557,13 @@ struct DrawStateStack {
     UINT blend_sample_mask;
     com_ptr<ID3D11VertexShader> vs;
     com_ptr<ID3D11PixelShader> ps;
-    // 256 is max according to PSSetShader documentation
-    UINT ps_instances_count = 256;
-    UINT vs_instances_count = 256;
-    ID3D11ClassInstance* ps_instances[256];
-    ID3D11ClassInstance* vs_instances[256];
+    UINT ps_instances_count = max_shader_class_instances;
+    UINT vs_instances_count = max_shader_class_instances;
+    ID3D11ClassInstance* ps_instances[max_shader_class_instances];
+    ID3D11ClassInstance* vs_instances[max_shader_class_instances];
     D3D11_PRIMITIVE_TOPOLOGY primitive_topology;
-    ID3D11RenderTargetView* render_target_views[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
-    ID3D11DepthStencilView* depth_stencil_views[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
+    ID3D11RenderTargetView* render_target_views[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
+    ID3D11DepthStencilView* depth_stencil_views[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
     com_ptr<ID3D11ShaderResourceView> shader_resource_view;
     D3D11_RECT scissor_rects[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
     UINT scissor_rects_num = 1;
@@ -630,7 +659,7 @@ std::filesystem::path GetShaderPath() {
   shaders_path = shaders_path.parent_path();
   std::string name_no_spaces = NAME;
   std::replace(name_no_spaces.begin(), name_no_spaces.end(), ' ', '-');
-  shaders_path /= ".\\" + name_no_spaces;
+  shaders_path /= name_no_spaces;
   return shaders_path;
 }
 
@@ -1845,7 +1874,11 @@ void OnPresent(
     ID3D11DeviceContext* native_device_context = (ID3D11DeviceContext*)(queue->get_immediate_command_list()->get_native());
 
     // "POST_PROCESS_SPACE_TYPE" 0 and 2 mean that the final image was stored textures in gamma space,
-    // so we need to linearize it for scRGB HDR (linear) output
+    // so we need to linearize it for scRGB HDR (linear) output.
+    // 
+    // If there are no shaders being currently replaced in the game (cloned_pipeline_count),
+    // we can assume that we either missed replacing some shaders, or that we have unloaded all of our shaders.
+    // Both cases need linearization at the end, as the game would be drawing in gamma space (during post process).
     if (shader_defines_data[post_process_space_define_index].GetNumericalCompiledValue() != 1 || cloned_pipeline_count == 0) {
         const std::lock_guard<std::recursive_mutex> lock_shader_objects(s_mutex_shader_objects);
         if (copy_vertex_shader && transfer_function_copy_pixel_shader) {
@@ -3559,8 +3592,8 @@ bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource
 
             // If we detected incompatible formats that were likely caused by Luma upgrading texture formats (of render targets only...),
             // do the copy in shader
-            /*if (((isUnorm8(target_desc.Format) || isFloat11(target_desc.Format)) && isFloat16(source_desc.Format))
-                || ((isUnorm8(source_desc.Format) || isFloat11(source_desc.Format)) && isFloat16(target_desc.Format)))*/ {
+            if (((isUnorm8(target_desc.Format) || isFloat11(target_desc.Format)) && isFloat16(source_desc.Format))
+                || ((isUnorm8(source_desc.Format) || isFloat11(source_desc.Format)) && isFloat16(target_desc.Format))) {
                 const std::lock_guard<std::recursive_mutex> lock(s_mutex_shader_objects);
                 if (copy_vertex_shader == nullptr || copy_pixel_shader == nullptr) {
                     ASSERT_ONCE(false); // The custom shaders failed to be found (they have either been unloaded or failed to compile, or simply missing in the files)
@@ -3822,7 +3855,7 @@ void DumpShader(uint32_t shader_hash, bool auto_detect_type = true) {
   if (!std::filesystem::exists(dump_path)) {
     std::filesystem::create_directory(dump_path);
   }
-  dump_path /= ".\\dump";
+  dump_path /= "dump";
   if (!std::filesystem::exists(dump_path)) {
     std::filesystem::create_directory(dump_path);
   }
@@ -3965,6 +3998,9 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 
 #if DEVELOPMENT || TEST
   if (ImGui::Button(std::format("Unload Shaders ({})", cloned_pipeline_count).c_str())) {
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+      ImGui::SetTooltip("Unload all compiled and replaced shaders. The numbers shows how many shaders are being replaced at this moment in the game, from the custom loaded/compiled ones.");
+    }
     needs_unload_shaders = true;
     last_pressed_unload = true;
 #if 0  // Not necessary anymore with "last_pressed_unload"
@@ -4795,7 +4831,7 @@ void Init() {
   dumped_shaders.clear();
   auto dump_path = GetShaderPath();
   if (std::filesystem::exists(dump_path)) {
-    dump_path /= ".\\dump";
+    dump_path /= "dump";
     if (std::filesystem::exists(dump_path)) {
       const std::lock_guard<std::recursive_mutex> lock_dumping(s_mutex_dumping);
       for (const auto& entry : std::filesystem::directory_iterator(dump_path)) {
