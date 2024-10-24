@@ -43,6 +43,7 @@ Issues and limitations:
 -Sun shafts can disappear while they are still visible if the sun center gets occluded (this is a bug with the original game, it's slightly more noticeable with LUMA because sun shafts are stronger).
 -Some objects in some levels disappear at certain camera angles (vanilla issue, lowering object details to high or below fixes it).
 -Glass can flicker heavily when there's multiple layers of it (vanilla issue).
+-Due to Windows limitations, the game cursor will follow the OS SDR White Level (SDR content brightness) instead of the game's UI paper white. Set the Windows SDR content brightness setting to 31 (out of 100) to make it match ~203 nits, as Luma is set to by default.
 
 Compatibility:
 This mod should work with any other mod for Prey, just be careful of what you insteall, because some of the most popular mods change very random stuff with the game, or its graphics config (they will still be compatible with Luma).

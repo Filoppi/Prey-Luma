@@ -1472,7 +1472,7 @@ void OnInitSwapchain(reshade::api::swapchain* swapchain) {
       const std::lock_guard<std::recursive_mutex> lock_reshade(s_mutex_reshade);
       GetHDRMaxLuminance(local_native_swapchain3, default_user_peak_white, srgb_white_level);
       IsHDRSupportedAndEnabled(swapchain_desc.OutputWindow, hdr_supported_display, hdr_enabled_display, local_native_swapchain3);
-      game_window = swapchain_desc.OutputWindow;
+      game_window = swapchain_desc.OutputWindow; // This shouldn't really need any thread safety protection
 
       if (!hdr_enabled_display) {
           // Force the display mode to SDR if HDR is not engaged
@@ -4463,6 +4463,11 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             }
             if (ImGui::SliderFloat("UI Paper White", &cb_luma_frame_settings.UIPaperWhite, srgb_white_level, 500.f, "%.f")) {
                 reshade::set_config_value(runtime, NAME, "UIPaperWhite", cb_luma_frame_settings.UIPaperWhite);
+
+#if 0 // This is not safe to do, so let's rely on users manually setting this instead (also note that this is a test implementation, it doesn't react to all places that change "cb_luma_frame_settings.UIPaperWhite".
+                // This makes the game cursor have the same brightness as the game's UI
+                SetSDRWhiteLevel(game_window, std::clamp(cb_luma_frame_settings.UIPaperWhite, 80.f, 480.f));
+#endif
             }
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
                 ImGui::SetTooltip("The peak brightness of the User Interface.\nHigher does not mean better, change this to your liking.");

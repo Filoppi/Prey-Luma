@@ -239,3 +239,30 @@ bool SetHDREnabled(HWND hwnd)
 
 	return false;
 }
+
+#define DISPLAYCONFIG_DEVICE_INFO_SET_SDR_WHITE_LEVEL (DISPLAYCONFIG_DEVICE_INFO_TYPE)0xFFFFFFEE
+typedef struct __declspec(align(4)) _DISPLAYCONFIG_SET_SDR_WHITE_LEVEL
+{
+	DISPLAYCONFIG_DEVICE_INFO_HEADER header;
+	ULONG                            SDRWhiteLevel;
+	BYTE                             finalValue;
+} DISPLAYCONFIG_SET_SDR_WHITE_LEVEL;
+
+// NOTE: Undocumented Windows feature. USE AT YOUR OWN RISK.
+bool SetSDRWhiteLevel(HWND hwnd, float nits = 80.f /*Windows sRGB standard luminance*/)
+{
+	DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO colorInfo{};
+	if (GetColorInfo(hwnd, colorInfo)) {
+		DISPLAYCONFIG_SET_SDR_WHITE_LEVEL setSdrWhiteLevel{};
+		setSdrWhiteLevel.header.type = DISPLAYCONFIG_DEVICE_INFO_SET_SDR_WHITE_LEVEL;
+		setSdrWhiteLevel.header.size = sizeof(DISPLAYCONFIG_SET_SDR_WHITE_LEVEL);
+		setSdrWhiteLevel.header.adapterId = colorInfo.header.adapterId;
+		setSdrWhiteLevel.header.id = colorInfo.header.id;
+		setSdrWhiteLevel.SDRWhiteLevel = static_cast <ULONG>((1000.0f * nits) / 80.0f);
+		setSdrWhiteLevel.finalValue = TRUE;
+		// This will return error for any range beyond 80-480 nits
+		bool succeeded = (ERROR_SUCCESS == DisplayConfigSetDeviceInfo((DISPLAYCONFIG_DEVICE_INFO_HEADER*)&setSdrWhiteLevel));
+		return succeeded;
+	}
+	return false;
+}
