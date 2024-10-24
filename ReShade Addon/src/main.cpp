@@ -4464,13 +4464,15 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             if (ImGui::SliderFloat("UI Paper White", &cb_luma_frame_settings.UIPaperWhite, srgb_white_level, 500.f, "%.f")) {
                 reshade::set_config_value(runtime, NAME, "UIPaperWhite", cb_luma_frame_settings.UIPaperWhite);
 
-#if 0 // This is not safe to do, so let's rely on users manually setting this instead (also note that this is a test implementation, it doesn't react to all places that change "cb_luma_frame_settings.UIPaperWhite".
+// This is not safe to do, so let's rely on users manually setting this instead.
+// Also note that this is a test implementation, it doesn't react to all places that change "cb_luma_frame_settings.UIPaperWhite", and does not restore the user original value on exit.
+#if 0
                 // This makes the game cursor have the same brightness as the game's UI
                 SetSDRWhiteLevel(game_window, std::clamp(cb_luma_frame_settings.UIPaperWhite, 80.f, 480.f));
 #endif
             }
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-                ImGui::SetTooltip("The peak brightness of the User Interface.\nHigher does not mean better, change this to your liking.");
+                ImGui::SetTooltip("The peak brightness of the User Interface (with the exception of the 2D cursor, which is driven by the Windows SDR White Level).\nHigher does not mean better, change this to your liking.");
             }
             ImGui::SameLine();
             if (cb_luma_frame_settings.UIPaperWhite != default_paper_white) {
