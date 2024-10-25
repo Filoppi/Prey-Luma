@@ -26,7 +26,7 @@ Install the latest VC++ redist before using (https://aka.ms/vs/17/release/vc_red
 Before updating the mod, make sure to delete all its previous files. To uninstall, clear all the files (they are unique to the mod).
 Use the ReShade version that is bundled with the mod (ReShade 6.3 might be compatible but is yet to be tested).
 Unless you are on Linux/Proton, delete the "d3dcompiler_47.dll" from the main binary folder, it's an outdated shader compiler bundled with the game for "no reason" (Windows will fall back on the latest version of it this way, but Proton doesn't distribute the file so leave it in).
-Preferably, keep your ".\renodx-dev\dump" folder and send them to the developers after long play sessions, so they can catch all the shaders and make them Luma compatile.
+Preferably, keep your ".\renodx-dev\dump" folder and send them to the developers after long play sessions, so they can catch all the shaders and make them Luma compatible.
 Performance cost on modern GPUs is negligeable, especially when using DLSS SR + Dynamic Resolution Scaling.
 Set you "game.cfg" to read only to avoid the game clearing most settings from it if changing settings within the game menu, so it's suggested to change your resolution directly from config before booting the game.
 The game's HDR uses the HDR calibration data from Windows 11.
@@ -46,7 +46,7 @@ Issues and limitations:
 -Due to Windows limitations, the game cursor will follow the OS SDR White Level (SDR content brightness) instead of the game's UI paper white. Set the Windows SDR content brightness setting to 31 (out of 100) to make it match ~203 nits, as Luma is set to by default.
 
 Compatibility:
-This mod should work with any other mod for Prey, just be careful of what you insteall, because some of the most popular mods change very random stuff with the game, or its graphics config (they will still be compatible with Luma).
+This mod should work with any other mod for Prey, just be careful of what you install, because some of the most popular mods change very random stuff with the game, or its graphics config (they will still be compatible with Luma).
 Replace their files with the Luma version if necessary, none of the game's mods rely on config changes, so the Luma version of the configs will work with them too, and Luma only changes what's strictly necessary and with careful research behind it.
 "Prey: Mooncrash" is not supported.
 
@@ -59,4 +59,4 @@ Thanks:
 ShortFuse (support), Lilium (support), KoKlusz (testing), Musa (testing), crosire (support), Regevitamins (support), MartysMods (support), Kaldaien (support), nd4spd (testing)
 
 Third party:
-ReShade, ImGui, RenoDX, Nvidia (DLSS), Fubaxiusz (Perfect Perspective), Oklab, Intel (Xe)GTAO, Darktable UCS, AMD RCAS, DICE (HDR tonemapper), Crytek (CryEngine) and Arkane (Prey)
+ReShade, ImGui, RenoDX, DKUtil, Nvidia (DLSS), Fubaxiusz (Perfect Perspective), Oklab, Intel (Xe)GTAO, Darktable UCS, AMD RCAS, DICE (HDR tonemapper), Crytek (CryEngine) and Arkane (Prey)
