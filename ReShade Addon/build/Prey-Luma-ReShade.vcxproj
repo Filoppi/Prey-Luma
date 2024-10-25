@@ -60,16 +60,17 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>..\external\reshade;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\external\reshade;..\external\DKUtil\include;..\vcpkg_installed\x64-windows-static-md\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
       <ExceptionHandling>Sync</ExceptionHandling>
       <InlineFunctionExpansion>Disabled</InlineFunctionExpansion>
-      <LanguageStandard>stdcpp20</LanguageStandard>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
       <Optimization>Disabled</Optimization>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;SPDLOG_COMPILED_LIB;SPDLOG_FMT_EXTERNAL</PreprocessorDefinitions>
+      <UseStandardPreprocessor>true</UseStandardPreprocessor>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_DEBUG;_WINDOWS</PreprocessorDefinitions>
@@ -84,7 +85,7 @@
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <Link>
-      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib;nvsdk_ngx_d_dbg.lib</AdditionalDependencies>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib;nvsdk_ngx_d_dbg.lib;%VCPKG_ROOT%\packages\spdlog_x64-windows-static-md\debug\lib\spdlogd.lib;%VCPKG_ROOT%\packages\fmt_x64-windows-static-md\debug\lib\fmtd.lib</AdditionalDependencies>
       <AdditionalLibraryDirectories>..\src\NGX\libs;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -98,14 +99,15 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>..\external\reshade;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\external\reshade;..\external\DKUtil\include;..\vcpkg_installed\x64-windows-static-md\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ExceptionHandling>Sync</ExceptionHandling>
       <InlineFunctionExpansion>Default</InlineFunctionExpansion>
-      <LanguageStandard>stdcpp20</LanguageStandard>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
       <Optimization>MaxSpeed</Optimization>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;SPDLOG_COMPILED_LIB;SPDLOG_FMT_EXTERNAL</PreprocessorDefinitions>
+      <UseStandardPreprocessor>true</UseStandardPreprocessor>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG</PreprocessorDefinitions>
@@ -120,7 +122,7 @@
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <Link>
-      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib;nvsdk_ngx_d.lib</AdditionalDependencies>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib;nvsdk_ngx_d.lib;%VCPKG_ROOT%\packages\spdlog_x64-windows-static-md\lib\spdlog.lib;%VCPKG_ROOT%\packages\fmt_x64-windows-static-md\lib\fmt.lib</AdditionalDependencies>
       <AdditionalLibraryDirectories>..\src\NGX\libs;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
       <GenerateDebugInformation>false</GenerateDebugInformation>
@@ -135,6 +137,9 @@
   <ItemGroup>
     <ClCompile Include="..\src\dlss\DLSS.cpp" />
     <ClCompile Include="..\src\main.cpp" />
+    <ClCompile Include="..\src\native plugin\Hooks.cpp" />
+    <ClCompile Include="..\src\native plugin\NativePlugin.cpp" />
+    <ClCompile Include="..\src\native plugin\RE.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\src\dlss\DLSS.h" />
@@ -142,6 +147,10 @@
     <ClInclude Include="..\src\includes\math.h" />
     <ClInclude Include="..\src\includes\matrix.h" />
     <ClInclude Include="..\src\includes\shader_define.h" />
+    <ClInclude Include="..\src\native plugin\Hooks.h" />
+    <ClInclude Include="..\src\native plugin\NativePlugin.h" />
+    <ClInclude Include="..\src\native plugin\Offsets.h" />
+    <ClInclude Include="..\src\native plugin\RE.h" />
     <ClInclude Include="..\src\utils\descriptor.hpp" />
     <ClInclude Include="..\src\utils\display.hpp" />
     <ClInclude Include="..\src\utils\format.hpp" />

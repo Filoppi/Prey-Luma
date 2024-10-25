@@ -1,0 +1,8 @@
+Package: xbyak
+Version: 6.73
+Depends: vcpkg-cmake, vcpkg-cmake-config
+Architecture: x64-windows-static-md
+Multi-Arch: same
+Abi: eab9059218a307dbd4d42d0064097fd989ec08e6dfbe8c52cdff2605aaf42573
+Description: Xbyak is a JIT assembler for x86(IA-32)/x64(AMD64, x86-64).
+Status: install ok half-installed

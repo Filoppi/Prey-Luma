@@ -1,0 +1,15 @@
+x64-windows-static-md/
+x64-windows-static-md/include/
+x64-windows-static-md/include/xbyak/
+x64-windows-static-md/include/xbyak/xbyak.h
+x64-windows-static-md/include/xbyak/xbyak_bin2hex.h
+x64-windows-static-md/include/xbyak/xbyak_mnemonic.h
+x64-windows-static-md/include/xbyak/xbyak_util.h
+x64-windows-static-md/share/
+x64-windows-static-md/share/xbyak/
+x64-windows-static-md/share/xbyak/copyright
+x64-windows-static-md/share/xbyak/vcpkg.spdx.json
+x64-windows-static-md/share/xbyak/vcpkg_abi_info.txt
+x64-windows-static-md/share/xbyak/xbyak-config-version.cmake
+x64-windows-static-md/share/xbyak/xbyak-config.cmake
+x64-windows-static-md/share/xbyak/xbyak-targets.cmake

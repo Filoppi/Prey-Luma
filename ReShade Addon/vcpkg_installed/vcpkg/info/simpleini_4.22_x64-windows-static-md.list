@@ -1,0 +1,10 @@
+x64-windows-static-md/
+x64-windows-static-md/include/
+x64-windows-static-md/include/ConvertUTF.c
+x64-windows-static-md/include/ConvertUTF.h
+x64-windows-static-md/include/SimpleIni.h
+x64-windows-static-md/share/
+x64-windows-static-md/share/simpleini/
+x64-windows-static-md/share/simpleini/copyright
+x64-windows-static-md/share/simpleini/vcpkg.spdx.json
+x64-windows-static-md/share/simpleini/vcpkg_abi_info.txt

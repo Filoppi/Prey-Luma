@@ -5,8 +5,6 @@ VisualStudioVersion = 17.11.35201.85
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Prey-Luma-ReShade", "ReShade Addon\build\Prey-Luma-ReShade.vcxproj", "{E0947F3A-8107-3BB4-83BE-9A22D419719E}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Prey-Luma-Native", "Native Plugin\build\Prey-Luma-Native.vcxproj", "{E72F020E-9035-3618-BC9C-7C333FC31B99}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -17,10 +15,6 @@ Global
 		{E0947F3A-8107-3BB4-83BE-9A22D419719E}.Debug|x64.Build.0 = Debug|x64
 		{E0947F3A-8107-3BB4-83BE-9A22D419719E}.Release|x64.ActiveCfg = Release|x64
 		{E0947F3A-8107-3BB4-83BE-9A22D419719E}.Release|x64.Build.0 = Release|x64
-		{E72F020E-9035-3618-BC9C-7C333FC31B99}.Debug|x64.ActiveCfg = Debug|x64
-		{E72F020E-9035-3618-BC9C-7C333FC31B99}.Debug|x64.Build.0 = Debug|x64
-		{E72F020E-9035-3618-BC9C-7C333FC31B99}.Release|x64.ActiveCfg = Release|x64
-		{E72F020E-9035-3618-BC9C-7C333FC31B99}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

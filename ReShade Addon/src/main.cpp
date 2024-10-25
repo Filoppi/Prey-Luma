@@ -51,6 +51,8 @@
 #include "utils/shader_compiler.hpp"
 #include "utils/display.hpp"
 
+#include "native plugin/NativePlugin.h"
+
 #define ICON_FK_CANCEL reinterpret_cast<const char*>(u8"\uf00d")
 #define ICON_FK_OK reinterpret_cast<const char*>(u8"\uf00c")
 #define ICON_FK_PLUS reinterpret_cast<const char*>(u8"\uf067")
@@ -4989,6 +4991,8 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
   switch (fdw_reason) {
     case DLL_PROCESS_ATTACH:
       if (!reshade::register_addon(h_module)) return FALSE;
+
+      NativePlugin::main(NAME, VERSION);
 
 #if DEVELOPMENT
       renodx::utils::descriptor::Use(fdw_reason);

@@ -1,0 +1,110 @@
+{
+  "$schema": "https://raw.githubusercontent.com/spdx/spdx-spec/v2.2.1/schemas/spdx-schema.json",
+  "spdxVersion": "SPDX-2.2",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "documentNamespace": "https://spdx.org/spdxdocs/simpleini-x64-windows-static-md-4.22-be9635d5-da4b-4711-b36b-fb11bb0d8502",
+  "name": "simpleini:x64-windows-static-md@4.22 0bc7be1ff1a9370ebae3fffbdc713d8475c2be6e9afe0718f6d4ab3192d21cf7",
+  "creationInfo": {
+    "creators": [
+      "Tool: vcpkg-d6945642ee5c3076addd1a42c331bbf4cfc97457"
+    ],
+    "created": "2024-10-17T22:48:42Z"
+  },
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-port",
+      "relationshipType": "GENERATES",
+      "relatedSpdxElement": "SPDXRef-binary"
+    },
+    {
+      "spdxElementId": "SPDXRef-port",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-file-0"
+    },
+    {
+      "spdxElementId": "SPDXRef-port",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-file-1"
+    },
+    {
+      "spdxElementId": "SPDXRef-binary",
+      "relationshipType": "GENERATED_FROM",
+      "relatedSpdxElement": "SPDXRef-port"
+    },
+    {
+      "spdxElementId": "SPDXRef-file-0",
+      "relationshipType": "CONTAINED_BY",
+      "relatedSpdxElement": "SPDXRef-port"
+    },
+    {
+      "spdxElementId": "SPDXRef-file-1",
+      "relationshipType": "CONTAINED_BY",
+      "relatedSpdxElement": "SPDXRef-port"
+    }
+  ],
+  "packages": [
+    {
+      "name": "simpleini",
+      "SPDXID": "SPDXRef-port",
+      "versionInfo": "4.22",
+      "downloadLocation": "NOASSERTION",
+      "homepage": "https://github.com/brofield/simpleini",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "description": "Cross-platform C++ library providing a simple API to read and write INI-style configuration files",
+      "comment": "This is the port (recipe) consumed by vcpkg."
+    },
+    {
+      "name": "simpleini:x64-windows-static-md",
+      "SPDXID": "SPDXRef-binary",
+      "versionInfo": "0bc7be1ff1a9370ebae3fffbdc713d8475c2be6e9afe0718f6d4ab3192d21cf7",
+      "downloadLocation": "NONE",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "comment": "This is a binary package built by vcpkg."
+    },
+    {
+      "SPDXID": "SPDXRef-resource-1",
+      "name": "brofield/simpleini",
+      "downloadLocation": "git+https://github.com/brofield/simpleini@v4.22",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "checksums": [
+        {
+          "algorithm": "SHA512",
+          "checksumValue": "6c198636816a0018adbf7f735d402c64245c6fcd540b7360d4388d46f007f3a520686cdaec4705cb8cb31401b2cb4797a80b42ea5d08a6a5807c0848386f7ca1"
+        }
+      ]
+    }
+  ],
+  "files": [
+    {
+      "fileName": "./G:/vcpkg/ports/simpleini/portfile.cmake",
+      "SPDXID": "SPDXRef-file-0",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "ee081926655062eb6396c141b449128472390ed3b317b8f1a64e1ece8527d0dc"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "fileName": "./G:/vcpkg/ports/simpleini/vcpkg.json",
+      "SPDXID": "SPDXRef-file-1",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "44f1b79817755eb3d9dea27f72942ff2c82b8d034c50e61e21c23bd5ea25482a"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    }
+  ]
+}
