@@ -135,23 +135,23 @@ using namespace std::literals;
 #include "Offsets.h"
 using namespace DKUtil::Alias;
 
-inline DKUtil::Hook::Trampoline::Trampoline& AllocTrampoline(size_t a_size)
-{
-    using namespace DKUtil::Hook;
-    auto& trampoline = Trampoline::GetTrampoline();
-    if (!trampoline.capacity()) {
-        trampoline.release();
-
-        const auto textx = Module::get("PreyDll.dll"sv).section(Module::Section::textx);
-        uintptr_t from = textx.first + textx.second;
-
-        trampoline.PageAlloc(a_size, from);
-    }
-    return trampoline;
-}
-
 namespace NativePlugin
 {
+    inline DKUtil::Hook::Trampoline::Trampoline& AllocTrampoline(size_t a_size)
+    {
+        using namespace DKUtil::Hook;
+        auto& trampoline = Trampoline::GetTrampoline();
+        if (!trampoline.capacity()) {
+            trampoline.release();
+
+            const auto textx = Module::get("PreyDll.dll"sv).section(Module::Section::textx);
+            uintptr_t from = textx.first + textx.second;
+
+            trampoline.PageAlloc(a_size, from);
+        }
+        return trampoline;
+    }
+
 	void main(const char* name, uint32_t version)
 	{
 		dku::Logger::Init(name, std::to_string(version));
