@@ -227,14 +227,11 @@ std::atomic<bool> thread_auto_loading_running = false;
 struct __declspec(uuid("cfebf6d4-d184-4e1a-ac14-09d088e560ca")) DeviceData {
   std::shared_mutex mutex;
 
-  reshade::api::device_api device_api;
-
-  // <resource.handle, resource_view.handle>
-  std::unordered_map<uint64_t, uint64_t> resource_views;
-  // <resource.handle, vector<resource_view.handle>>
-  std::unordered_map<uint64_t, std::vector<uint64_t>> resource_views_by_resource;
+#if DEVELOPMENT
+  std::unordered_map<uint64_t, uint64_t> resource_views; // <resource.handle, resource_view.handle>
   std::unordered_map<uint64_t, std::string> resource_names;
   std::unordered_set<uint64_t> resources;
+#endif
 
   //TODOFT3: are these pointers safe? they are not com pointers so theoretically DX could null them at any time, making them a stale pointer, though in reality we'd probably get a swapchain resize event first? (same stuff for other ptrs, like pipeline ptrs). It seems safe (as long it's made safe, at least for pipelines (which are shaders etc in DX11), see "register_destruction_callback_d3dx" in ReShade.
   std::unordered_set<reshade::api::swapchain*> swapchains;
@@ -593,6 +590,7 @@ void DumpShader(uint32_t shader_hash, bool auto_detect_type);
 void AutoDumpShaders();
 void AutoLoadShaders();
 
+#if DEVELOPMENT
 inline void GetD3DName(ID3D11DeviceChild* obj, std::string& name) {
   if (obj == nullptr) {
     return;
@@ -606,23 +604,9 @@ inline void GetD3DName(ID3D11DeviceChild* obj, std::string& name) {
   }
 }
 
-inline void GetD3DName(ID3D12Resource* obj, std::string& name) {
-  if (obj == nullptr) {
-    return;
-  }
-
-  // NOLINTNEXTLINE(modernize-avoid-c-arrays)
-  char c_name[128] = {};
-  UINT size = sizeof(name);
-  if (obj->GetPrivateData(WKPDID_D3DDebugObjectName, &size, c_name) == S_OK) {
-    name = c_name;
-  }
-}
-
 uint64_t GetResourceByViewHandle(DeviceData& data, uint64_t handle) {
-  if (
-      auto pair = data.resource_views.find(handle);
-      pair != data.resource_views.end()) return pair->second;
+  if (auto pair = data.resource_views.find(handle); pair != data.resource_views.end())
+    return pair->second;
   return 0;
 }
 
@@ -632,25 +616,18 @@ std::string GetResourceNameByViewHandle(DeviceData& data, uint64_t handle) {
   if (resource_handle == 0) return "?";
   if (!data.resources.contains(resource_handle)) return "?";
 
-  if (
-      auto pair = data.resource_names.find(resource_handle);
-      pair != data.resource_names.end()) return pair->second;
+  if (auto pair = data.resource_names.find(resource_handle); pair != data.resource_names.end())
+    return pair->second;
 
   std::string name;
-  if (data.device_api == reshade::api::device_api::d3d11) {
-    auto* native_resource = reinterpret_cast<ID3D11DeviceChild*>(resource_handle);
-    GetD3DName(native_resource, name);
-  } else if (data.device_api == reshade::api::device_api::d3d12) {
-    auto* native_resource = reinterpret_cast<ID3D12Resource*>(resource_handle);
-    GetD3DName(native_resource, name);
-  } else {
-    name = "?";
-  }
+  auto* native_resource = reinterpret_cast<ID3D11DeviceChild*>(resource_handle);
+  GetD3DName(native_resource, name);
   if (!name.empty()) {
     data.resource_names[resource_handle] = name;
   }
   return name;
 }
+#endif
 
 std::filesystem::path GetShaderPath() {
   // NOLINTNEXTLINE(modernize-avoid-c-arrays)
@@ -1311,7 +1288,6 @@ void ToggleLiveWatching() {
 
 void OnInitDevice(reshade::api::device* device) {
   auto& device_data = device->create_private_data<DeviceData>();
-  device_data.device_api = device->get_api();
   ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
   {
       const std::lock_guard<std::recursive_mutex> lock(s_mutex_device);
@@ -4801,6 +4777,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             "\nReShade"
             "\nImGui"
             "\nRenoDX"
+            "\nDKUtil"
             "\nNvidia (DLSS)"
             "\nOklab"
             "\nFubaxiusz (Perfect Perspective)"
