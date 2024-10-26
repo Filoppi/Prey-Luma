@@ -60,7 +60,6 @@ float3 NRand3(float2 seed, float tr = 1.0)
   return frac(sin(dot(seed.xy, float2(34.483, 89.637) * tr)) * float3(29156.4765, 38273.5639, 47843.7546));
 }
 
-
 // Takes coordinates centered around zero, and a normal for a cube of side size 1, both with origin at 0.
 // The normal is expected to be negative/inverted (facing origin) (basically it's just the cube side).
 bool cubeCoordinatesIntersection(out float3 intersection, float3 coordinates, float3 sideNormal)

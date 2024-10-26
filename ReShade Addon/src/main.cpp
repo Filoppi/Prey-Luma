@@ -481,6 +481,7 @@ struct DrawStateStack {
         device_context->RSGetViewports(&viewports_num, nullptr); // This will get the number of viewports used
         device_context->RSGetViewports(&viewports_num, &viewports[0]);
         device_context->PSGetShaderResources(0, 1, &shader_resource_view); // Only cache the first one
+        device_context->PSGetConstantBuffers(shader_cbuffers_index, 1, &constant_buffer); // Hardcoded to our "shader_cbuffers_index"
         device_context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &render_target_views[0], &depth_stencil_views[0]);
 #if 1
         device_context->VSGetShader(&vs, ps_instances, &ps_instances_count); // Prey doesn't seem to use the optional shader instances (classes) but we do it anyway for extra safety
@@ -521,6 +522,8 @@ struct DrawStateStack {
         device_context->RSSetViewports(viewports_num, &viewports[0]);
         ID3D11ShaderResourceView* const shader_resource_view_const = shader_resource_view.get();
         device_context->PSSetShaderResources(0, 1, &shader_resource_view_const);
+        ID3D11Buffer* const constant_buffer_const = constant_buffer.get();
+        device_context->PSSetConstantBuffers(shader_cbuffers_index, 1, &constant_buffer_const);
         device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &render_target_views[0], depth_stencil_views[0]);
         for (UINT i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; i++) {
             if (render_target_views[i] != nullptr) {
@@ -564,6 +567,7 @@ struct DrawStateStack {
     ID3D11RenderTargetView* render_target_views[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
     ID3D11DepthStencilView* depth_stencil_views[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
     com_ptr<ID3D11ShaderResourceView> shader_resource_view;
+    com_ptr<ID3D11Buffer> constant_buffer;
     D3D11_RECT scissor_rects[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
     UINT scissor_rects_num = 1;
     D3D11_VIEWPORT viewports[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
@@ -1811,10 +1815,11 @@ void SetPreyLumaConstantBuffers(reshade::api::command_list* cmd_list, reshade::a
     }
 }
 
-void DrawCustomPixelShader(ID3D11DeviceContext* device_context, ID3D11BlendState* blend_state, ID3D11VertexShader* vs, ID3D11PixelShader* ps, ID3D11ShaderResourceView* source_resource_texture_view, ID3D11RenderTargetView* target_resource_texture_view, UINT width, UINT height) {
+void DrawCustomPixelShader(ID3D11DeviceContext* device_context, ID3D11BlendState* blend_state, ID3D11VertexShader* vs, ID3D11PixelShader* ps, ID3D11ShaderResourceView* source_resource_texture_view, ID3D11RenderTargetView* target_resource_texture_view, UINT width, UINT height, bool alpha = true) {
     // Set the new resources/states:
-    constexpr FLOAT blend_factor[4] = { 1.f, 1.f, 1.f, 1.f };
-    device_context->OMSetBlendState(blend_state, blend_factor, 0xFFFFFFFF);
+    constexpr FLOAT blend_factor_alpha[4] = { 1.f, 1.f, 1.f, 1.f };
+    constexpr FLOAT blend_factor[4] = { 1.f, 1.f, 1.f, 0.f };
+    device_context->OMSetBlendState(blend_state, alpha ? blend_factor_alpha : blend_factor, 0xFFFFFFFF);
     // Note: we don't seem to need to call (and cache+restore) IASetVertexBuffers().
     // That's either because Prey always has vertices buffers set in there already, or because DX is tolerant enough (we are not seeing any etc errors in the DX log).
     device_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY::D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
@@ -1919,15 +1924,15 @@ void OnPresent(
                 assert(SUCCEEDED(native_device->CreateRenderTargetView(back_buffer.get(), &target_rtv_desc, &target_resource_texture_view)));
             }
 
-            auto& device_data = queue->get_device()->create_private_data<DeviceData>();
             // Push our settings cbuffer in case where no other custom shader run this frame
             {
+                auto& device_data = queue->get_device()->get_private_data<DeviceData>();
                 const std::unique_lock lock(device_data.mutex);
                 SetPreyLumaConstantBuffers(queue->get_immediate_command_list(), reshade::api::shader_stage::pixel, device_data.settings_pipeline_layout, LumaConstantBufferType::LumaSettings);
             }
 
             // Note: we don't need to re-apply our custom cbuffers as in Prey, they are on indexes that are never used by the game's code
-            DrawCustomPixelShader(native_device_context, default_blend_state.get(), copy_vertex_shader.get(), transfer_function_copy_pixel_shader.get(), transfer_function_copy_shader_resource_view.get(), target_resource_texture_view.get(), target_desc.Width, target_desc.Height);
+            DrawCustomPixelShader(native_device_context, default_blend_state.get(), copy_vertex_shader.get(), transfer_function_copy_pixel_shader.get(), transfer_function_copy_shader_resource_view.get(), target_resource_texture_view.get(), target_desc.Width, target_desc.Height, false);
 
             draw_state_stack.Restore(native_device_context);
         }
@@ -3673,7 +3678,7 @@ bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource
                 DrawStateStack draw_state_stack;
                 draw_state_stack.Cache(native_device_context);
 
-                DrawCustomPixelShader(native_device_context, default_blend_state.get(), copy_vertex_shader.get(), copy_pixel_shader.get(), source_resource_texture_view.get(), target_resource_texture_view.get(), target_desc.Width, target_desc.Height);
+                DrawCustomPixelShader(native_device_context, default_blend_state.get(), copy_vertex_shader.get(), copy_pixel_shader.get(), source_resource_texture_view.get(), target_resource_texture_view.get(), target_desc.Width, target_desc.Height, true);
 
                 //
                 // Copy our render target target resource into the non render target target resource if necessary:
