@@ -1,3 +1,8 @@
+// Needs "Math.hlsl" included before it
+
+// Needed by "linearToLog()" and "logToLinear()"
+#pragma warning( disable : 4122 )
+
 // SDR linear mid gray.
 // This is based on the commonly used value, though perception space mid gray (0.5) in sRGB or Gamma 2.2 would theoretically be ~0.2155 in linear.
 static const float MidGray = 0.18f;
@@ -175,6 +180,61 @@ float3 PQ_to_Linear(float3 ST2084Color, int clampType = 0)
 	if (clampType == 3)
 	{
 		return linearColor * ST2084ColorSign;
+	}
+	return linearColor;
+}
+
+// This defines the range you want to cover under log2: 2^14 = 16384,
+// 14 is the minimum value to cover 10k nits.
+static const float LogLinearRange = 14.f;
+// This is the grey point you want to adjust with the "exposure grey" parameter
+static const float LogLinearGrey = 0.18f;
+// This defines what an input matching the "linear grey" parameter will end up at in log space
+static const float LogGrey = 1.f / 3.f;
+
+// Note that an input of zero will not match and output of zero.
+float3 linearToLog_internal(float3 linearColor, float3 logGrey = LogGrey)
+{
+	return (log2(linearColor) / LogLinearRange) - (log2(LogLinearGrey) / LogLinearRange) + logGrey;
+}
+// "logColor" is expected to be != 0.
+float3 logToLinear_internal(float3 logColor, float3 logGrey = LogGrey)
+{
+//#pragma warning( disable : 4122 ) // Note: this doesn't work here
+	return exp2((logColor - logGrey) * LogLinearRange) * LogLinearGrey;
+//#pragma warning( default : 4122 )
+}
+
+// Perceptual encoding functions (more accurate than HDR10 PQ).
+// "linearColor" is expected to be >= 0 and with a white point around 80-100.
+// These function are "normalized" so that they will map a linear color value of 0 to a log encoding of 0.
+float3 linearToLog(float3 linearColor, int clampType = 0, float3 logGrey = LogGrey)
+{
+	if (clampType == 1 || clampType == 2)
+	{
+		linearColor = max(linearColor, 0.f);
+	}
+	else if (clampType == 3)
+	{
+		linearColor = abs(linearColor);
+	}
+    float3 normalizedLogColor = linearToLog_internal(linearColor + logToLinear_internal(FLT_MIN, logGrey), logGrey);
+	if (clampType == 3)
+	{
+		normalizedLogColor *= sign(linearColor);
+	}
+	return normalizedLogColor;
+}
+float3 logToLinear(float3 normalizedLogColor, int clampType = 0, float3 logGrey = LogGrey)
+{
+	if (clampType == 3)
+	{
+		normalizedLogColor = abs(normalizedLogColor);
+	}
+	float3 linearColor = max(logToLinear_internal(normalizedLogColor, logGrey) - logToLinear_internal(FLT_MIN, logGrey), 0.f);
+	if (clampType == 3)
+	{
+		linearColor *= sign(normalizedLogColor);
 	}
 	return linearColor;
 }
