@@ -37,7 +37,7 @@ namespace NativePlugin
         return trampoline;
     }
 
-    //TODO: rename? what about de-init?
+    //TODOFT: rename? what about de-init?
 	void main(const char* name, uint32_t version)
 	{
 		dku::Logger::Init(name, std::to_string(version));

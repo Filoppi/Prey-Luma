@@ -74,6 +74,7 @@
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;SPDLOG_COMPILED_LIB;SPDLOG_FMT_EXTERNAL</PreprocessorDefinitions>
       <UseStandardPreprocessor>true</UseStandardPreprocessor>
+      <AdditionalOptions>%(AdditionalOptions) /utf-8 /Zc:strictStrings /Zc:threadSafeInit</AdditionalOptions>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_DEBUG;_WINDOWS</PreprocessorDefinitions>
@@ -111,6 +112,7 @@
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;SPDLOG_COMPILED_LIB;SPDLOG_FMT_EXTERNAL</PreprocessorDefinitions>
       <UseStandardPreprocessor>true</UseStandardPreprocessor>
+      <AdditionalOptions>%(AdditionalOptions) /utf-8 /Zc:strictStrings /Zc:threadSafeInit</AdditionalOptions>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG</PreprocessorDefinitions>
