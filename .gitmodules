@@ -3,4 +3,4 @@
 	url = https://github.com/crosire/reshade
 [submodule "ReShade Addon/external/DKUtil"]
 	path = ReShade Addon/external/DKUtil
-	url = https://github.com/gottyduke/DKUtil.git
+url=https://github.com/Filoppi/DKUtil.git
