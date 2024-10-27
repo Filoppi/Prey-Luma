@@ -402,7 +402,7 @@ std::string shaders_compilation_errors; // errors and warning log
 std::vector<ShaderDefineData> shader_defines_data = {
   {"DEVELOPMENT", DEVELOPMENT ? '1' : '0', true, DEVELOPMENT ? false : true, "Enables some development/debug features that are otherwise not allowed"}, // development_define_index
   {"POST_PROCESS_SPACE_TYPE", '1', true, false, "0 - Gamma space\n1 - Linear space\n2 - Linear space until UI (then gamma space)\n\nSelect \"2\" if you want the UI to look exactly like it did in Vanilla\nSekect\"1\" for the highest possible quality"}, // post_process_space_define_index
-  {"GAMMA_CORRECTION_TYPE", '1', false, false, "This is best left on unless you have crushed blacks\n0 - sRGB\n1 - Gamma 2.2\n2 - sRGB (color hues) with gamma 2.2 luminance"},
+  {"GAMMA_CORRECTION_TYPE", '1', false, false, "Emulates a specific SDR gamma\nThis is best left to \"1 (Gamma 2.2)\" unless you have crushed blacks\n0 - sRGB\n1 - Gamma 2.2\n2 - sRGB (color hues) with gamma 2.2 luminance"},
   {"TONEMAP_TYPE", '1', false, false, "0 - Vanilla SDR\n1 - Luma HDR (Vanilla+)\n2 - Raw HDR (Untonemapped)"},
   {"SUNSHAFTS_LOOK_TYPE", '2', false, false, "0 - Raw Vanilla\n1 - Vanilla+\n2 - Luma HDR"},
   {"ENABLE_LENS_OPTICS_HDR", '1', false, false, "Makes the lens effects (e.g. lens flare) slightly HDR"},
@@ -743,6 +743,11 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
           shaders_compilation_errors = "Cannot find nor create shaders directory";
           return;
       }
+  }
+  else if (!std::filesystem::is_directory(directory)) {
+      const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
+      shaders_compilation_errors = "The shaders path is already taken by a file";
+      return;
   }
 
   std::unordered_set<uint32_t> changed_shaders_hashes;
@@ -1221,9 +1226,11 @@ void ToggleLiveWatching() {
     if (!std::filesystem::exists(directory)) {
       std::filesystem::create_directory(directory);
     }
-
-    if (!std::filesystem::exists(directory)) {
-      std::filesystem::create_directory(directory);
+    else if (!std::filesystem::is_directory(directory))
+    {
+        reshade::log::message(reshade::log::level::error, "ToggleLiveWatching: the target path is already taken by a file");
+        CancelIoEx(m_target_dir_handle, &overlapped);
+        return;
     }
 
     reshade::log::message(reshade::log::level::info, "Watching live");
@@ -2025,7 +2032,7 @@ void OnPresent(
 //TODOFT5: DLSS pre-exposure (duplicate?)
 //TODOFT5: "_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR"?
 //TODOFT5: verify that the addon is being run with Prey and that the detected version is Steam. E.g. return false in "AddonInit()"?
-//TODOFT5: fix cpp file formatting in general (and make sure it's all thread safe, but it should be)
+//TODOFT5: fix cpp file formatting in general (and make sure it's all thread safe, but it should be) (remove clang.tidy files?)
 //TODOFT5: Do LUTs extrapolation in Log2
 //TODOFT5: DICE inverse
 //TODOFT5: merge two DLLs
@@ -3836,13 +3843,17 @@ void OnReshadePresent(reshade::api::effect_runtime* runtime) {
 
 void DumpShader(uint32_t shader_hash, bool auto_detect_type = true) {
   auto dump_path = GetShaderPath();
-
   if (!std::filesystem::exists(dump_path)) {
     std::filesystem::create_directory(dump_path);
   }
   dump_path /= "dump";
   if (!std::filesystem::exists(dump_path)) {
     std::filesystem::create_directory(dump_path);
+  }
+  else if (!std::filesystem::is_directory(dump_path))
+  {
+    ASSERT_ONCE(false); // The target path is already taken by a file
+    return;
   }
 
   wchar_t hash_string[11];
@@ -4775,6 +4786,10 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         ImGui::PopStyleColor(3);
 
         ImGui::NewLine();
+        static const std::string version = "Version: " + std::to_string(Globals::VERSION);
+        ImGui::Text(version.c_str());
+
+        ImGui::NewLine();
         ImGui::Text("Credits:"
             "\n\nMain:"
             "\nPumbo (Graphics)"
@@ -4825,7 +4840,8 @@ void Init() {
   auto dump_path = GetShaderPath();
   if (std::filesystem::exists(dump_path)) {
     dump_path /= "dump";
-    if (std::filesystem::exists(dump_path)) {
+    // No need to create the directory here if it didn't already exist
+    if (std::filesystem::exists(dump_path) && std::filesystem::is_directory(dump_path)) {
       const std::lock_guard<std::recursive_mutex> lock_dumping(s_mutex_dumping);
       for (const auto& entry : std::filesystem::directory_iterator(dump_path)) {
         if (!entry.is_regular_file()) continue;
