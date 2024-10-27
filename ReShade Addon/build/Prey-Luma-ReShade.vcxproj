@@ -18,7 +18,7 @@
     <Keyword>Win32Proj</Keyword>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <Platform>x64</Platform>
-    <ProjectName>Prey-Luma-ReShade</ProjectName>
+    <ProjectName>Prey-Luma</ProjectName>
     <VCProjectUpgraderObjectName>NoUpgrade</VCProjectUpgraderObjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -42,11 +42,11 @@
   <PropertyGroup>
     <_ProjectFileVersion>10.0.20506.1</_ProjectFileVersion>
     <TargetName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Prey-Luma-ReShade</TargetName>
-    <TargetExt Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">.addon64</TargetExt>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">.addon</TargetExt>
     <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</LinkIncremental>
     <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateManifest>
     <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Prey-Luma-ReShade</TargetName>
-    <TargetExt Condition="'$(Configuration)|$(Platform)'=='Release|x64'">.addon64</TargetExt>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='Release|x64'">.addon</TargetExt>
     <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkIncremental>
     <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</GenerateManifest>
   </PropertyGroup>
@@ -159,7 +159,6 @@
     <ClInclude Include="..\src\native plugin\NativePlugin.h" />
     <ClInclude Include="..\src\native plugin\Offsets.h" />
     <ClInclude Include="..\src\native plugin\RE.h" />
-    <ClInclude Include="..\src\utils\descriptor.hpp" />
     <ClInclude Include="..\src\utils\display.hpp" />
     <ClInclude Include="..\src\utils\format.hpp" />
     <ClInclude Include="..\src\utils\pipeline.hpp" />

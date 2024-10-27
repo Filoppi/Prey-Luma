@@ -19,6 +19,8 @@
 #pragma comment(lib, "dxguid.lib")
 
 #include <d3d11.h>
+#include <dxgi.h>
+#include <dxgi1_6.h>
 #include <Windows.h>
 
 #include <cstdio>
@@ -31,6 +33,7 @@
 #include <set>
 #include <vector>
 #include <semaphore>
+#include <utility>
 
 // ReShade dependencies
 #include <deps/imgui/imgui.h>
@@ -46,7 +49,6 @@
 #include "includes/math.h"
 #include "includes/matrix.h"
 
-#include "utils/descriptor.hpp"
 #include "utils/format.hpp"
 #include "utils/pipeline.hpp"
 #include "utils/shader_compiler.hpp"
@@ -220,6 +222,7 @@ std::recursive_mutex s_mutex_shader_defines;
 // Mutex to deal with data shader with ReShade, like ini/config saving and loading
 std::recursive_mutex s_mutex_reshade;
 
+bool asi_loaded = true;
 std::thread thread_auto_dumping;
 std::atomic<bool> thread_auto_dumping_running = false;
 std::thread thread_auto_loading;
@@ -637,10 +640,11 @@ std::string GetResourceNameByViewHandle(DeviceData& data, uint64_t handle) {
 
 std::filesystem::path GetShaderPath() {
   // NOLINTNEXTLINE(modernize-avoid-c-arrays)
-  wchar_t file_prefix[MAX_PATH] = L"";
-  GetModuleFileNameW(nullptr, file_prefix, ARRAYSIZE(file_prefix));
+  wchar_t file_path[MAX_PATH] = L"";
+  // We don't pass in any module handle, thus this will return the path of the executable that loaded our dll
+  GetModuleFileNameW(nullptr, file_path, ARRAYSIZE(file_path));
 
-  std::filesystem::path shaders_path = file_prefix;
+  std::filesystem::path shaders_path = file_path;
   shaders_path = shaders_path.parent_path();
   std::string name_no_spaces = NAME;
   std::replace(name_no_spaces.begin(), name_no_spaces.end(), ' ', '-');
@@ -4830,11 +4834,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 }
 } // namespace
 
-void Init() {
-#if DEVELOPMENT || _DEBUG
-  LaunchDebugger();
-#endif // DEVELOPMENT
-
+void Init(bool async) {
   // Add all the shaders we have already dumped to the dumped list to avoid live re-dumping them
   dumped_shaders.clear();
   auto dump_path = GetShaderPath();
@@ -4952,7 +4952,7 @@ void Init() {
 
   // Pre-load all shaders to minimize the wait before replacing them after they are found in game ("auto_load"),
   // and to fill the list of shaders we customized, so we can know which ones we need replace on the spot.
-  if (precompile_custom_shaders) {
+  if (async && precompile_custom_shaders) {
     if (thread_auto_loading.joinable()) {
       thread_auto_loading.join();
     }
@@ -4970,17 +4970,19 @@ void Init() {
   }
 }
 
+// This can't be called on "DLL_PROCESS_DETACH" as it needs a multi threaded enviroment
 void Uninit() {
   if (thread_auto_dumping.joinable()) {
-    thread_auto_dumping.join(); //TODOFT: safe?
+    thread_auto_dumping.join();
   }
   if (thread_auto_loading.joinable()) {
     thread_auto_loading.join();
   }
 }
 
+// This is called immediately after "DllMain" if this dll/addon is loaded directly by ReShade
 extern "C" __declspec(dllexport) bool AddonInit(HMODULE addon_module, HMODULE reshade_module) {
-  Init();
+  Init(true);
   return true;
 }
 extern "C" __declspec(dllexport) void AddonUninit(HMODULE addon_module, HMODULE reshade_module) {
@@ -4989,14 +4991,48 @@ extern "C" __declspec(dllexport) void AddonUninit(HMODULE addon_module, HMODULE 
 
 BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
   switch (fdw_reason) {
+    // Note: this dll doesn't support being loaded more than once (or unloaded in the middle of execution)
+    // as it doesn't fully restore the original state on uninit (there's no need to really).
+    // ReShade loads addons when the game creates a DirectX device, and this seems to only ever happen once in Prey's case.
     case DLL_PROCESS_ATTACH:
-      if (!reshade::register_addon(h_module)) return FALSE;
-
-      NativePlugin::main(NAME, Globals::VERSION);
-
-#if DEVELOPMENT
-      renodx::utils::descriptor::Use(fdw_reason);
+    {
+#if DEVELOPMENT || _DEBUG
+      LaunchDebugger();
 #endif // DEVELOPMENT
+
+      // Hardcoding "Globals::NAME" here:
+      if (GetModuleHandle(TEXT("PreyDll.dll")) == NULL) {
+        MessageBoxA(NULL, "You are trying to use \"Prey Luma\" on a game that is not \"Prey (2017)\".\nThe mod will still run but probably crash.", NAME, NULL);
+      }
+      // The steam dll seems to be loaded before us all the times
+      else if (GetModuleHandle(TEXT("steam_api64.dll")) == NULL) {
+        MessageBoxA(NULL, "\"Prey Luma\" is only compatible with the Steam version of \"Prey (2017)\".\nThe mod will still run but probably crash.", NAME, NULL);
+      }
+
+      wchar_t file_path_char[MAX_PATH] = L"";
+      GetModuleFileNameW(h_module, file_path_char, ARRAYSIZE(file_path_char));
+      std::filesystem::path file_path = file_path_char;
+      if (file_path.extension() == ".addon" || file_path.extension() == ".addon64") {
+          asi_loaded = false;
+      }
+      else {
+        // Just to make sure, if we got loaded then it's probably fine either way
+        assert(file_path.extension() == ".dll" || file_path.extension() == ".asi");
+      }
+
+      // Register the ReShade addon.
+      // We simply cancel everything else if reshade is not present or failed to register,
+      // we could still load the native plugin,
+      const bool reshade_addon_register_succeeded = reshade::register_addon(h_module);
+      if (!reshade_addon_register_succeeded) return FALSE;
+
+      // Init the ReShade addon stuff synchronously, given we can't safely create threads here
+      if (asi_loaded) {
+        Init(false); //TODOFT5: kick start shader compilation here anyway, or soon after (in a function that allows thread calls), or shaders won't be compiled later? Actually this won't be needed anymore as of ReShade 5.3
+      }
+
+      // Initialize the "native plugin" (our code hooks/patches)
+      NativePlugin::Init(NAME, Globals::VERSION);
 
       reshade::register_event<reshade::addon_event::init_device>(OnInitDevice);
       reshade::register_event<reshade::addon_event::destroy_device>(OnDestroyDevice);
@@ -5048,11 +5084,9 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
       reshade::register_overlay(NAME, OnRegisterOverlay);
 
       break;
+    }
     case DLL_PROCESS_DETACH:
-#if DEVELOPMENT
-      renodx::utils::descriptor::Use(fdw_reason);
-#endif // DEVELOPMENT
-
+    {
       reshade::unregister_event<reshade::addon_event::init_device>(OnInitDevice);
       reshade::unregister_event<reshade::addon_event::destroy_device>(OnDestroyDevice);
       reshade::unregister_event<reshade::addon_event::init_swapchain>(OnInitSwapchain);
@@ -5103,6 +5137,13 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
 
       reshade::unregister_addon(h_module);
 
+      // In case our threads are still not joined, detach them and safely do a busy loop
+      // until they finished running, so we don't risk them reading/writing to stale memory.
+      // This could cause a bit of wait, especially if we just booted the game and shaders are still compiling,
+      // but there's no nice and clear alternatively really.
+      // This is needed because DLL loading/unloading is completely single threaded and isn't
+      // able to join threads (though "thread.detach()" somehow seems to work).
+      // Note that there's no need to call "Uninit()" here, independently on whether we are asi or ReShade loaded.
       if (thread_auto_dumping.joinable()) {
         thread_auto_dumping.detach();
         while (thread_auto_dumping_running) {
@@ -5115,6 +5156,7 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
       }
 
       break;
+      }
   }
 
   return TRUE;

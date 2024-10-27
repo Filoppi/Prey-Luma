@@ -1,6 +1,8 @@
+#pragma once
+
 #include <stdint.h>
 
 namespace NativePlugin
 {
-	void main(const char* name, uint32_t version = 1);
+	void Init(const char* name, uint32_t version = 1);
 }
