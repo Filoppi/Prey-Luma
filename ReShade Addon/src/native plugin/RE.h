@@ -130,6 +130,29 @@ namespace RE
 		float m33;
 	};
 
+	struct DeviceInfo
+	{
+		IDXGIFactory1* m_pFactory;
+		IDXGIAdapter* m_pAdapter;
+		IDXGIOutput* m_pOutput;
+		ID3D11Device* m_pDevice;
+		ID3D11DeviceContext1* m_pContext;
+		IDXGISwapChain* m_pSwapChain;
+		unsigned int          m_pCurrentBackBufferRTVIndex;
+		DXGI_ADAPTER_DESC1    m_adapterDesc;
+		DXGI_SWAP_CHAIN_DESC  m_swapChainDesc;
+		DXGI_RATIONAL         m_refreshRate;
+		DXGI_RATIONAL         m_desktopRefreshRate;
+		D3D_DRIVER_TYPE       m_driverType;
+		unsigned int          m_creationFlags;
+		D3D_FEATURE_LEVEL     m_featureLevel;
+		DXGI_FORMAT           m_autoDepthStencilFmt;
+		unsigned int          m_outputIndex;
+		unsigned int          m_syncInterval;
+		unsigned int          m_presentFlags;
+		bool                  m_activated;
+		bool                  m_activatedMT;
+	};
 
 	class CD3D9Renderer
 	{
@@ -227,38 +250,19 @@ namespace RE
 		ID3D11RenderTargetView* m_pBackBuffer; // 0xAE00
 		uint8_t unkAE08[0x130];
 		ID3D11DeviceContext1* m_pDeviceContext; //0xAF38
+		uint8_t unkAF40[0x40];
+		DeviceInfo m_devInfo; // 0xAF80
 	};
 	static_assert(offsetof(CD3D9Renderer, m_vProjMatrixSubPixoffset) == 0xD70);
 	static_assert(offsetof(CD3D9Renderer, m_nAsyncDeviceState) == 0x9898);
 	static_assert(offsetof(CD3D9Renderer, m_pNativeZSurface) == 0x9970);
 	static_assert(offsetof(CD3D9Renderer, m_pBackBuffer) == 0xAE00);
 	static_assert(offsetof(CD3D9Renderer, m_pDeviceContext) == 0xAF38);
+	static_assert(offsetof(CD3D9Renderer, m_devInfo) == 0xAF80);
+
+	constexpr size_t offset = offsetof(CD3D9Renderer, m_devInfo);
 
 	struct SD3DSurface;
-
-	struct DeviceInfo
-	{
-		IDXGIFactory1*        m_pFactory;
-		IDXGIAdapter*         m_pAdapter;
-		IDXGIOutput*          m_pOutput;
-		ID3D11Device*         m_pDevice;
-		ID3D11DeviceContext1* m_pContext;
-		IDXGISwapChain*       m_pSwapChain;
-		unsigned int          m_pCurrentBackBufferRTVIndex;
-		DXGI_ADAPTER_DESC1    m_adapterDesc;
-		DXGI_SWAP_CHAIN_DESC  m_swapChainDesc;
-		DXGI_RATIONAL         m_refreshRate;
-		DXGI_RATIONAL         m_desktopRefreshRate;
-		D3D_DRIVER_TYPE       m_driverType;
-		unsigned int          m_creationFlags;
-		D3D_FEATURE_LEVEL     m_featureLevel;
-		DXGI_FORMAT           m_autoDepthStencilFmt;
-		unsigned int          m_outputIndex;
-		unsigned int          m_syncInterval;
-		unsigned int          m_presentFlags;
-		bool                  m_activated;
-		bool                  m_activatedMT;
-	};
 
 	class CCryNameR
 	{

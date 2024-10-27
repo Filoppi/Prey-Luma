@@ -30,7 +30,7 @@ namespace Hooks
 
 	private:
 		static void          Hook_FlashRenderInternal(RE::CD3D9Renderer* a_this, void* pPlayer, bool bStereo, bool bDoRealRender);
-		static bool          Hook_CreateDevice(RE::DeviceInfo* a_deviceInfo, uint64_t a2, uint64_t a3, uint64_t a4, int32_t a_width, int32_t a_height, int32_t a7, int32_t a_zbpp, void* a9, void* a10);
+		static void          Hook_OnD3D11PostCreateDevice();
 		static bool          Hook_CreateRenderTarget(const char* a_szTexName, RE::CTexture*& a_pTex, int a_iWidth, int a_iHeight, void* a_cClear, bool a_bUseAlpha, bool a_bMipMaps, RE::ETEX_Format a_eTF, int a_nCustomID, int a_nFlags);
 		static RE::CTexture* Hook_CreateTextureObject(const char* a_name, uint32_t a_nWidth, uint32_t a_nHeight, int a_nDepth, RE::ETEX_Type a_eTT, uint32_t a_nFlags, RE::ETEX_Format a_eTF, int a_nCustomID, uint8_t a9);
 #if INJECT_TAA_JITTERS
@@ -38,7 +38,7 @@ namespace Hooks
 #endif
 
 		static inline std::add_pointer_t<decltype(Hook_FlashRenderInternal)> _Hook_FlashRenderInternal;
-		static inline std::add_pointer_t<decltype(Hook_CreateDevice)>        _Hook_CreateDevice;
+		static inline std::add_pointer_t<decltype(Hook_OnD3D11PostCreateDevice)> _Hook_OnD3D11PostCreateDevice;
 		static inline std::add_pointer_t<decltype(Hook_CreateRenderTarget)> _Hook_CreateRenderTarget;
 		static inline std::add_pointer_t<decltype(Hook_CreateTextureObject)> _Hook_CreateTextureObject;
 #if INJECT_TAA_JITTERS
