@@ -1,7 +1,9 @@
 #include "RE.h"
 
 #include "Offsets.h"
-#include "DKUtil/Impl/PCH.hpp"
+
+#include "includes/SharedBegin.h"
+
 #include "DKUtil/Impl/Hook/Shared.hpp"
 
 namespace RE
@@ -23,3 +25,5 @@ namespace RE
 		}
 	}
 }
+
+#include "includes/SharedEnd.h"

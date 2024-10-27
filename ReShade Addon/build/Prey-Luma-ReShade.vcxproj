@@ -144,10 +144,13 @@
   <ItemGroup>
     <ClInclude Include="..\src\dlss\DLSS.h" />
     <ClInclude Include="..\src\includes\cbuffers.h" />
+    <ClInclude Include="..\src\includes\globals.h" />
     <ClInclude Include="..\src\includes\math.h" />
     <ClInclude Include="..\src\includes\matrix.h" />
     <ClInclude Include="..\src\includes\shader_define.h" />
     <ClInclude Include="..\src\native plugin\Hooks.h" />
+    <ClInclude Include="..\src\native plugin\includes\SharedBegin.h" />
+    <ClInclude Include="..\src\native plugin\includes\SharedEnd.h" />
     <ClInclude Include="..\src\native plugin\NativePlugin.h" />
     <ClInclude Include="..\src\native plugin\Offsets.h" />
     <ClInclude Include="..\src\native plugin\RE.h" />

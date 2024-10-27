@@ -41,6 +41,7 @@
 #include <source/d3d11/d3d11_impl_type_convert.hpp>
 #endif
 
+#include "includes/globals.h"
 #include "includes/cbuffers.h"
 #include "includes/math.h"
 #include "includes/matrix.h"
@@ -83,9 +84,10 @@
 
 // NOLINTBEGIN(readability-identifier-naming)
 
-extern "C" __declspec(dllexport) const char* NAME = "Prey Luma";
-extern "C" __declspec(dllexport) const char* DESCRIPTION = "Prey (2017) Luma mod";
-constexpr uint32_t VERSION = 1; // Internal version (not public facing)
+// These are needed by ReShade
+extern "C" __declspec(dllexport) const char* NAME = Globals::NAME;
+extern "C" __declspec(dllexport) const char* DESCRIPTION = Globals::DESCRIPTION;
+extern "C" __declspec(dllexport) const char* WEBSITE = "https://github.com/Filoppi/Prey-Luma"; //TODOFT: set to nexus when it's up, maybe add an "ISSUES" definition too
 
 // NOLINTEND(readability-identifier-naming)
 
@@ -4901,16 +4903,16 @@ void Init() {
       const std::lock_guard<std::recursive_mutex> lock_reshade(s_mutex_reshade);
 
       reshade::api::effect_runtime* runtime = nullptr;
-      uint32_t config_version = VERSION;
+      uint32_t config_version = Globals::VERSION;
       reshade::get_config_value(runtime, NAME, "Version", config_version);
-      if (config_version != VERSION) {
-          if (config_version < VERSION) {
+      if (config_version != Globals::VERSION) {
+          if (config_version < Globals::VERSION) {
               // NOTE: put behaviour to load previous versions into new ones here (possibly even force recompile shaders)
           }
-          else if (config_version > VERSION) {
+          else if (config_version > Globals::VERSION) {
               reshade::log::message(reshade::log::level::warning, "Prey Luma: trying to load a config from a newer version of the mod, loading might have unexpected results");
           }
-          reshade::set_config_value(runtime, NAME, "Version", VERSION);
+          reshade::set_config_value(runtime, NAME, "Version", Globals::VERSION);
       }
 
       reshade::get_config_value(runtime, NAME, "DLSSSuperResolution", dlss_sr);
@@ -4974,7 +4976,7 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
     case DLL_PROCESS_ATTACH:
       if (!reshade::register_addon(h_module)) return FALSE;
 
-      NativePlugin::main(NAME, VERSION);
+      NativePlugin::main(NAME, Globals::VERSION);
 
 #if DEVELOPMENT
       renodx::utils::descriptor::Use(fdw_reason);
