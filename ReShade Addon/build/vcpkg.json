@@ -1,0 +1,12 @@
+{
+    "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+    "name": "prey-luma",
+    "version-string": "1.0.0",
+    "description": "Prey Luma mod",
+    "dependencies": [
+        "spdlog",
+        "nlohmann-json",
+        "simpleini",
+        "xbyak"
+    ]
+}
