@@ -100,7 +100,7 @@ namespace Hooks
 
 		// Hook swapchain creation and set colorspace
 		{
-			_Hook_CreateDevice = dku::Hook::write_call(Offsets::baseAddress + 0xF53F37, Hook_CreateDevice);
+			_Hook_OnD3D11PostCreateDevice = dku::Hook::write_call(Offsets::baseAddress + 0xF53F66, Hook_OnD3D11PostCreateDevice);
 		}
 
 #if ADD_NEW_RENDER_TARGETS
@@ -380,13 +380,11 @@ namespace Hooks
 		_Hook_FlashRenderInternal(a_this, pPlayer, bStereo, bDoRealRender);
 	}
 
-	bool Hooks::Hook_CreateDevice(RE::DeviceInfo* a_deviceInfo, uint64_t a2, uint64_t a3, uint64_t a4, int32_t a_width, int32_t a_height, int32_t a7, int32_t a_zbpp, void* a9, void* a10)
+	void Hooks::Hook_OnD3D11PostCreateDevice()
 	{
-		bool bReturn = _Hook_CreateDevice(a_deviceInfo, a2, a3, a4, a_width, a_height, a7, a_zbpp, a9, a10);
-
 		// set colorspace
 		IDXGISwapChain3* swapChain3 = nullptr;
-		a_deviceInfo->m_pSwapChain->QueryInterface(__uuidof(IDXGISwapChain3), reinterpret_cast<void**>(&swapChain3));
+		Offsets::pCD3D9Renderer->m_devInfo.m_pSwapChain->QueryInterface(__uuidof(IDXGISwapChain3), reinterpret_cast<void**>(&swapChain3));
 
 		DXGI_COLOR_SPACE_TYPE colorSpace;
 		if (format == RE::ETEX_Format::eTF_R10G10B10A2) {
@@ -398,7 +396,7 @@ namespace Hooks
 		swapChain3->SetColorSpace1(colorSpace);
 		swapChain3->Release();
 
-		return bReturn;
+		_Hook_OnD3D11PostCreateDevice();
 	}
 
 	// Despite the name, this is called just once on startup, and then again when changing resolution
