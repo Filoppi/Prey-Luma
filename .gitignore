@@ -38,7 +38,8 @@
 
 # Compiled and Dumped Shaders
 *.cso
-./Data/Binaries/Danielle/x64/Release/Prey-Luma/dump/
+./Data/Binaries/Danielle/x64/Release/Prey-Luma/dump
+./Data/Binaries/Danielle/x64/Release/Prey-Luma/dump/*
 
 # Misc
 [Bb]uild/
