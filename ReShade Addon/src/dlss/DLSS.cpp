@@ -1,5 +1,7 @@
 #include "DLSS.h"
 
+#if ENABLE_NGX
+
 #include "../NGX/nvsdk_ngx_helpers.h"
 
 #include <cstring>
@@ -439,3 +441,5 @@ bool NGX::DLSS::Draw(ID3D11DeviceContext* commandList, ID3D11Resource* outputCol
 
 	return NVSDK_NGX_SUCCEED(result);
 }
+
+#endif

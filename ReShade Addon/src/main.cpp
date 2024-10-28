@@ -56,6 +56,8 @@
 
 #include "native plugin/NativePlugin.h"
 
+#include "dlss/DLSS.h" // see "ENABLE_NGX" inside
+
 #define ICON_FK_CANCEL reinterpret_cast<const char*>(u8"\uf00d")
 #define ICON_FK_OK reinterpret_cast<const char*>(u8"\uf00c")
 #define ICON_FK_PLUS reinterpret_cast<const char*>(u8"\uf067")
@@ -67,7 +69,6 @@
 
 #define ImTextureID ImU64
 
-#define ENABLE_NGX 1
 // Depends on "DEVELOPMENT"
 #define TEST_DLSS 0
 
@@ -79,10 +80,6 @@
 #define OLD_GLOBAL_BUFFER_INTERCEPT_METHOD 0
 #define DLSS_UPSCALE_LENS_EFFECTS 1
 #define REPLACE_SAMPLERS_LIVE 1
-
-#if ENABLE_NGX
-#include "dlss/DLSS.h"
-#endif
 
 // NOLINTBEGIN(readability-identifier-naming)
 

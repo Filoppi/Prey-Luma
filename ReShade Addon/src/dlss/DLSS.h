@@ -1,5 +1,9 @@
 #pragma once
 
+#define ENABLE_NGX 0
+
+#if ENABLE_NGX
+
 struct ID3D11Device;
 struct ID3D11DeviceContext;
 struct ID3D11Resource;
@@ -26,3 +30,5 @@ namespace NGX
 		static bool Draw(ID3D11DeviceContext* commandList, ID3D11Resource* outputColor, ID3D11Resource* sourceColor, ID3D11Resource* motionVectors, ID3D11Resource* depthBuffer, ID3D11Resource* exposure /*= nullptr*/, float preExposure /*= 0*/, float fJitterX, float fJitterY, bool reset = false, unsigned int renderWidth = 0, unsigned int renderHeight = 0);
 	};
 }
+
+#endif
