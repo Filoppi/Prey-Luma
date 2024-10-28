@@ -5025,7 +5025,7 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
 
       // Init the ReShade addon stuff synchronously, given we can't safely create threads here
       if (asi_loaded) {
-        Init(false); //TODOFT5: kick start shader compilation here anyway, or soon after (in a function that allows thread calls), or shaders won't be compiled later? Actually this won't be needed anymore as of ReShade 5.3
+        Init(false); //TODOFT5: kick start shader compilation here anyway, or soon after (in a function that allows thread calls), or shaders won't be compiled later? Actually this won't be needed anymore as of ReShade 6.
       }
 
       // Initialize the "native plugin" (our code hooks/patches)

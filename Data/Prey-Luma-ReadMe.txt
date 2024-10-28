@@ -49,6 +49,7 @@ Compatibility:
 This mod should work with any other mod for Prey, just be careful of what you install, because some of the most popular mods change very random stuff with the game, or its graphics config (they will still be compatible with Luma).
 Replace their files with the Luma version if necessary, none of the game's mods rely on config changes, so the Luma version of the configs will work with them too, and Luma only changes what's strictly necessary and with careful research behind it.
 "Prey: Mooncrash" is not supported.
+You can rename the asi loader with one of the following names: bink2w64.dll, dinput8.dll, version.dll, winhttp.dll, winmm.dll (untested), wininet.dll.
 
 Donations:
 https://www.buymeacoffee.com/realfiloppi (Pumbo)

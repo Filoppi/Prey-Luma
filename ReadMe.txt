@@ -11,7 +11,7 @@ Windows 11 SDK 10.0.26100.0 (older versions work, but don't support HDR as good)
 
 Instructions:
 Run "setup.ps1" to add the game installation environment variables.
-Set "VCPKG_ROOT" environment variable to your vcpkg installation folder if it wasn't already (download it from here https://github.com/microsoft/vcpkg, the version integrated with Visual Studio doesn't seem to be as reliable).
+Set "VCPKG_ROOT" environment variable to your vcpkg installation folder if it wasn't already (download it from here https://github.com/microsoft/vcpkg, the version integrated with Visual Studio doesn't seem to be as reliable) (note that as of now these packages are not bound to a specific version).
 Open "Prey-Luma.sln" and build it.
 The code hot spots are in the main.cpp files etc etc etc...
 Run "deploy (*).bat" to run the game. The Steam version of the game can't be launched from the exe, so that bat automatically closes the previous instance of the game, copies the new files and launches the game through Steam.
