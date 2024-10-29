@@ -5018,6 +5018,40 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
         assert(file_path.extension() == ".dll" || file_path.extension() == ".asi");
       }
 
+      // Make sure the user deleted the d3dcompiler_47 dll
+      std::filesystem::path shader_compiler_path = file_path.parent_path();
+      shader_compiler_path.append("d3dcompiler_47.dll");
+      //TODOFT: we should force recompile cso shaders if this dll was detected and then deleted by the user on the next run.
+      if (std::filesystem::exists(shader_compiler_path) && std::filesystem::is_regular_file(shader_compiler_path)) {
+          bool old_version = true;
+          DWORD verHandle = 0;
+          DWORD verSize = GetFileVersionInfoSize(shader_compiler_path.c_str(), &verHandle);
+          if (verSize != NULL) {
+              LPSTR verData = new char[verSize];
+              if (GetFileVersionInfo(shader_compiler_path.c_str(), verHandle, verSize, verData)) {
+                  LPBYTE lpBuffer = NULL;
+                  UINT size = 0;
+                  if (VerQueryValue(verData, L"\\", (VOID FAR * FAR*) & lpBuffer, &size)) {
+                      if (size) {
+                          VS_FIXEDFILEINFO* verInfo = (VS_FIXEDFILEINFO*)lpBuffer;
+                          if (verInfo->dwSignature == 0xfeef04bd) {
+                              // The version would be v1.v2.v3.v4
+                              const auto v1 = (verInfo->dwFileVersionMS >> 16) & 0xffff;
+                              const auto v2 = (verInfo->dwFileVersionMS >> 0) & 0xffff;
+                              const auto v3 = (verInfo->dwFileVersionLS >> 16) & 0xffff;
+                              const auto v4 = (verInfo->dwFileVersionLS >> 0) & 0xffff;
+                              old_version = v1 <= 6 && v2 <= 3 && v3 <= 9600 && v3 <= 16384;
+                          }
+                      }
+                  }
+              }
+              delete[] verData;
+          }
+          if (old_version) {
+              MessageBoxA(NULL, "Please delete \"d3dcompiler_47.dll\" from the game executable directory;\n the game came bundled with an old version that is worse in all aspects.\nIf you are on Proton, manually update to the latest version.", NAME, NULL);
+          }
+      }
+
       // Register the ReShade addon.
       // We simply cancel everything else if reshade is not present or failed to register,
       // we could still load the native plugin,
