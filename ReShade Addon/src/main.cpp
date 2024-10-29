@@ -1339,29 +1339,33 @@ void OnInitDevice(reshade::api::device* device) {
 
 #if ENABLE_NGX
   assert(!NGX::DLSS::HasInit()); // DLSS is only supported on one device at a time
-  if (dlss_sr) {
-      com_ptr<IDXGIDevice> native_dxgi_device;
-      HRESULT hr = native_device->QueryInterface(&native_dxgi_device);
-      com_ptr<IDXGIAdapter> native_adapter;
-      if (SUCCEEDED(hr))
-      {
-          hr = native_dxgi_device->GetAdapter(&native_adapter);
-      }
-      assert(SUCCEEDED(hr));
-
-      dlss_sr_supported = NGX::DLSS::Init(native_device, native_adapter.get());
-      if (!dlss_sr_supported) {
-#if !DLSS_TARGET_TEXTURE_WAS_UAV
-          dlss_output_color = nullptr;
-#endif // DLSS_TARGET_TEXTURE_WAS_UAV
-          dlss_exposure = nullptr;
-          dlss_motion_vectors = nullptr;
-          dlss_motion_vectors_rtv = nullptr;
-          dlss_sr_render_resolution = 1.0;
-          NGX::DLSS::Deinit(native_device); // No need to keep it initialized
-          dlss_sr = false;
-      }
+  com_ptr<IDXGIDevice> native_dxgi_device;
+  HRESULT hr = native_device->QueryInterface(&native_dxgi_device);
+  com_ptr<IDXGIAdapter> native_adapter;
+  if (SUCCEEDED(hr)) {
+      hr = native_dxgi_device->GetAdapter(&native_adapter);
   }
+  assert(SUCCEEDED(hr));
+
+  dlss_sr_supported = NGX::DLSS::Init(native_device, native_adapter.get());
+  if (!dlss_sr_supported) {
+#if !DLSS_TARGET_TEXTURE_WAS_UAV
+      dlss_output_color = nullptr;
+#endif // DLSS_TARGET_TEXTURE_WAS_UAV
+      dlss_exposure = nullptr;
+      dlss_motion_vectors = nullptr;
+      dlss_motion_vectors_rtv = nullptr;
+      dlss_sr_render_resolution = 1.0;
+
+      NGX::DLSS::Deinit(native_device); // No need to keep it initialized if it's not supported
+      dlss_sr = false;
+  }
+// Optionally unload dlss if it's supported but currently not enabled
+#if !DLSS_KEEP_DLL_LOADED
+  else if (!dlss_sr) {
+      NGX::DLSS::Deinit(native_device);
+  }
+#endif
 #endif // NGX
 }
 
