@@ -23,6 +23,8 @@ There's a "DEVELOPMENT" and "TEST" flag in main.cpp. They automatically spread t
 The game's original shaders code can be found in the ... pak in the GOG version of the game (extract the zip).
 Luma shaders can be found in ".\Data\Binaries\Danielle\x64\Release\Prey-Luma\".
 
+The steam game won't start if launched directly from the executable, unless u have a cracked steam dll. That's also the only way to hook graphics debuggers to the Steam version (NV and Intel work...?). no reshade
+
 Luma inherits code from the following repositories:
 https://github.com/ersh1/Luma-Prey/
 https://github.com/clshortfuse/renodx

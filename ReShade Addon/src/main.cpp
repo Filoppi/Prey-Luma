@@ -488,10 +488,10 @@ struct DrawStateStack {
 #if 1
         device_context->VSGetShader(&vs, ps_instances, &ps_instances_count); // Prey doesn't seem to use the optional shader instances (classes) but we do it anyway for extra safety
         device_context->PSGetShader(&ps, vs_instances, &vs_instances_count);
-        ASSERT_ONCE(ps_instances_count == 0 && vs_instances_count == 0); //TODOFT5
+        ASSERT_ONCE(ps_instances_count == 0 && vs_instances_count == 0); //TODOFT5: disable these branches if this never happens
 #else
-        device_context->VSGetShader(&vs, ps_instances, 0);
-        device_context->PSGetShader(&ps, vs_instances, 0);
+        device_context->VSGetShader(&vs, nullptr, 0);
+        device_context->PSGetShader(&ps, nullptr, 0);
 #endif
 
 #if 0 // These are not needed until proven otherwise, we don't change, nor rely on these states
@@ -635,6 +635,7 @@ std::string GetResourceNameByViewHandle(DeviceData& data, uint64_t handle) {
 }
 #endif
 
+// TODO: use the git repository "Data" shaders directory if "DEVELOPMENT" is on?
 std::filesystem::path GetShaderPath() {
   // NOLINTNEXTLINE(modernize-avoid-c-arrays)
   wchar_t file_path[MAX_PATH] = L"";
@@ -2032,7 +2033,6 @@ void OnPresent(
 //TODOFT5: expose DLSS res range multipliers here or to game config
 //TODOFT5: DLSS pre-exposure (duplicate?)
 //TODOFT5: "_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR"?
-//TODOFT5: verify that the addon is being run with Prey and that the detected version is Steam. E.g. return false in "AddonInit()"?
 //TODOFT5: fix cpp file formatting in general (and make sure it's all thread safe, but it should be) (remove clang.tidy files?)
 //TODOFT5: Do LUTs extrapolation in Log2
 //TODOFT5: DICE inverse
@@ -5023,10 +5023,21 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
       const bool reshade_addon_register_succeeded = reshade::register_addon(h_module);
       if (!reshade_addon_register_succeeded) return FALSE;
 
-      // Init the ReShade addon stuff synchronously, given we can't safely create threads here
-      if (asi_loaded) {
-        Init(false); //TODOFT5: kick start shader compilation here anyway, or soon after (in a function that allows thread calls), or shaders won't be compiled later? Actually this won't be needed anymore as of ReShade 6.
+#if 0 // Since ReShade 6.3.2 or 6.4, ReShade calls "AddonInit()" even for addons that manualy registered through other dlls, so this isn't needed anymore
+#if 0 //TODOFT: finish version check
+      HMODULE reshade_module = reshade::internal::get_reshade_module_handle()
+          const auto reshade_version_func = reinterpret_cast<const char* (*)()>(GetProcAddress(reshade_module, "ReShadeVersion"));
+      // Check that the ReShade module supports the used API
+      if (reshade_version_func != nullptr) {
+          const char* reshade_version = reshade_version_func();
       }
+#endif
+      // Init the ReShade addon stuff synchronously, given we can't safely create threads here
+      //TODOFT: kick start shader compilation here anyway, or soon after (in a function that allows thread calls), or shaders won't be compiled until later (or ever)?
+      if (asi_loaded) {
+        Init(false);
+      }
+#endif
 
       // Initialize the "native plugin" (our code hooks/patches)
       NativePlugin::Init(NAME, Globals::VERSION);
