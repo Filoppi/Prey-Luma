@@ -4787,10 +4787,6 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         ImGui::PopStyleColor(3);
 
         ImGui::NewLine();
-        static const std::string version = "Version: " + std::to_string(Globals::VERSION);
-        ImGui::Text(version.c_str());
-
-        ImGui::NewLine();
         ImGui::Text("Credits:"
             "\n\nMain:"
             "\nPumbo (Graphics)"
@@ -4822,6 +4818,10 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             "\nKaldaien (support)"
             "\nnd4spd (testing)"
             , "");
+
+        ImGui::NewLine();
+        static const std::string version = "Version: " + std::to_string(Globals::VERSION);
+        ImGui::Text(version.c_str());
 
         ImGui::EndTabItem(); // About
     }
