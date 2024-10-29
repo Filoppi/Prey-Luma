@@ -4813,6 +4813,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             "\nKoKlusz (testing)"
             "\nMusa (testing)"
             "\ncrosire (support)"
+            "\nFreshCloth (support)"
             "\nRegevitamins (support)"
             "\nMartysMods (support)"
             "\nKaldaien (support)"
