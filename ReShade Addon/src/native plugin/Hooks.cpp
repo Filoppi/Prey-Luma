@@ -335,8 +335,8 @@ namespace Hooks
 						call(rax);
 						mov(rdx, rax);
 
-						pop(rax);
 						pop(rcx);
+						pop(rax);
 					}
 				};
 
