@@ -1,13 +1,26 @@
 /////////////////////////////////////////
 // Prey LUMA advanced settings
-// (note that the defaults might be mirrored in cpp, shader values will be overridden anyway)
+// (note that the defaults might be mirrored in cpp, the shader values will be overridden anyway)
 /////////////////////////////////////////
 
-// Whether we store the post process buffers in linear space scRGB or gamma space (2.2 or sRGB) (like in the vanilla game, though now we use FP16 textures as opposed to UNORM8 ones).
+// Whether we store the post process buffers in linear space scRGB or gamma space (sRGB under normal circumstances) (like in the vanilla game, though now we use FP16 textures as opposed to UNORM8 ones).
 // Note that converting between linear and gamma space back and forth results in quality loss, especially over very high and very low values, so this is best left on.
-// 0 Gamma space (vanilla like, but on linear buffers) (this has as tiny loss of quality due to storing gamma space on linear buffers) (UI looks like vanilla)
-// 1 Linear space (UI looks slightly different from vanilla (in alpha blends))
-// 2 Linear space until UI (more specifically, until PostAAComposites, included), then gamma space (has the some of the advantage of both) (UI looks like vanilla)
+// 0 Gamma space:
+//   vanilla like (including UI), but on float/linear buffers
+//   this has as tiny loss of quality due to storing sRGB gamma space on linear buffers
+//   gamma correction happens at the end, in the linearization pass
+// 1 Linear space:
+//   UI looks slightly different from vanilla (in alpha blends)
+//   gamma correction happens early, in tonemapping
+// 2 Linear space until UI, then gamma space:
+//   more specifically, linear until PostAAComposites, included
+//   this has the some of the advantage of both linear and gamma methods
+//   UI looks like vanilla
+//   gamma correction happens at the end, in the linearization pass
+//   (to avoid a billion different formulas around the code and to make gamma blends look like vanilla,
+//    if we corrected in the tonemap/grading shader, then we'd need to use sRGB gamma in the end,
+//    also we wouldn't know whether to correct the 0-1 range of the whole range)
+//   ideally we would have gamma corrected before HDR tonemapping, but the complexity cost is too big for the small visual gains
 #ifndef POST_PROCESS_SPACE_TYPE
 #define POST_PROCESS_SPACE_TYPE 1
 #endif
@@ -27,10 +40,13 @@
 // If you want something in between, thus keeping the sRGB color hue (channels ratio) but with the gamma 2.2 corrected luminance, set this to a higher value (>=2).
 // Note that if "POST_PROCESS_SPACE_TYPE" is 0, this simply determines how gamma is linearized for intermediary operations,
 // while everything stays in sRGB gamma (as theoretically it would have been originally, even if it was displayed on 2.2) when stored in textures,
-// so this would affect how the final shader should linearize (if >=1, from 2.2, if <=0, from sRGB, thus causing raised blacks compared to how the gamma would have appeared on gamma 2.2 displays).
+// so this determines how the final shader should linearize (if >=1, from 2.2, if <=0, from sRGB, thus causing raised blacks compared to how the gamma would have appeared on gamma 2.2 displays).
+// Note that by gamma correction we mean fixing up the game's bad gamma implementation, though sometimes this term is used to imply "display encoding".
 #ifndef GAMMA_CORRECTION_TYPE
 #define GAMMA_CORRECTION_TYPE 1
 #endif
+// See the implementations (note that this is referenced in c++)
+#define ANTICIPATE_ADVANCED_GAMMA_CORRECTION 1
 // Necessary for HDR to work correctly
 #ifndef ENABLE_LUT_EXTRAPOLATION
 #define ENABLE_LUT_EXTRAPOLATION 1
@@ -237,9 +253,9 @@ cbuffer LumaSettings : register(b2)
     // 1 for HDR
     // 2 for SDR on HDR (203 nits) (gamma 2.2 output)
     uint DisplayMode;
-    float PeakWhiteNits;
-    float GamePaperWhiteNits;
-    float UIPaperWhiteNits;
+    float PeakWhiteNits; // Access this through the global variables below
+    float GamePaperWhiteNits; // Access this through the global variables below
+    float UIPaperWhiteNits; // Access this through the global variables below
     uint DLSS; // Is DLSS enabled (implies it engaged and it's compatible) (this is on even in fullscreen UI menus that don't use upscaling)
 #if DEVELOPMENT
     float DevSetting01;
@@ -253,7 +269,8 @@ cbuffer LumaSettings : register(b2)
   } LumaSettings : packoffset(c0);
 }
 
-bool ShouldForceWhiteLevel() { return LumaSettings.DisplayMode != 1; }
+// These parameters are already pushed directly from c++
+bool ShouldForceWhiteLevel() { return LumaSettings.DisplayMode == 0; }
 float GetForcedWhileLevel() { return (LumaSettings.DisplayMode == 0) ? sRGB_WhiteLevelNits : ITU_WhiteLevelNits; }
 
 #ifdef HDR_TONEMAP_PAPER_WHITE_BRIGHTNESS

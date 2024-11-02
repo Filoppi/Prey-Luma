@@ -246,7 +246,7 @@ void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
 
 #endif // DELAY_HDR_TONEMAP
 
-#if POST_PROCESS_SPACE_TYPE <= 0 || POST_PROCESS_SPACE_TYPE >= 2 // Given this is the last conventional shader to always run and have a major effect on the picture, convert to gamma space here if necessary
+#if POST_PROCESS_SPACE_TYPE <= 0 || POST_PROCESS_SPACE_TYPE >= 2 // Given this is the last conventional shader to always run and have a major effect on the picture, convert to gamma space here if necessary, we'll linearize with the same gamma at the end
   if (!gammaSpace) // This can only happen if "DELAY_HDR_TONEMAP" was true
   {
 #if HIGH_QUALITY_POST_PROCESS_SPACE_CONVERSIONS && DELAY_HDR_TONEMAP && POST_PROCESS_SPACE_TYPE <= 0

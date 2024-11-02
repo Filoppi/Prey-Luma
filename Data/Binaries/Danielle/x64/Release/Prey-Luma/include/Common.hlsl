@@ -45,26 +45,49 @@ float3 RestoreLuminance(float3 targetColor, float3 sourceColor)
   float targetColorLuminance = GetLuminance(targetColor);
   return targetColor * max(safeDivision(sourceColorLuminance, targetColorLuminance, 1), 0.0);
 }
+float3 RestoreLuminance(float3 targetColor, float sourceColorLuminance)
+{
+  float targetColorLuminance = GetLuminance(targetColor);
+  return targetColor * max(safeDivision(sourceColorLuminance, targetColorLuminance, 1), 0.0);
+}
 
-// Formulas that either uses 2.2 or sRGB gamma depending on a global definition.
+// Formulas that either use 2.2 or sRGB gamma depending on a global definition.
 // Note that converting between linear and gamma space back and forth results in quality loss, especially over very high and very low values.
+// 
+// In the "POST_PROCESS_SPACE_TYPE != 1" cases, we apply the gamma correction in the very final linearization shader, to make the code simpler
+// and make (e.g. UI) gamma blends look like Vanilla.
+// 
+// The "GAMMA_CORRECTION_TYPE >= 2" case here is ignored based on "ANTICIPATE_ADVANCED_GAMMA_CORRECTION", as it can either be applied during tonemapping/grading and other later passes, or in the final linearization shader.
+// The reasoning is that the formula is not easily reversible and is slow to run many times (it might be possible to perfectly reverse it, but for now we haven't found a big need).
+// We fall back on gamma sRGB for intermediary buffers if "ANTICIPATE_ADVANCED_GAMMA_CORRECTION" is not true.
 float3 game_gamma_to_linear_mirrored(float3 Color)
 {
-#if GAMMA_CORRECTION_TYPE >= 2
+#if POST_PROCESS_SPACE_TYPE == 1 && (GAMMA_CORRECTION_TYPE >= 2 && ANTICIPATE_ADVANCED_GAMMA_CORRECTION)
+#if 1
   return RestoreLuminance(gamma_sRGB_to_linear_mirrored(Color), gamma_to_linear_mirrored(Color));
-#elif GAMMA_CORRECTION_TYPE == 1
+#else // Alternaitve version (by luminance instead of by channel)
+  return RestoreLuminance(gamma_sRGB_to_linear_mirrored(Color), gamma_to_linear_mirrored(GetLuminance(Color)));
+#endif
+#elif POST_PROCESS_SPACE_TYPE == 1 && GAMMA_CORRECTION_TYPE == 1
 	return gamma_to_linear_mirrored(Color);
-#else
+#else // GAMMA_CORRECTION_TYPE <= 0
   return gamma_sRGB_to_linear_mirrored(Color);
 #endif
 }
+// This function undoes any gamma correction we had done
 float3 linear_to_game_gamma_mirrored(float3 Color)
 {
-#if GAMMA_CORRECTION_TYPE >= 2
-	return RestoreLuminance(linear_to_sRGB_gamma_mirrored(Color), linear_to_gamma_mirrored(Color));
-#elif GAMMA_CORRECTION_TYPE == 1
-	return linear_to_gamma_mirrored(Color);
+#if POST_PROCESS_SPACE_TYPE == 1 && (GAMMA_CORRECTION_TYPE >= 2 && ANTICIPATE_ADVANCED_GAMMA_CORRECTION)
+#if 1 // This version of this inverse formula is a little more accurate, though none of the two are a perfect mirror, as the original operation is destructive (and if it's not, it's complicated and slow to accurately revert)
+  float3 gammaCorrectedColor = gamma_sRGB_to_linear_mirrored(linear_to_gamma_mirrored(Color));
+	return linear_to_sRGB_gamma_mirrored(RestoreLuminance(Color, gammaCorrectedColor));
 #else
+  float gammaCorrectedLuminance = gamma_sRGB_to_linear_mirrored(linear_to_gamma_mirrored(GetLuminance(Color))).x;
+	return linear_to_sRGB_gamma_mirrored(RestoreLuminance(Color, gammaCorrectedLuminance));
+#endif
+#elif POST_PROCESS_SPACE_TYPE == 1 && GAMMA_CORRECTION_TYPE == 1
+	return linear_to_gamma_mirrored(Color);
+#else // GAMMA_CORRECTION_TYPE <= 0
   return linear_to_sRGB_gamma_mirrored(Color);
 #endif
 }
@@ -119,12 +142,26 @@ float3 SDRToHDR(float3 Color, bool InGammaSpace = true, bool UI = false)
     if (InGammaSpace)
     {
       Color.rgb = game_gamma_to_linear_mirrored(Color.rgb);
+      InGammaSpace = false;
     }
     const float paperWhite = (UI ? UIPaperWhiteNits : GamePaperWhiteNits) / sRGB_WhiteLevelNits;
     Color.rgb *= paperWhite;
   }
   else
   {
+    // We do not scale by game paper white here, as gamma space buffers are stored with the SDR white level,
+    // but we scale the UI by its relative ratio.
+    if (UI)
+    {
+      // Linearize for the brightness multiplication
+      if (InGammaSpace)
+      {
+        Color.rgb = game_gamma_to_linear_mirrored(Color.rgb);
+        InGammaSpace = false;
+      }
+      const float UIRelativePaperWhite = UIPaperWhiteNits / GamePaperWhiteNits;
+      Color.rgb *= UIRelativePaperWhite;
+    }
     if (!InGammaSpace)
     {
       Color.rgb = linear_to_game_gamma_mirrored(Color.rgb);

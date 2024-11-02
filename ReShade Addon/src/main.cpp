@@ -403,12 +403,12 @@ std::unordered_map<std::string, uint8_t> code_shaders_defines;
 // TODO: add grey out conditions (another define, by name, whether its value is > 0), and also add min/max values range (to limit the user insertable values)
 std::vector<ShaderDefineData> shader_defines_data = {
   {"DEVELOPMENT", DEVELOPMENT ? '1' : '0', true, DEVELOPMENT ? false : true, "Enables some development/debug features that are otherwise not allowed"}, // development_define_index
-  {"POST_PROCESS_SPACE_TYPE", '1', true, false, "0 - Gamma space\n1 - Linear space\n2 - Linear space until UI (then gamma space)\n\nSelect \"2\" if you want the UI to look exactly like it did in Vanilla\nSekect\"1\" for the highest possible quality"}, // post_process_space_define_index
-  {"GAMMA_CORRECTION_TYPE", '1', false, false, "Emulates a specific SDR gamma\nThis is best left to \"1 (Gamma 2.2)\" unless you have crushed blacks\n0 - sRGB\n1 - Gamma 2.2\n2 - sRGB (color hues) with gamma 2.2 luminance"},
+  {"POST_PROCESS_SPACE_TYPE", '1', true, false, "0 - Gamma space\n1 - Linear space\n2 - Linear space until UI (then gamma space)\n\nSelect \"2\" if you want the UI to look exactly like it did in Vanilla\nSelect\"1\" for the highest possible quality"}, // post_process_space_define_index
+  {"GAMMA_CORRECTION_TYPE", '1', true, false, "(HDR only) Emulates a specific SDR gamma\nThis is best left to \"1 (Gamma 2.2)\" unless you have crushed blacks or overly saturated colors\n0 - sRGB\n1 - Gamma 2.2\n2 - sRGB (color hues) with gamma 2.2 luminance"}, // gamma_correction_define_index
   {"TONEMAP_TYPE", '1', false, false, "0 - Vanilla SDR\n1 - Luma HDR (Vanilla+)\n2 - Raw HDR (Untonemapped)"},
   {"SUNSHAFTS_LOOK_TYPE", '2', false, false, "0 - Raw Vanilla\n1 - Vanilla+\n2 - Luma HDR"},
   {"ENABLE_LENS_OPTICS_HDR", '1', false, false, "Makes the lens effects (e.g. lens flare) slightly HDR"},
-  {"AUTO_HDR_VIDEOS", '1', false, false, "(HDR only) Generates some HDR highlights from SDR videos, for consistency\nThis is pretty lightweight so it won't really affect the artistic intent"},
+  {"AUTO_HDR_VIDEOS", '1', false, false, "(HDR only) Generates some HDR highlights from SDR videos, for consistency\nThis is pretty lightweight so it won't really affect the artistic intent"}, //TODOFT: disable this config, like "gamma_correction_define_index" when setting SDR mode
   {"ENABLE_LUT_EXTRAPOLATION", '1', false, false, "LUT Extrapolation should be the best looking and most accurate SDR to HDR LUT adaptation mode,\nbut you can always turn it off for the its simpler fallback"},
 #if DEVELOPMENT || TEST
   {"ENABLE_LINEAR_COLOR_GRADING_LUT", '1', false, false, "Whether (SDR) LUTs are stored in linear or gamma space"},
@@ -434,6 +434,7 @@ std::vector<ShaderDefineData> shader_defines_data = {
 };
 constexpr uint32_t development_define_index = 0;
 constexpr uint32_t post_process_space_define_index = 1;
+constexpr uint32_t gamma_correction_define_index = 2;
 
 // Resources:
 #if ENABLE_NGX
@@ -1368,6 +1369,11 @@ void ToggleLiveWatching() {
   }
 }
 
+void OnDisplayModeChanged()
+{
+  shader_defines_data[gamma_correction_define_index].editable = cb_luma_frame_settings.DisplayMode != 0;
+}
+
 void OnInitDevice(reshade::api::device* device) {
   auto& device_data = device->create_private_data<DeviceData>();
   ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
@@ -1541,6 +1547,7 @@ void OnInitSwapchain(reshade::api::swapchain* swapchain) {
       if (!hdr_enabled_display) {
           // Force the display mode to SDR if HDR is not engaged
           cb_luma_frame_settings.DisplayMode = 0;
+          OnDisplayModeChanged();
           cb_luma_frame_settings.ScenePeakWhite = srgb_white_level;
           cb_luma_frame_settings.ScenePaperWhite = srgb_white_level;
           cb_luma_frame_settings.UIPaperWhite = srgb_white_level;
@@ -1944,7 +1951,15 @@ void OnPresent(
     // If there are no shaders being currently replaced in the game (cloned_pipeline_count),
     // we can assume that we either missed replacing some shaders, or that we have unloaded all of our shaders.
     // Both cases need linearization at the end, as the game would be drawing in gamma space (during post process).
-    if (shader_defines_data[post_process_space_define_index].GetNumericalCompiledValue() != 1 || cloned_pipeline_count == 0) {
+    // 
+    // We don't always lock "s_mutex_shader_defines" here as it wouldn't be particularly relevant.
+    bool shader_defines_need_linearization = shader_defines_data[post_process_space_define_index].GetNumericalCompiledValue() != 1;
+    bool shader_defines_need_gamma_correction = shader_defines_data[post_process_space_define_index].GetNumericalCompiledValue() == 1 && shader_defines_data[gamma_correction_define_index].GetNumericalCompiledValue() >= 2;
+    if (shader_defines_need_gamma_correction) {
+        const std::lock_guard<std::recursive_mutex> lock(s_mutex_shader_defines);
+        shader_defines_need_gamma_correction &= code_shaders_defines.contains("ANTICIPATE_ADVANCED_GAMMA_CORRECTION") && code_shaders_defines["ANTICIPATE_ADVANCED_GAMMA_CORRECTION"] == 0;
+    } 
+    if (shader_defines_need_linearization || shader_defines_need_gamma_correction || cloned_pipeline_count == 0) {
         const std::lock_guard<std::recursive_mutex> lock_shader_objects(s_mutex_shader_objects);
         if (copy_vertex_shader && transfer_function_copy_pixel_shader) {
             IDXGISwapChain* native_swapchain = (IDXGISwapChain*)(swapchain->get_native());
@@ -2010,7 +2025,16 @@ void OnPresent(
             {
                 auto& device_data = queue->get_device()->get_private_data<DeviceData>();
                 const std::unique_lock lock(device_data.mutex);
+                const auto cb_luma_frame_settings_copy = cb_luma_frame_settings;
+                // Force a custom display mode in case we have no game custom shaders loaded, so the custom linearization shader can linearize anyway, independently of "POST_PROCESS_SPACE_TYPE"
+                bool force_linearize = cloned_pipeline_count == 0;
+                if (force_linearize) {
+                    cb_luma_frame_settings.DisplayMode = -1;
+                }
                 SetPreyLumaConstantBuffers(queue->get_immediate_command_list(), reshade::api::shader_stage::pixel, device_data.settings_pipeline_layout, LumaConstantBufferType::LumaSettings);
+                if (force_linearize) {
+                    cb_luma_frame_settings.DisplayMode = cb_luma_frame_settings_copy.DisplayMode;
+                }
             }
 
             // Note: we don't need to re-apply our custom cbuffers as in Prey, they are on indexes that are never used by the game's code
@@ -4413,6 +4437,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         auto ChangeDisplayMode = [&](int display_mode, bool enable_hdr_on_display = true, IDXGISwapChain3* swapchain = nullptr) {
             reshade::set_config_value(runtime, NAME, "DisplayMode", display_mode);
             cb_luma_frame_settings.DisplayMode = display_mode;
+            OnDisplayModeChanged();
             if (display_mode >= 1) {
                 if (enable_hdr_on_display) {
                     SetHDREnabled(game_window);
@@ -4424,11 +4449,42 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
                 }
                 reshade::get_config_value(runtime, NAME, "ScenePaperWhite", cb_luma_frame_settings.ScenePaperWhite);
                 reshade::get_config_value(runtime, NAME, "UIPaperWhite", cb_luma_frame_settings.UIPaperWhite);
+                // Align all the parameters for the SDR on HDR mode (the game paper white can still be changed)
+                if (display_mode >= 2) {
+                    // For now we don't default to 203 nits game paper white when changing to this mode
+                    cb_luma_frame_settings.UIPaperWhite = cb_luma_frame_settings.ScenePaperWhite;
+                    cb_luma_frame_settings.ScenePeakWhite = cb_luma_frame_settings.ScenePaperWhite; // No, we don't want "default_peak_white" here
+                }
             }
             else {
                 cb_luma_frame_settings.ScenePeakWhite = display_mode == 0 ? srgb_white_level : default_paper_white;
                 cb_luma_frame_settings.ScenePaperWhite = display_mode == 0 ? srgb_white_level : default_paper_white;
                 cb_luma_frame_settings.UIPaperWhite = display_mode == 0 ? srgb_white_level : default_paper_white;
+            }
+            };
+
+        auto DrawScenePaperWhite = [&]() {
+            if (ImGui::SliderFloat("Scene Paper White", &cb_luma_frame_settings.ScenePaperWhite, srgb_white_level, 500.f, "%.f")) {
+                reshade::set_config_value(runtime, NAME, "ScenePaperWhite", cb_luma_frame_settings.ScenePaperWhite);
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                ImGui::SetTooltip("The \"average\" brightness of the game scene.\nHigher does not mean better, change this to your liking, and don't get too close to the peak white.\nThe in game settings brightness is best left at default.");
+            }
+            ImGui::SameLine();
+            if (cb_luma_frame_settings.ScenePaperWhite != default_paper_white) {
+                ImGui::PushID("Scene Paper White");
+                if (ImGui::SmallButton(ICON_FK_UNDO)) {
+                    cb_luma_frame_settings.ScenePaperWhite = default_paper_white;
+                    reshade::set_config_value(runtime, NAME, "ScenePaperWhite", cb_luma_frame_settings.ScenePaperWhite);
+                }
+                ImGui::PopID();
+            }
+            else {
+                const auto& style = ImGui::GetStyle();
+                ImVec2 size = ImGui::CalcTextSize(ICON_FK_UNDO);
+                size.x += style.FramePadding.x;
+                size.y += style.FramePadding.y;
+                ImGui::InvisibleButton("", ImVec2(size.x, size.y));
             }
             };
 
@@ -4449,18 +4505,16 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         const char* preset_strings[3] = {
             "SDR", // SDR (80 nits) on scRGB HDR for SDR (gamma sRGB, because Windows interprets scRGB as sRGB)
             "HDR",
-            "SDR on HDR", // (Fake) SDR (203 nits) on scRGB HDR for HDR (gamma 2.2) - Dev only, for quick comparisons
+            "SDR on HDR", // (Fake) SDR (baseline to 203 nits) on scRGB HDR for HDR (gamma 2.2) - Dev only, for quick comparisons
         };
         ImGui::BeginDisabled(!hdr_supported_display);
         if (ImGui::SliderInt("Display Mode", &display_mode, 0, display_mode_max, preset_strings[display_mode], ImGuiSliderFlags_NoInput)) {
-            {
-                const std::lock_guard<std::recursive_mutex> lock(s_mutex_device);
-                ChangeDisplayMode(display_mode, true, native_swapchain3);
-            }
+            const std::lock_guard<std::recursive_mutex> lock(s_mutex_device);
+            ChangeDisplayMode(display_mode, true, native_swapchain3);
         }
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-            ImGui::SetTooltip("Display Mode. Greyed out if HDR is not supported.\nThe HDR display calibration (peak white brightness) is retrieved from the OS (Windows 11 HDR user calibration or display EDID),\nonly adjust it if necessary.\nIt's suggested to only play the game in SDR while the display is in SDR mode (avoid SDR mode in HDR).");
+            ImGui::SetTooltip("Display Mode. Greyed out if HDR is not supported.\nThe HDR display calibration (peak white brightness) is retrieved from the OS (Windows 11 HDR user calibration or display EDID),\nonly adjust it if necessary.\nIt's suggested to only play the game in SDR while the display is in SDR mode (avoid SDR mode in HDR).\nSDR is meant to be played at gamma 2.2.");
         }
         ImGui::SameLine();
         // Show a reset button to enable HDR in the game if we are playing SDR in HDR
@@ -4468,10 +4522,8 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             ImGui::PushID("Display Mode");
             if (ImGui::SmallButton(ICON_FK_UNDO)) {
                 display_mode = hdr_enabled_display ? 1 : 0;
-                {
-                    const std::lock_guard<std::recursive_mutex> lock(s_mutex_device);
-                    ChangeDisplayMode(display_mode, false, native_swapchain3);
-                }
+                const std::lock_guard<std::recursive_mutex> lock(s_mutex_device);
+                ChangeDisplayMode(display_mode, false, native_swapchain3);
             }
             ImGui::PopID();
         }
@@ -4511,29 +4563,10 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
                 size.y += style.FramePadding.y;
                 ImGui::InvisibleButton("", ImVec2(size.x, size.y));
             }
-            if (ImGui::SliderFloat("Scene Paper White", &cb_luma_frame_settings.ScenePaperWhite, srgb_white_level, 500.f, "%.f")) {
-                reshade::set_config_value(runtime, NAME, "ScenePaperWhite", cb_luma_frame_settings.ScenePaperWhite);
-            }
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-                ImGui::SetTooltip("The \"average\" brightness of the game scene.\nHigher does not mean better, change this to your liking, and don't get too close to the peak white.");
-            }
-            ImGui::SameLine();
-            if (cb_luma_frame_settings.ScenePaperWhite != default_paper_white) {
-                ImGui::PushID("Scene Paper White");
-                if (ImGui::SmallButton(ICON_FK_UNDO)) {
-                    cb_luma_frame_settings.ScenePaperWhite = default_paper_white;
-                    reshade::set_config_value(runtime, NAME, "ScenePaperWhite", cb_luma_frame_settings.ScenePaperWhite);
-                }
-                ImGui::PopID();
-            }
-            else {
-                const auto& style = ImGui::GetStyle();
-                ImVec2 size = ImGui::CalcTextSize(ICON_FK_UNDO);
-                size.x += style.FramePadding.x;
-                size.y += style.FramePadding.y;
-                ImGui::InvisibleButton("", ImVec2(size.x, size.y));
-            }
-            if (ImGui::SliderFloat("UI Paper White", &cb_luma_frame_settings.UIPaperWhite, srgb_white_level, 500.f, "%.f")) {
+            DrawScenePaperWhite();
+            constexpr bool supports_custom_ui_paper_white_scaling = true; // Currently all "post_process_space_define_index" modes support it (modify the tooltip otherwise)
+            ImGui::BeginDisabled(!supports_custom_ui_paper_white_scaling);
+            if (ImGui::SliderFloat("UI Paper White", supports_custom_ui_paper_white_scaling ? &cb_luma_frame_settings.UIPaperWhite : &cb_luma_frame_settings.ScenePaperWhite, srgb_white_level, 500.f, "%.f")) {
                 reshade::set_config_value(runtime, NAME, "UIPaperWhite", cb_luma_frame_settings.UIPaperWhite);
 
 // This is not safe to do, so let's rely on users manually setting this instead.
@@ -4543,6 +4576,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
                 SetSDRWhiteLevel(game_window, std::clamp(cb_luma_frame_settings.UIPaperWhite, 80.f, 480.f));
 #endif
             }
+            ImGui::EndDisabled();
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
                 ImGui::SetTooltip("The peak brightness of the User Interface (with the exception of the 2D cursor, which is driven by the Windows SDR White Level).\nHigher does not mean better, change this to your liking.");
             }
@@ -4585,6 +4619,11 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
                 size.y += style.FramePadding.y;
                 ImGui::InvisibleButton("", ImVec2(size.x, size.y));
             }
+        }
+        else if (display_mode >= 2) {
+            DrawScenePaperWhite();
+            cb_luma_frame_settings.UIPaperWhite = cb_luma_frame_settings.ScenePaperWhite;
+            cb_luma_frame_settings.ScenePeakWhite = cb_luma_frame_settings.ScenePaperWhite;
         }
 
 #if DEVELOPMENT
@@ -5016,12 +5055,22 @@ void Init(bool async) {
       reshade::get_config_value(runtime, NAME, "DLSSSuperResolution", dlss_sr);
       reshade::get_config_value(runtime, NAME, "TonemapUIBackground", tonemap_ui_background);
       reshade::get_config_value(runtime, NAME, "DisplayMode", cb_luma_frame_settings.DisplayMode);
+      OnDisplayModeChanged();
 
       if (reshade::get_config_value(runtime, NAME, "ScenePeakWhite", cb_luma_frame_settings.ScenePeakWhite) && cb_luma_frame_settings.ScenePeakWhite <= 0.f) {
           cb_luma_frame_settings.ScenePeakWhite = default_user_peak_white;
       }
       reshade::get_config_value(runtime, NAME, "ScenePaperWhite", cb_luma_frame_settings.ScenePaperWhite);
       reshade::get_config_value(runtime, NAME, "UIPaperWhite", cb_luma_frame_settings.UIPaperWhite);
+      if (cb_luma_frame_settings.DisplayMode == 0) {
+          cb_luma_frame_settings.ScenePeakWhite = srgb_white_level;
+          cb_luma_frame_settings.ScenePaperWhite = srgb_white_level;
+          cb_luma_frame_settings.UIPaperWhite = srgb_white_level;
+      }
+      else if (cb_luma_frame_settings.DisplayMode == 2) {
+          cb_luma_frame_settings.UIPaperWhite = cb_luma_frame_settings.ScenePaperWhite;
+          cb_luma_frame_settings.ScenePeakWhite = cb_luma_frame_settings.ScenePaperWhite;
+      }
 
       const std::lock_guard<std::recursive_mutex> lock_shader_defines(s_mutex_shader_defines);
       ShaderDefineData::Load(shader_defines_data, runtime);

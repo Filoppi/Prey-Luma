@@ -160,7 +160,16 @@ float3 ColorGradingLUTTransferFunctionIn(float3 col, uint transferFunction, bool
   }
   else // LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB_WITH_GAMMA_2_2_LUMINANCE
   {
-    return mirrored ? RestoreLuminance(linear_to_sRGB_gamma_mirrored(col), linear_to_gamma_mirrored(col)) : RestoreLuminance(linear_to_sRGB_gamma(col), linear_to_gamma(col));
+    if (mirrored)
+    {
+      float3 gammaCorrectedColor = gamma_sRGB_to_linear_mirrored(linear_to_gamma_mirrored(col));
+      return linear_to_sRGB_gamma_mirrored(RestoreLuminance(col, gammaCorrectedColor));
+    }
+    else
+    {
+      float3 gammaCorrectedColor = gamma_sRGB_to_linear(linear_to_gamma(col));
+      return linear_to_sRGB_gamma(RestoreLuminance(col, gammaCorrectedColor));
+    }
   }
 }
 // Decode.
@@ -176,7 +185,14 @@ float3 ColorGradingLUTTransferFunctionOut(float3 col, uint transferFunction, boo
   }
   else // LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB_WITH_GAMMA_2_2_LUMINANCE
   {
-    return mirrored ? RestoreLuminance(gamma_sRGB_to_linear_mirrored(col), gamma_to_linear_mirrored(col)) : RestoreLuminance(gamma_sRGB_to_linear(col), gamma_to_linear(col));
+    if (mirrored)
+    {
+      return RestoreLuminance(gamma_sRGB_to_linear_mirrored(col), gamma_to_linear_mirrored(col));
+    }
+    else
+    {
+      return RestoreLuminance(gamma_sRGB_to_linear(col), gamma_to_linear(col));
+    }
   }
 }
 
@@ -1307,7 +1323,7 @@ float3 DrawLUTTexture(LUT_TEXTURE_TYPE lut, SamplerState samplerState, float2 Pi
     extrapolationSettings.transferFunctionIn = LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB;
 // We might not want gamma correction on the debug LUT, gamma correction comes after extrapolation and isn't directly a part of the LUT, so it shouldn't affect its "raw" visualization
 #if 1
-    extrapolationSettings.transferFunctionOut = (bool(POST_PROCESS_SPACE_TYPE == 1) && bool(GAMMA_CORRECTION_TYPE)) ? (GAMMA_CORRECTION_TYPE == 1 ? LUT_EXTRAPOLATION_TRANSFER_FUNCTION_GAMMA_2_2 : LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB_WITH_GAMMA_2_2_LUMINANCE) : extrapolationSettings.transferFunctionIn;
+    extrapolationSettings.transferFunctionOut = (bool(POST_PROCESS_SPACE_TYPE == 1) && (GAMMA_CORRECTION_TYPE == 1 || (GAMMA_CORRECTION_TYPE >= 2 && ANTICIPATE_ADVANCED_GAMMA_CORRECTION))) ? (GAMMA_CORRECTION_TYPE == 1 ? LUT_EXTRAPOLATION_TRANSFER_FUNCTION_GAMMA_2_2 : LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB_WITH_GAMMA_2_2_LUMINANCE) : extrapolationSettings.transferFunctionIn;
 #else
     extrapolationSettings.transferFunctionOut = extrapolationSettings.transferFunctionIn;
 #endif

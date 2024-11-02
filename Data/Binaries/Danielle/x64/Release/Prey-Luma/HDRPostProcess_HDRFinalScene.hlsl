@@ -365,8 +365,9 @@ void HDRFinalScenePS(float4 WPos, float4 baseTC, out float4 outColor)
   extrapolationSettings.lutOutputLinear = bool(ENABLE_LINEAR_COLOR_GRADING_LUT);
   extrapolationSettings.outputLinear = bool(POST_PROCESS_SPACE_TYPE >= 1);
   extrapolationSettings.transferFunctionIn = LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB;
-  // If we are working in gamma space ("POST_PROCESS_SPACE_TYPE" 0), we don't want gamma correction to be applied on the output color (beyond 0-1), it will be up to the last pass to linearize that with the target gamma (which will automatically apply the correction)
-  extrapolationSettings.transferFunctionOut = (bool(POST_PROCESS_SPACE_TYPE >= 1) && bool(GAMMA_CORRECTION_TYPE)) ? (GAMMA_CORRECTION_TYPE == 1 ? LUT_EXTRAPOLATION_TRANSFER_FUNCTION_GAMMA_2_2 : LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB_WITH_GAMMA_2_2_LUMINANCE) : LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB;
+  // If we are working in gamma space ("POST_PROCESS_SPACE_TYPE" 0), we don't want gamma correction to be applied on the output color (beyond 0-1),
+  // it will be up to the last pass to linearize that with the target gamma (which will automatically apply the correction)
+  extrapolationSettings.transferFunctionOut = (bool(POST_PROCESS_SPACE_TYPE == 1) && (GAMMA_CORRECTION_TYPE == 1 || (GAMMA_CORRECTION_TYPE >= 2 && ANTICIPATE_ADVANCED_GAMMA_CORRECTION))) ? (GAMMA_CORRECTION_TYPE == 1 ? LUT_EXTRAPOLATION_TRANSFER_FUNCTION_GAMMA_2_2 : LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB_WITH_GAMMA_2_2_LUMINANCE) : LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB;
   extrapolationSettings.samplingQuality = (HIGH_QUALITY_POST_PROCESS_SPACE_CONVERSIONS || ENABLE_LUT_TETRAHEDRAL_INTERPOLATION) ? (ENABLE_LUT_TETRAHEDRAL_INTERPOLATION ? 2 : 1) : 0;
 #if DEVELOPMENT && 1 // Test LUT extrapolation parameters //TODOFT4 (//)
   extrapolationSettings.inputTonemapToPeakWhiteNits = 10000 * LumaSettings.DevSetting01;
@@ -400,21 +401,13 @@ void HDRFinalScenePS(float4 WPos, float4 baseTC, out float4 outColor)
   // This doesn't really generate any colors beyond sRGB, because it works by restoring the rgb ratio of change, so unless there were negative color values to begin with, there won't be any in the output.
   // We clamp the SDR color to make sure the LUT restoration starts from the right point, if the SDR color was beyond 1, it would later be clamped to 1 to sample the LUT, and we don't want to restore the effects of that clamping on the HDR color.
 	outColor.rgb = RestorePostProcess(outColor.rgb, saturate(cSDRColor.rgb), cSDRColorLUT, vanillaLUTRestorationAmount);
-#if POST_PROCESS_SPACE_TYPE <= 0
-  outColor.xyz = ColorGradingLUTTransferFunctionInCorrected(outColor.xyz, LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB, LUT_EXTRAPOLATION_TRANSFER_FUNCTION_GAMMA_2_2);
-#endif // POST_PROCESS_SPACE_TYPE <= 0
 #endif
 
 #else // !ENABLE_COLOR_GRADING_LUT
 
-#if POST_PROCESS_SPACE_TYPE >= 1 && GAMMA_CORRECTION_TYPE > 0
+#if POST_PROCESS_SPACE_TYPE == 1 && (GAMMA_CORRECTION_TYPE == 1 || (GAMMA_CORRECTION_TYPE >= 2 && ANTICIPATE_ADVANCED_GAMMA_CORRECTION))
   // Apply gamma correction (only in the 0-1 range) even if we are skipping the LUT
-  ColorGradingLUTTransferFunctionInOutCorrected(outColor.rgb, LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB, LUT_EXTRAPOLATION_TRANSFER_FUNCTION_GAMMA_2_2, true);
-#elif POST_PROCESS_SPACE_TYPE <= 0
-  // Apply sRGB gamma independently of "GAMMA_CORRECTION_TYPE", as that will simply determine how gamma is linearized for intermediary linear operations, and thus how the final shader should linearize color (sRGB vs 2.2) (in the whole range, not just 0-1).
-  // If "GAMMA_CORRECTION_TYPE" is true though, we apply gamma 2.2 beyond the 0-1 range, so that the final 2.2 linearization won't correct anything outside of 0-1 (it's an arguable design to rely on that).
-  // For intermediary passes, we still need to keep the image as it was in SDR, so any blends end up looking the same.
-  outColor.xyz = ColorGradingLUTTransferFunctionInCorrected(outColor.xyz, LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB, LUT_EXTRAPOLATION_TRANSFER_FUNCTION_GAMMA_2_2);
+  ColorGradingLUTTransferFunctionInOutCorrected(outColor.rgb, LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB, GAMMA_CORRECTION_TYPE == 1 ? LUT_EXTRAPOLATION_TRANSFER_FUNCTION_GAMMA_2_2 : LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB_WITH_GAMMA_2_2_LUMINANCE, true);
 #endif
 
 #endif // ENABLE_COLOR_GRADING_LUT
