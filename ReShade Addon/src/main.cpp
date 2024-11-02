@@ -131,7 +131,7 @@ namespace {
 
 #if 1
         if (!IsDebuggerPresent()) {
-            MessageBoxA(NULL, "Loaded. You can now attach the debugger or continue execution.", NAME, NULL);
+            MessageBoxA(NULL, "Loaded. You can now attach the debugger or continue execution.", NAME, MB_SETFOREGROUND);
         }
 #else
         // Wait for the debugger to attach
@@ -1431,7 +1431,7 @@ void OnInitDevice(reshade::api::device* device) {
       dlss_sr_render_resolution = 1.0;
 
       NGX::DLSS::Deinit(native_device); // No need to keep it initialized if it's not supported
-      dlss_sr = false;
+      dlss_sr = false; // No need to serialize this to config really
   }
 // Optionally unload dlss if it's supported but currently not enabled
 #if !DLSS_KEEP_DLL_LOADED
@@ -2131,10 +2131,9 @@ void OnPresent(
 //TODOFT5: fix cpp file formatting in general (and make sure it's all thread safe, but it should be) (remove clang.tidy files?)
 //TODOFT5: Do LUTs extrapolation in Log2
 //TODOFT5: DICE inverse
-//TODOFT5: merge two DLLs
 //TODOFT5: remove native DLL dependency and just rely on RenoDX? If so, make sure that our CopyTexture() func works!
 //TODOFT5: finish SDR output. test gamma sRGB mode?
-//TODOFT5: comment "HandlePreDraw"
+//TODOFT5: comment "HandlePreDraw"?
 //TODOFT5: Add "UpdateSubresource" to check whether they map buffers with that?
 
 bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = false) {
@@ -3728,6 +3727,7 @@ bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource
                 com_ptr<ID3D11Texture2D> proxy_target_resource_texture;
                 // We need to make a double copy if the target texture isn't a render target, unfortunately (we could intercept its creation and add the flag, or replace any further usage in this frame by redirecting all pointers
                 // to the new copy we made, but for now this works)
+                // TODO: we could also check if the target texture supports UAV writes (unlikely) and fall back on a Copy Compute Shader instead of a Pixel Shader, to avoid two further texture copies.
                 if ((target_desc.BindFlags & D3D11_BIND_RENDER_TARGET) == 0) {
                     // Create the persisting texture copy if necessary (if anything changed from the last copy).
                     // Theoretically all these textures have the same resolution as the screen so having one persisten texture should be ok.
@@ -4628,6 +4628,9 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 
 #if DEVELOPMENT
         ImGui::NewLine();
+        ImGui::Text("Developer Settings: ", "");
+
+        ImGui::NewLine();
         ImGui::SliderFloat("Developer Setting 1", &cb_luma_frame_settings.DevSetting1, 0.0, 1.0);
         ImGui::SliderFloat("Developer Setting 2", &cb_luma_frame_settings.DevSetting2, 0.0, 1.0);
         ImGui::SliderFloat("Developer Setting 3", &cb_luma_frame_settings.DevSetting3, 0.0, 1.0);
@@ -5133,11 +5136,11 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
 
       // Hardcoding "Globals::NAME" here:
       if (GetModuleHandle(TEXT("PreyDll.dll")) == NULL) {
-        MessageBoxA(NULL, "You are trying to use \"Prey Luma\" on a game that is not \"Prey (2017)\".\nThe mod will still run but probably crash.", NAME, NULL);
+        MessageBoxA(game_window, "You are trying to use \"Prey Luma\" on a game that is not \"Prey (2017)\".\nThe mod will still run but probably crash.", NAME, MB_SETFOREGROUND);
       }
       // The steam dll seems to be loaded before us all the times
       else if (GetModuleHandle(TEXT("steam_api64.dll")) == NULL) {
-        MessageBoxA(NULL, "\"Prey Luma\" is only compatible with the Steam version of \"Prey (2017)\".\nThe mod will still run but probably crash.", NAME, NULL);
+        MessageBoxA(game_window, "\"Prey Luma\" is only compatible with the Steam version of \"Prey (2017)\".\nThe mod will still run but probably crash.", NAME, MB_SETFOREGROUND);
       }
 
       wchar_t file_path_char[MAX_PATH] = L"";
@@ -5181,7 +5184,7 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
               delete[] verData;
           }
           if (old_version) {
-              MessageBoxA(NULL, "Please delete \"d3dcompiler_47.dll\" from the game executable directory;\n the game came bundled with an old version that is worse in all aspects.\nIf you are on Proton, manually update to the latest version.", NAME, NULL);
+              MessageBoxA(game_window, "Please delete \"d3dcompiler_47.dll\" from the game executable directory;\n the game came bundled with an old version that is worse in all aspects.\nIf you are on Proton, manually update to the latest version.", NAME, MB_SETFOREGROUND);
           }
       }
 
@@ -5190,22 +5193,6 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
       // we could still load the native plugin,
       const bool reshade_addon_register_succeeded = reshade::register_addon(h_module);
       if (!reshade_addon_register_succeeded) return FALSE;
-
-#if 0 // Since ReShade 6.3.2 or 6.4, ReShade calls "AddonInit()" even for addons that manualy registered through other dlls, so this isn't needed anymore
-#if 0 //TODOFT: finish version check
-      HMODULE reshade_module = reshade::internal::get_reshade_module_handle()
-          const auto reshade_version_func = reinterpret_cast<const char* (*)()>(GetProcAddress(reshade_module, "ReShadeVersion"));
-      // Check that the ReShade module supports the used API
-      if (reshade_version_func != nullptr) {
-          const char* reshade_version = reshade_version_func();
-      }
-#endif
-      // Init the ReShade addon stuff synchronously, given we can't safely create threads here
-      //TODOFT: kick start shader compilation here anyway, or soon after (in a function that allows thread calls), or shaders won't be compiled until later (or ever)?
-      if (asi_loaded) {
-        Init(false);
-      }
-#endif
 
       // Initialize the "native plugin" (our code hooks/patches)
       NativePlugin::Init(NAME, Globals::VERSION);

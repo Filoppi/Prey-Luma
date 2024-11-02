@@ -24,7 +24,7 @@ How to use:
 Drop all the files into the game installation folder (including "autoexec.cfg" and "system.cfg"), except the "game.cfg" file that goes into the user data folder (this is optional, but suggested).
 Install the latest VC++ redist before using (https://aka.ms/vs/17/release/vc_redist.x64.exe).
 Before updating the mod, make sure to delete all its previous files. To uninstall, clear all the files (they are unique to the mod).
-Install ReShade 6.3+ to use this mod (for DX11, preferably as dxgi.dll).
+Install ReShade 6.3.2+ to use this mod (for DX11, preferably as dxgi.dll).
 Unless you are on Linux/Proton, delete the "d3dcompiler_47.dll" from the main binary folder, it's an outdated shader compiler bundled with the game for "no reason" (Windows will fall back on the latest version of it this way, but Proton doesn't distribute the file so leave it in).
 Preferably, keep your ".\renodx-dev\dump" folder and send them to the developers after long play sessions, so they can catch all the shaders and make them Luma compatible.
 Performance cost on modern GPUs is negligeable, especially when using DLSS SR + Dynamic Resolution Scaling.
