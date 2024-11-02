@@ -1039,18 +1039,24 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
       }
     }
     else if (is_cso) {
-      std::ifstream file(entry_path, std::ios::binary);
-      file.seekg(0, std::ios::end);
-      custom_shader->code.resize(file.tellg());
-      {
-        std::stringstream s;
-        s << "loadCustomShaders(Reading " << custom_shader->code.size() << " from " << filename_no_extension_string << ")";
-        reshade::log::message(reshade::log::level::debug, s.str().c_str());
-      }
-      if (!custom_shader->code.empty()) {
-        file.seekg(0, std::ios::beg);
-        file.read(reinterpret_cast<char*>(custom_shader->code.data()), custom_shader->code.size());
-      }
+        try {
+            std::ifstream file;
+            file.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+            file.open(entry_path, std::ios::binary);
+            file.seekg(0, std::ios::end);
+            custom_shader->code.resize(file.tellg());
+            {
+                std::stringstream s;
+                s << "loadCustomShaders(Reading " << custom_shader->code.size() << " from " << filename_no_extension_string << ")";
+                reshade::log::message(reshade::log::level::debug, s.str().c_str());
+            }
+            if (!custom_shader->code.empty()) {
+                file.seekg(0, std::ios::beg);
+                file.read(reinterpret_cast<char*>(custom_shader->code.data()), custom_shader->code.size());
+            }
+        }
+        catch (const std::exception& e) {
+        }
     }
   }
 
@@ -1245,10 +1251,12 @@ void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = st
   }
 }
 
+// TODO: optmize
 std::optional<std::string> ReadTextFile(const std::filesystem::path& path) {
   std::vector<uint8_t> data;
   std::optional<std::string> result;
   std::ifstream file(path, std::ios::binary);
+  if (!file) return result;
   file.seekg(0, std::ios::end);
   const size_t file_size = file.tellg();
   if (file_size == 0) return result;
@@ -3973,12 +3981,16 @@ void DumpShader(uint32_t shader_hash, bool auto_detect_type = true) {
 
   dump_path += L".cso";
 
-  std::ofstream file(dump_path, std::ios::binary);
+  try {
+      std::ofstream file(dump_path, std::ios::binary);
 
-  file.write(static_cast<const char*>(cached_shader->data), cached_shader->size);
+      file.write(static_cast<const char*>(cached_shader->data), cached_shader->size);
 
-  if (!dumped_shaders.contains(shader_hash)) {
-    dumped_shaders.emplace(shader_hash);
+      if (!dumped_shaders.contains(shader_hash)) {
+        dumped_shaders.emplace(shader_hash);
+      }
+  }
+  catch (const std::exception& e) {
   }
 }
 
@@ -4911,7 +4923,7 @@ void Init(bool async) {
   if (std::filesystem::exists(dump_path)) {
     dump_path /= "dump";
     // No need to create the directory here if it didn't already exist
-    if (std::filesystem::exists(dump_path) && std::filesystem::is_directory(dump_path)) {
+    if (std::filesystem::is_directory(dump_path)) {
       const std::lock_guard<std::recursive_mutex> lock_dumping(s_mutex_dumping);
       for (const auto& entry : std::filesystem::directory_iterator(dump_path)) {
         if (!entry.is_regular_file()) continue;
@@ -5094,7 +5106,7 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
       std::filesystem::path shader_compiler_path = file_path.parent_path();
       shader_compiler_path.append("d3dcompiler_47.dll");
       //TODOFT: we should force recompile cso shaders if this dll was detected and then deleted by the user on the next run.
-      if (std::filesystem::exists(shader_compiler_path) && std::filesystem::is_regular_file(shader_compiler_path)) {
+      if (std::filesystem::is_regular_file(shader_compiler_path)) {
           bool old_version = true;
           DWORD verHandle = 0;
           DWORD verSize = GetFileVersionInfoSize(shader_compiler_path.c_str(), &verHandle);
