@@ -4631,12 +4631,17 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
       uint8_t longest_shader_define_name_length = SHADER_DEFINES_MAX_NAME_LENGTH - 1; // Remove the null termination
 #endif
       for (uint32_t i = 0; i < shader_defines_data.size(); i++) {
-#if !DEVELOPMENT && !TEST
         // Don't render empty text fields that couldn't be filled due to them not being editable
-        if (!shader_defines_data[i].IsNameEditable() && !shader_defines_data[i].IsValueEditable() && shader_defines_data[i].IsCustom()) {
-            continue;
-        }
+        bool disabled = false;
+        if (!shader_defines_data[i].IsNameEditable() && !shader_defines_data[i].IsValueEditable()) {
+#if !DEVELOPMENT && !TEST
+            if (shader_defines_data[i].IsCustom()) {
+                continue;
+            }
 #endif
+            disabled = true;
+            ImGui::BeginDisabled();
+        }
 
         bool show_tooltip = false;
 
@@ -4658,7 +4663,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             if (data->EventFlag == ImGuiInputTextFlags_CallbackEdit) {
                 if (data->Buf[0] == '\0') {
                     // SHADER_DEFINES_MAX_VALUE_LENGTH
-#if 0 // Better implementation (actually resets to default when the text was cleaned (invalid value)
+#if 0 // Better implementation (actually resets to default when the text was cleaned (invalid value)) (space and - can also be currently written to in the value text field)
                     data->Buf[0] = shader_defines_data[i].default_data.value[0];
                     data->Buf[1] = shader_defines_data[i].default_data.value[1];
 #else
@@ -4701,6 +4706,10 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         }
 #endif
         ImGui::PopID();
+
+        if (disabled) {
+            ImGui::EndDisabled();
+        }
 
         if (show_tooltip && shader_defines_data[i].IsNameDefault() && shader_defines_data[i].GetTooltip() != "") {
             ImGui::SetTooltip(shader_defines_data[i].GetTooltip());

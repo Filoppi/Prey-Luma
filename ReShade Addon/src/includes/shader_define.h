@@ -45,6 +45,8 @@ struct ShaderDefineData {
     const std::string name_hint;
     const std::string value_hint;
 
+    bool editable = true;
+
 private:
     // Set to true if you want the name of this define to be fixed
     const bool fixed_name;
@@ -62,17 +64,17 @@ public:
 
     bool IsNameEditable() const {
 #if DEVELOPMENT
-        return !fixed_name;
+        return !fixed_name && editable;
 #elif !TEST
         return false;
 #endif // DEVELOPMENT
-        return !fixed_name && IsCustom();
+        return !fixed_name && editable && IsCustom();
     }
     bool IsValueEditable() const {
 #if DEVELOPMENT || TEST
-        return !fixed_value;
+        return !fixed_value && editable;
 #endif // DEVELOPMENT
-        return !fixed_value && !IsCustom();
+        return !fixed_value && editable && !IsCustom();
     }
 
     // If true, this a "custom" shader define created at runtime
@@ -120,7 +122,8 @@ public:
 
     // This assumes the value was numerical to begin with (it usually is)
     uint8_t GetNumericalCompiledValue() const {
-        if (compiled_data.value[0] == '\0') {
+        // Avoid edge characters (that ImGui allows to write)
+        if (compiled_data.value[0] == '\0' || compiled_data.value[0] == ' ' || compiled_data.value[0] == '-') {
             // Default to 0 if we have no default value
             if (default_data.value[0] == '\0') {
                 return 0;
