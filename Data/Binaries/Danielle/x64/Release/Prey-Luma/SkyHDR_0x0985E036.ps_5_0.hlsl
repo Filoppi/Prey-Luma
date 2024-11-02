@@ -71,7 +71,7 @@ void main(
   // Re-scale range
   Color.xyz *= PS_HDR_RANGE_ADAPT_MAX;
 	
-#if 0 // LUMA FT: somewhat related to "PREEMPT_SUNSHAFTS", disabling the code might help with sun shafts anyway
+#if 0 // LUMA FT: somewhat related to "ANTICIPATE_SUNSHAFTS", disabling the code might help with sun shafts anyway
   Color.xyz = min(Color.xyz, (float3)16384.0); // LUMA FT: this seems like a random peak number
 #endif
   outColor = Color;

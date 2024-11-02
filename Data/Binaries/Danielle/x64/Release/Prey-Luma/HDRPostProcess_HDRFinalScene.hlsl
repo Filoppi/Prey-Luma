@@ -146,7 +146,7 @@ float4 FilmTonemapping( out float3 cSDRColor, in float4 cScene, in float4 cBloom
 
   float3 cColor = fExposure * cBloomedScene;
 
-#if _RT_SAMPLE3 && TEST_BLOOM_TYPE == 0 && ENABLE_SUNSHAFTS && PREEMPT_SUNSHAFTS
+#if _RT_SAMPLE3 && TEST_BLOOM_TYPE == 0 && ENABLE_SUNSHAFTS && ANTICIPATE_SUNSHAFTS
   // LUMA FT: moved sunshafts drawing to blend in before tonemapping. This way the are also affected by the exposure, which theoretically makes sense.
   // They are generated on the pre auto exposure linear HDR rendering, so theoretically they should also be exposure adjusted, then again in SDR
   // it probably wasn't to keep it consistently bright (though it was clipping a lot).
@@ -158,7 +158,7 @@ float4 FilmTonemapping( out float3 cSDRColor, in float4 cScene, in float4 cBloom
   // LUMA FT: In HDR, we always blend sun shafts at 100%, given that we have no hard ceiling of 1 (and we run before tonemapping),
   // not like in SDR where they are only blended in if the background isn't white.
 	cColor.rgb += cSunShafts.rgb; // Blend in hdr sunshafts
-#endif // _RT_SAMPLE3 && TEST_BLOOM_TYPE == 0 && ENABLE_SUNSHAFTS && PREEMPT_SUNSHAFTS
+#endif // _RT_SAMPLE3 && TEST_BLOOM_TYPE == 0 && ENABLE_SUNSHAFTS && ANTICIPATE_SUNSHAFTS
 
   cColor *= fVignetting;
 
@@ -316,7 +316,7 @@ void HDRFinalScenePS(float4 WPos, float4 baseTC, out float4 outColor)
   cSDRColor.rgb = lerp(GetLuminance(cSDRColor.rgb), cSDRColor.rgb, 2.0);
 #endif
 
-#if _RT_SAMPLE3 && TEST_BLOOM_TYPE == 0 && ENABLE_SUNSHAFTS && !PREEMPT_SUNSHAFTS
+#if _RT_SAMPLE3 && TEST_BLOOM_TYPE == 0 && ENABLE_SUNSHAFTS && !ANTICIPATE_SUNSHAFTS
 #if 1 // LUMA FT: in HDR, we always blend sun shafts at 100%, given that we have no hard ceiling of 1 (though tonemapping might have already happened). Blending in sun shafts like in Vanilla looks broken in HDR anyway.
   float sunShaftsAlpha = 1.0;
 #else
@@ -331,7 +331,7 @@ void HDRFinalScenePS(float4 WPos, float4 baseTC, out float4 outColor)
 #else
   outColor.rgb = gamma_sRGB_to_linear(linear_to_sRGB_gamma(outColor.rgb) + (sunShafts.rgb * sunShaftsAlpha));
 #endif
-#endif // _RT_SAMPLE3 && TEST_BLOOM_TYPE == 0 && ENABLE_SUNSHAFTS && !PREEMPT_SUNSHAFTS
+#endif // _RT_SAMPLE3 && TEST_BLOOM_TYPE == 0 && ENABLE_SUNSHAFTS && !ANTICIPATE_SUNSHAFTS
 #if _RT_SAMPLE3 && ENABLE_SUNSHAFTS && TEST_SUN_SHAFTS
 	outColor.rgb = cSunShafts.rgb;
 #endif // _RT_SAMPLE3 && ENABLE_SUNSHAFTS && TEST_SUN_SHAFTS

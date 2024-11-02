@@ -105,7 +105,7 @@ void main(
   accumColor /= float(depthShaftsIterations);
 
   outColor = accumColor * 2.0 * shaftsStrength * float4(sunDist.xxx, 1); // LUMA FT: this now writes to a float texture so they are not clipped anymore (it used to write to a UNORM texutre). 
-  // LUMA FT: this was already theoretically writing "linear" colors, not gamma space, independently of "PREEMPT_SUNSHAFTS", so we leave it as it was.
+  // LUMA FT: this was already theoretically writing "linear" colors, not gamma space, independently of "ANTICIPATE_SUNSHAFTS", so we leave it as it was.
   // We couldn't really do proper gamma adjustments here as this shader runs twice on itself, and in the end, it's additive; there is no proper concept of "gamma" for additive color.
 
   outColor.w += 1.0 - saturate( fSign * 0.1 + 0.9 ); // LUMA FT: removed unnecessary (duplicate) saturate(). The alpha doesn't seem to influence the drawing anyway, so theoretically we could disable it.

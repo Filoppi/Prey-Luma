@@ -56,7 +56,7 @@
 #endif
 #define DELAY_HDR_TONEMAP (TRY_DELAY_HDR_TONEMAP && TONEMAP_TYPE == 1)
 // Sun shafts were drawn after tonemapping in the Vanilla game, thus they were completely SDR, Luma has implemented an HDR version of them which tries to retain the artistic direction.
-#define PREEMPT_SUNSHAFTS (!DELAY_HDR_TONEMAP || 1)
+#define ANTICIPATE_SUNSHAFTS (!DELAY_HDR_TONEMAP || 1)
 // 0 Vanilla
 // 1 Medium (Vanilla+)
 // 2 High
