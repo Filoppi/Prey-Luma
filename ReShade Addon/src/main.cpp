@@ -397,8 +397,10 @@ constexpr uint32_t ui_cbuffer_index = 7;
 
 std::string shaders_compilation_errors; // errors and warning log
 
+// List of define values read by our settings shaders
+std::unordered_map<std::string, uint8_t> code_shaders_defines;
 // These default should ideally match shaders values, but it's not necessary because whathever the default values they have they will be overridden
-// TODO: add grey out conditions (another define, by name, whether its value is > 0)
+// TODO: add grey out conditions (another define, by name, whether its value is > 0), and also add min/max values range (to limit the user insertable values)
 std::vector<ShaderDefineData> shader_defines_data = {
   {"DEVELOPMENT", DEVELOPMENT ? '1' : '0', true, DEVELOPMENT ? false : true, "Enables some development/debug features that are otherwise not allowed"}, // development_define_index
   {"POST_PROCESS_SPACE_TYPE", '1', true, false, "0 - Gamma space\n1 - Linear space\n2 - Linear space until UI (then gamma space)\n\nSelect \"2\" if you want the UI to look exactly like it did in Vanilla\nSekect\"1\" for the highest possible quality"}, // post_process_space_define_index
@@ -750,6 +752,63 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
       const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
       shaders_compilation_errors = "The shaders path is already taken by a file";
       return;
+  }
+  
+  {
+      const std::lock_guard<std::recursive_mutex> lock_shader_defines(s_mutex_shader_defines);
+
+      code_shaders_defines.clear();
+
+      auto settings_directory = directory;
+      settings_directory /= "include";
+      settings_directory /= "Settings.hlsl";
+      if (std::filesystem::is_regular_file(settings_directory)) {
+          try {
+              std::ifstream file;
+              file.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+              file.open(settings_directory.c_str()); // Open file
+              std::stringstream str_stream;
+              str_stream << file.rdbuf(); // Read the file
+              std::string str = str_stream.str(); //str holds the content of the file
+              size_t i = -1;
+              while (true) {
+                  // Iterate the string line (break) by line (break),
+                  // and check for defines values.
+
+                  size_t i0 = i + 1;
+                  i = str.find('\n', i0);
+                  bool finished = false;
+                  if (i0 == i) continue;
+                  if (i == std::string::npos) {
+                      i = str.length();
+                      finished = true;
+                  }
+
+                  // TODO: make this more flexible, allowing spaces around "#" and "define" etc,
+                  // and defines values that are not numerical (from 0 to 9)
+                  std::string_view str_view(&str[i0], i - i0);
+                  if (str_view.rfind("#define ", 0) == 0) {
+                      str_view = str_view.substr(strlen("#define "));
+                      size_t space_index = str_view.find(' ');
+                      if (space_index != std::string::npos) {
+                          std::string_view define_name = str_view.substr(0, space_index);
+                          size_t second_space_index = str_view.find(' ', space_index);
+                          if (second_space_index != std::string::npos) {
+                              std::string_view define_value = str_view.substr(space_index + 1, second_space_index);
+                              uint8_t define_int_value = define_value[0] - '0';
+                              if (define_int_value <= 9) {
+                                  code_shaders_defines.emplace(define_name, define_int_value);
+                              }
+                          }
+                      }
+                  }
+
+                  if (finished) break;
+              }
+          }
+          catch (const std::exception& e) {
+          }
+      }
   }
 
   std::unordered_set<uint32_t> changed_shaders_hashes;
