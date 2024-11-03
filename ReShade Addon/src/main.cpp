@@ -2217,6 +2217,7 @@ void OnPresent(
 //TODOFT5: comment "HandlePreDraw"?
 //TODOFT5: Add "UpdateSubresource" to check whether they map buffers with that?
 //TODOFT5: merge all the shader permutations that use the same code
+//TODOFT5: move project files out of the "build" folder? and the "ReShade Addon" folder?
 
 bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = false) {
   const auto* device = cmd_list->get_device();
