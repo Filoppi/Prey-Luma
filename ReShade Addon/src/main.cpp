@@ -404,8 +404,8 @@ std::unordered_map<std::string, uint8_t> code_shaders_defines;
 // TODO: add grey out conditions (another define, by name, whether its value is > 0), and also add min/max values range (to limit the user insertable values)
 std::vector<ShaderDefineData> shader_defines_data = {
   {"DEVELOPMENT", DEVELOPMENT ? '1' : '0', true, DEVELOPMENT ? false : true, "Enables some development/debug features that are otherwise not allowed"}, // development_define_index
-  {"POST_PROCESS_SPACE_TYPE", '1', true, false, "0 - Gamma space\n1 - Linear space\n2 - Linear space until UI (then gamma space)\n\nSelect \"2\" if you want the UI to look exactly like it did in Vanilla\nSelect\"1\" for the highest possible quality"}, // post_process_space_define_index
-  {"GAMMA_CORRECTION_TYPE", '1', true, false, "(HDR only) Emulates a specific SDR gamma\nThis is best left to \"1 (Gamma 2.2)\" unless you have crushed blacks or overly saturated colors\n0 - sRGB\n1 - Gamma 2.2\n2 - sRGB (color hues) with gamma 2.2 luminance"}, // gamma_correction_define_index
+  {"POST_PROCESS_SPACE_TYPE", '1', true, false, "0 - Gamma space\n1 - Linear space\n2 - Linear space until UI (then gamma space)\n\nSelect \"2\" if you want the UI to look exactly like it did in Vanilla\nSelect \"1\" for the highest possible quality"}, // post_process_space_define_index
+  {"GAMMA_CORRECTION_TYPE", '1', true, false, "(HDR only) Emulates a specific SDR gamma\nThis is best left to \"1\" (Gamma 2.2) unless you have crushed blacks or overly saturated colors\n0 - sRGB\n1 - Gamma 2.2\n2 - sRGB (color hues) with gamma 2.2 luminance"}, // gamma_correction_define_index
   {"TONEMAP_TYPE", '1', false, false, "0 - Vanilla SDR\n1 - Luma HDR (Vanilla+)\n2 - Raw HDR (Untonemapped)"},
   {"SUNSHAFTS_LOOK_TYPE", '2', false, false, "0 - Raw Vanilla\n1 - Vanilla+\n2 - Luma HDR"},
   {"ENABLE_LENS_OPTICS_HDR", '1', false, false, "Makes the lens effects (e.g. lens flare) slightly HDR"},
@@ -1171,13 +1171,16 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
               const std::lock_guard<std::recursive_mutex> lock(s_mutex_device);
 
               if constexpr (typeid(T) == typeid(ID3D11VertexShader)) {
-                  assert(SUCCEEDED(global_native_device->CreateVertexShader(shader_cache->code.data(), shader_cache->code.size(), nullptr, &shader_object)));
+                  HRESULT hr = global_native_device->CreateVertexShader(shader_cache->code.data(), shader_cache->code.size(), nullptr, &shader_object);
+                  assert(SUCCEEDED(hr));
               }
               else if constexpr (typeid(T) == typeid(ID3D11PixelShader)) {
-                  assert(SUCCEEDED(global_native_device->CreatePixelShader(shader_cache->code.data(), shader_cache->code.size(), nullptr, &shader_object)));
+                  HRESULT hr = global_native_device->CreatePixelShader(shader_cache->code.data(), shader_cache->code.size(), nullptr, &shader_object);
+                  assert(SUCCEEDED(hr));
               }
               else if constexpr (typeid(T) == typeid(ID3D11ComputeShader)) {
-                  assert(SUCCEEDED(global_native_device->CreateComputeShader(shader_cache->code.data(), shader_cache->code.size(), nullptr, &shader_object)));
+                  HRESULT hr = global_native_device->CreateComputeShader(shader_cache->code.data(), shader_cache->code.size(), nullptr, &shader_object);
+                  assert(SUCCEEDED(hr));
               }
               else {
                   static_assert(false);
@@ -2068,7 +2071,8 @@ void OnPresent(
                 proxy_target_desc.CPUAccessFlags = 0;
                 proxy_target_desc.Usage = D3D11_USAGE_DEFAULT;
                 transfer_function_copy_texture = nullptr;
-                assert(SUCCEEDED(native_device->CreateTexture2D(&proxy_target_desc, nullptr, &transfer_function_copy_texture)));
+                HRESULT hr = native_device->CreateTexture2D(&proxy_target_desc, nullptr, &transfer_function_copy_texture);
+                assert(SUCCEEDED(hr));
 
                 D3D11_SHADER_RESOURCE_VIEW_DESC source_srv_desc;
                 source_srv_desc.Format = target_desc.Format;
@@ -2076,7 +2080,8 @@ void OnPresent(
                 source_srv_desc.Texture2D.MipLevels = 1;
                 source_srv_desc.Texture2D.MostDetailedMip = 0;
                 transfer_function_copy_shader_resource_view = nullptr;
-                assert(SUCCEEDED(native_device->CreateShaderResourceView(transfer_function_copy_texture.get(), &source_srv_desc, &transfer_function_copy_shader_resource_view)));
+                hr = native_device->CreateShaderResourceView(transfer_function_copy_texture.get(), &source_srv_desc, &transfer_function_copy_shader_resource_view);
+                assert(SUCCEEDED(hr));
             }
 
             // We need to copy the texture to read back from it, even if we only exclusively write to the same pixel we read and thus there couldn't be any race condition. Unfortunately DX works like that.
@@ -2101,7 +2106,8 @@ void OnPresent(
                 target_rtv_desc.Format = target_desc.Format;
                 target_rtv_desc.ViewDimension = D3D11_RTV_DIMENSION::D3D11_RTV_DIMENSION_TEXTURE2D;
                 target_rtv_desc.Texture2D.MipSlice = 0;
-                assert(SUCCEEDED(native_device->CreateRenderTargetView(back_buffer.get(), &target_rtv_desc, &target_resource_texture_view)));
+                HRESULT hr = native_device->CreateRenderTargetView(back_buffer.get(), &target_rtv_desc, &target_resource_texture_view);
+                assert(SUCCEEDED(hr));
             }
 
             // Push our settings cbuffer in case where no other custom shader run this frame
@@ -4592,7 +4598,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         }
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-            ImGui::SetTooltip("Display Mode. Greyed out if HDR is not supported.\nThe HDR display calibration (peak white brightness) is retrieved from the OS (Windows 11 HDR user calibration or display EDID),\nonly adjust it if necessary.\nIt's suggested to only play the game in SDR while the display is in SDR mode (avoid SDR mode in HDR).\nSDR is meant to be played at gamma 2.2.");
+            ImGui::SetTooltip("Display Mode. Greyed out if HDR is not supported.\nThe HDR display calibration (peak white brightness) is retrieved from the OS (Windows 11 HDR user calibration or display EDID),\nonly adjust it if necessary.\nIt's suggested to only play the game in SDR while the display is in SDR mode (with gamma 2.2, not sRGB) (avoid SDR mode in HDR).");
         }
         ImGui::SameLine();
         // Show a reset button to enable HDR in the game if we are playing SDR in HDR
