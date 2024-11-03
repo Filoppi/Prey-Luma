@@ -72,7 +72,6 @@
 // Depends on "DEVELOPMENT"
 #define TEST_DLSS 0
 
-#define DLSS_TARGET_TEXTURE_WAS_UAV 0
 #define DLSS_KEEP_DLL_LOADED 1
 
 #define FORCE_KEEP_CUSTOM_SHADERS_LOADED 1
@@ -440,9 +439,7 @@ constexpr uint32_t gamma_correction_define_index = 2;
 
 // Resources:
 #if ENABLE_NGX
-#if !DLSS_TARGET_TEXTURE_WAS_UAV
 com_ptr<ID3D11Texture2D> dlss_output_color;
-#endif // DLSS_TARGET_TEXTURE_WAS_UAV
 com_ptr<ID3D11Texture2D> dlss_exposure;
 com_ptr<ID3D11Texture2D> dlss_motion_vectors;
 com_ptr<ID3D11RenderTargetView> dlss_motion_vectors_rtv;
@@ -1512,9 +1509,7 @@ void OnInitDevice(reshade::api::device* device) {
 
   dlss_sr_supported = NGX::DLSS::Init(native_device, native_adapter.get());
   if (!dlss_sr_supported) {
-#if !DLSS_TARGET_TEXTURE_WAS_UAV
       dlss_output_color = nullptr;
-#endif // DLSS_TARGET_TEXTURE_WAS_UAV
       dlss_exposure = nullptr;
       dlss_motion_vectors = nullptr;
       dlss_motion_vectors_rtv = nullptr;
@@ -1556,9 +1551,7 @@ void OnDestroyDevice(reshade::api::device* device) {
 #if ENABLE_NGX
   ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
   NGX::DLSS::Deinit(native_device); // NOTE: this could stutter the game on closure as it forces unloading the DLSS DLL, we could theoretically avoid it (not sure if we'd run into errors)
-#if !DLSS_TARGET_TEXTURE_WAS_UAV
   dlss_output_color = nullptr;
-#endif // DLSS_TARGET_TEXTURE_WAS_UAV
   dlss_exposure = nullptr;
   dlss_motion_vectors = nullptr;
   dlss_motion_vectors_rtv = nullptr;
@@ -2200,9 +2193,7 @@ void OnPresent(
           dlss_sr = NGX::DLSS::Init(native_device, native_adapter.get()); // No need to update "dlss_sr_supported"
       }
       else {
-#if !DLSS_TARGET_TEXTURE_WAS_UAV
           dlss_output_color = nullptr;
-#endif // DLSS_TARGET_TEXTURE_WAS_UAV
           dlss_exposure = nullptr;
           dlss_motion_vectors = nullptr;
           dlss_motion_vectors_rtv = nullptr;
@@ -2472,7 +2463,6 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
           //TODOFT: add sharpening if we did DLSS? It's already in! Do RCAS?
           //TODOFT: skip SMAA edge detection and edge AA passes, or just disable SMAA in menu
           //TODOFT: skip the texture copy into ps_shader_resources[1] after TAA if DLSS is running? It's not really necessary AFAIK (though it might be used by other things in the game, it's not clear, but likely not...)
-          //TODOFT: Enable "DLSS_TARGET_TEXTURE_WAS_UAV" by changing the buffer to UAV with Luma DLL?
           //TODOFT: add DLSS transparency mask (e.g. glass, decals, emissive) by caching the g-buffers before and after this stuff draws near the end?
           //TODOFT: add DLSS bias mask (to ignore animated textures) by marking up some shaders(materials)/textures hashes with it?
           //TODOFT1: force preset E even with DLAA? Nah, F looks better it seems? Right now preset F is used for DRS (or is it?)!! (try C instead of F in that case though!). Or simply expose it to users, or at least try it for dev settings.
@@ -2486,7 +2476,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
           // We do DLSS after some post processing (e.g. exposure, tonemap, color grading, bloom, blur, objects highlight, other possible AA forms, etc) because running it before post processing
           // would be harder (we'd need to collect more textures manually and manually skip all later AA steps), most importantly, that wouldn't work with the native dynamic resolution the game supports (without changing every single
           // texture sample coordinates in post processing). Even if it's after pp, it should still have enough quality.
-          // We replace the "TAA"/"SMAA 2TX" pass, ignoring whatever it would have done (the secondary texture it allocated is kept alive, even if we don't use it, we couldn't really destroy it from ReShade),
+          // We replace the "TAA"/"SMAA 2TX" pass (whichever of the ones in our list is run), ignoring whatever it would have done (the secondary texture it allocated is kept alive, even if we don't use it, we couldn't really destroy it from ReShade),
           // after there's a "composition" pass (film grain, sharpening, ...) and then an optional upscale pass, both of these are too late for DLSS to run.
           for (auto shader_hash : shader_hashes_PostAA) {
               if (std::find(original_shader_hashes.begin(), original_shader_hashes.end(), shader_hash) != original_shader_hashes.end()) {
@@ -2567,27 +2557,28 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
 
                       bool skip_dlss = output_texture_desc.Width < 32 || output_texture_desc.Height < 32; // DLSS doesn't support output below 32x32
                       bool dlss_output_changed = false;
-#if DLSS_TARGET_TEXTURE_WAS_UAV
-                      com_ptr<ID3D11Texture2D> dlss_output_color = output_color;
-#else
-                      output_texture_desc.BindFlags |= D3D11_BIND_UNORDERED_ACCESS;
+                      constexpr bool force_dlss_output_copy = false;
+                      bool dlss_output_supports_uav = !force_dlss_output_copy && (output_texture_desc.BindFlags & D3D11_BIND_UNORDERED_ACCESS) != 0;
+                      if (!dlss_output_supports_uav) {
+                          output_texture_desc.BindFlags |= D3D11_BIND_UNORDERED_ACCESS;
 
-                      if (dlss_output_color.get())
-                      {
-                          D3D11_TEXTURE2D_DESC dlss_output_texture_desc;
-                          dlss_output_color->GetDesc(&dlss_output_texture_desc);
-                          dlss_output_changed = dlss_output_texture_desc.Width != output_texture_desc.Width || dlss_output_texture_desc.Height != output_texture_desc.Height || dlss_output_texture_desc.Format != output_texture_desc.Format;
+                          if (dlss_output_color.get()) {
+                              D3D11_TEXTURE2D_DESC dlss_output_texture_desc;
+                              dlss_output_color->GetDesc(&dlss_output_texture_desc);
+                              dlss_output_changed = dlss_output_texture_desc.Width != output_texture_desc.Width || dlss_output_texture_desc.Height != output_texture_desc.Height || dlss_output_texture_desc.Format != output_texture_desc.Format;
+                          }
+                          if (!dlss_output_color.get() || dlss_output_changed) {
+                              dlss_output_color = nullptr; // Make sure we discard the previous one
+                              hr = native_device->CreateTexture2D(&output_texture_desc, nullptr, &dlss_output_color);
+                              ASSERT_ONCE(SUCCEEDED(hr));
+                          }
+                          if (!dlss_output_color.get()) {
+                              skip_dlss = true;
+                          }
                       }
-                      if (!dlss_output_color.get() || dlss_output_changed)
-                      {
-                          dlss_output_color = nullptr; // Make sure we discard the previous one
-                          hr = native_device->CreateTexture2D(&output_texture_desc, nullptr, &dlss_output_color);
-                          ASSERT_ONCE(SUCCEEDED(hr));
+                      else {
+                          dlss_output_color = output_color;
                       }
-                      if (!dlss_output_color.get()) {
-                          skip_dlss = true;
-                      }
-#endif
 
                       if (!skip_dlss) {
                           com_ptr<ID3D11Resource> source_color;
@@ -2641,17 +2632,16 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                               object_velocity_buffer->GetDesc(&object_velocity_texture_desc);
                               ASSERT_ONCE((object_velocity_texture_desc.BindFlags & D3D11_BIND_RENDER_TARGET) == D3D11_BIND_RENDER_TARGET);
 
-#if DLSS_TARGET_TEXTURE_WAS_UAV
-                              if (dlss_motion_vectors.get())
-                              {
-                                  D3D11_TEXTURE2D_DESC dlss_motion_vectors_desc;
-                                  dlss_motion_vectors->GetDesc(&dlss_motion_vectors_desc);
-                                  dlss_output_changed = dlss_motion_vectors_desc.Width != output_texture_desc.Width || dlss_motion_vectors_desc.Height != output_texture_desc.Height || dlss_motion_vectors_desc.Format != output_texture_desc.Format;
+                              // Update the "dlss_output_changed" flag if we hadn't already (we wouldn't have had a previous copy to compare against above)
+                              if (dlss_output_supports_uav) {
+                                  if (dlss_motion_vectors.get()) {
+                                      D3D11_TEXTURE2D_DESC dlss_motion_vectors_desc;
+                                      dlss_motion_vectors->GetDesc(&dlss_motion_vectors_desc);
+                                      dlss_output_changed = dlss_motion_vectors_desc.Width != output_texture_desc.Width || dlss_motion_vectors_desc.Height != output_texture_desc.Height || dlss_motion_vectors_desc.Format != output_texture_desc.Format;
+                                  }
                               }
-#endif
-                              // We assume the conditions of this texture (and its render target view) changing are the same as "dlss_output_changed" in the "!DLSS_TARGET_TEXTURE_WAS_UAV" case
-                              if (!dlss_motion_vectors.get() || dlss_output_changed)
-                              {
+                              // We assume the conditions of this texture (and its render target view) changing are the same as "dlss_output_changed"
+                              if (!dlss_motion_vectors.get() || dlss_output_changed) {
                                   dlss_motion_vectors = nullptr; // Make sure we discard the previous one
                                   hr = native_device->CreateTexture2D(&object_velocity_texture_desc, nullptr, &dlss_motion_vectors);
                                   ASSERT_ONCE(SUCCEEDED(hr));
@@ -2666,7 +2656,6 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                                   native_device->CreateRenderTargetView(dlss_motion_vectors.get(), &object_velocity_render_target_view_desc, &dlss_motion_vectors_rtv);
                               }
 
-#if 1
                               SetPreyLumaConstantBuffers(cmd_list, stages, settings_pipeline_layout, LumaConstantBufferType::LumaSettings);
                               SetPreyLumaConstantBuffers(cmd_list, stages, shared_data_pipeline_layout, LumaConstantBufferType::LumaData);
 
@@ -2675,21 +2664,6 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
 
                               // This should be the same draw type that the shader would have used if we went through with it (SMAA 2TX/TAA).
                               native_device_context->Draw(3, 0);
-#elif 0 // Alternative unfinished code to run a different computer shader
-                              //SetPreyLumaConstantBuffers(cmd_list, reshade::api::shader_stage::pixel, settings_pipeline_layout, LumaConstantBufferType::LumaSettings); // Probably not needed
-                              SetPreyLumaConstantBuffers(cmd_list, reshade::api::shader_stage::pixel, shared_data_pipeline_layout, LumaConstantBufferType::LumaData);
-                              // This should be the same draw type that the shader would have used if we went through with it (SMAA 2TX/TAA).
-                              native_device_context->Draw(3, 0);
-#elif 0
-                              //SetPreyLumaConstantBuffers(cmd_list, reshade::api::shader_stage::compute, settings_pipeline_layout, LumaConstantBufferType::LumaSettings); // Probably not needed
-                              SetPreyLumaConstantBuffers(cmd_list, reshade::api::shader_stage::compute, shared_data_pipeline_layout, LumaConstantBufferType::LumaData);
-                              native_device->CreateComputeShader();
-                              native_device_context->CSSetSamplers();
-                              native_device_context->CSSetShaderResources();
-                              native_device_context->CSSetUnorderedAccessViews();
-                              native_device_context->CSSetShader();
-                              native_device_context->Dispatch();
-#endif
                           }
 
                           // Reset the render target, just to make sure there's no conflicts with the same texture being used as RWTexture UAV or Shader Resources
@@ -2707,13 +2681,11 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                           const float dlss_pre_exposure = dlss_custom_pre_exposure != 1.f ? dlss_custom_pre_exposure : 0.f;
 
                           // There doesn't seem to be a need to restore the DX state to whatever we had before (e.g. render targets, cbuffers, samplers, UAVs, texture shader resources, viewport, scissor rect, ...), CryEngine always sets everything it needs again for every pass.
-                          // It's unclear whether DLSS expects the target/output texture to also hold the history from the previous frames, but if "DLSS_TARGET_TEXTURE_WAS_UAV" is false, it does for us, while if "DLSS_TARGET_TEXTURE_WAS_UAV" was true,
-                          // ps_shader_resources[1] would be the previous frame TAA output.
+                          // DLSS internally keeps its own frames history, we don't seem to need to do that ourselves (by feeding in an output buffer that was the previous frame's output, though we do have that if needed, it should be in ps_shader_resources[1]).
                           if (NGX::DLSS::Draw(native_device_context, dlss_output_color.get(), source_color.get(), dlss_motion_vectors.get(), depth_buffer.get(), dlss_exposure.get(), dlss_pre_exposure, projection_jitters.x, projection_jitters.y, reset_dlss, render_width_dlss, render_height_dlss)) {
-#if !DLSS_TARGET_TEXTURE_WAS_UAV
-                              // DX11 doesn't need barriers
-                              native_device_context->CopyResource(output_color.get(), dlss_output_color.get());
-#endif
+                              if (!dlss_output_supports_uav) {
+                                  native_device_context->CopyResource(output_color.get(), dlss_output_color.get()); // DX11 doesn't need barriers
+                              }
 
 #if DLSS_UPSCALE_LENS_EFFECTS && 0 // We already do this above now
                               // Immediately force the viewport to the output resolution in case CryEngine didn't set it again before the next call
@@ -2735,6 +2707,10 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                               ID3D11RenderTargetView* const render_target_view_const = render_target_view.get();
                               native_device_context->OMSetRenderTargets(1, &render_target_view_const, depth_stencil_view.get());
                           }
+                      }
+                      // In this case it's not our buisness to keep alive this "external" texture
+                      if (dlss_output_supports_uav) {
+                          dlss_output_color = nullptr;
                       }
                   }
                   break;
