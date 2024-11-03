@@ -63,6 +63,24 @@ namespace Hooks
 			dku::Hook::WriteImm(address + 0xAB7, format16f);  // $SceneTargetR11G11B10F_0
 			dku::Hook::WriteImm(address + 0xB52, format16f);  // $SceneTargetR11G11B10F_1
 		}
+
+		{
+			// CDeferredShading::CreateDeferredMaps
+			const auto address = Offsets::baseAddress + 0xF08200;
+
+			dku::Hook::WriteImm(address + 0xD0, format16f);  // SceneNormalsMap
+			dku::Hook::WriteImm(address + 0x1DC, format16f);  // SceneDiffuse
+			dku::Hook::WriteImm(address + 0x229, format16f);  // SceneSpecular
+		}
+
+		{
+			// CTexture::LoadDefaultSystemTextures
+			const auto address = Offsets::baseAddress + 0x100DA30;
+
+			dku::Hook::WriteImm(address + 0x1B61, format16f);  // SceneNormalsMap
+			dku::Hook::WriteImm(address + 0x1BDC, format16f);  // SceneDiffuse
+			dku::Hook::WriteImm(address + 0x1C0F, format16f);  // SceneSpecular
+		}
 	}
 
 	void Hooks::Hook()
