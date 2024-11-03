@@ -387,7 +387,7 @@ namespace Hooks
 		Offsets::pCD3D9Renderer->m_devInfo.m_pSwapChain->QueryInterface(__uuidof(IDXGISwapChain3), reinterpret_cast<void**>(&swapChain3));
 
 		DXGI_COLOR_SPACE_TYPE colorSpace;
-		if (format == RE::ETEX_Format::eTF_R10G10B10A2) {
+		if (format == RE::ETEX_Format::eTF_R10G10B10A2) { // This format could be SDR too, but let's assume HDR10
 			colorSpace = DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;
 		} else {
 			colorSpace = DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;
@@ -399,13 +399,18 @@ namespace Hooks
 		_Hook_OnD3D11PostCreateDevice();
 	}
 
-	// Despite the name, this is called just once on startup, and then again when changing resolution
-	bool Hooks::Hook_CreateRenderTarget(const char* a_szTexName, RE::CTexture*& a_pTex, int a_iWidth, int a_iHeight, void* a_cClear, bool a_bUseAlpha, bool a_bMipMaps, RE::ETEX_Format a_eTF, int a_nCustomID, int a_nFlags)
+	// Despite the name, due to our specific hook, this is called just once on startup, and then again when changing resolution
+	bool Hooks::Hook_CreateRenderTarget(const char* a_szTexName, RE::CTexture*& a_pTex, int a_iWidth, int a_iHeight, void* a_cClear, bool a_bUseAlpha, bool a_bMipMaps, RE::ETEX_Format a_eTF, int a_nCustomID, /*RE::ETextureFlags*/ int a_nFlags)
 	{
 		bool bReturn = _Hook_CreateRenderTarget(a_szTexName, a_pTex, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, a_eTF, a_nCustomID, a_nFlags);
 
 #if ADD_NEW_RENDER_TARGETS
-		// add ours
+		// These are expected to have the following flags: FT_DONT_RELEASE, FT_DONT_STREAM, FT_USAGE_RENDERTARGET.
+		// These other flags might or might not be present, it would probably not make a difference: FT_USAGE_ALLOWREADSRGB, FT_STATE_CLAMP, FT_USAGE_MSAA.
+		// "bUseAlpha" is seemengly ignored. "bMipMaps" is expected to be false.
+#if SUPPORT_MSAA
+		a_nFlags |= RE::ETextureFlags::FT_USAGE_MSAA;
+#endif
 		_Hook_CreateRenderTarget("$TonemapTarget", ptexTonemapTarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, a_nFlags);
 		_Hook_CreateRenderTarget("$PostAATarget", ptexPostAATarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, a_nFlags);
 		_Hook_CreateRenderTarget("$UpscaleTarget", ptexUpscaleTarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, a_nFlags);
@@ -414,13 +419,15 @@ namespace Hooks
 		return bReturn;
 	}
 
-	// Despite the name, this is called just once on startup, and then again when changing resolution
-	RE::CTexture* Hooks::Hook_CreateTextureObject(const char* a_name, uint32_t a_nWidth, uint32_t a_nHeight, int a_nDepth, RE::ETEX_Type a_eTT, uint32_t a_nFlags, RE::ETEX_Format a_eTF, int a_nCustomID, uint8_t a9)
+	// Despite the name, due to our specific hook, this is called just once on startup, and then again when changing resolution
+	RE::CTexture* Hooks::Hook_CreateTextureObject(const char* a_name, uint32_t a_nWidth, uint32_t a_nHeight, int a_nDepth, RE::ETEX_Type a_eTT, /*RE::ETextureFlags*/ uint32_t a_nFlags, RE::ETEX_Format a_eTF, int a_nCustomID, uint8_t a9)
 	{
 		RE::CTexture* pTex = _Hook_CreateTextureObject(a_name, a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, a_eTF, a_nCustomID, a9);
 
 #if ADD_NEW_RENDER_TARGETS
-		// add ours
+#if SUPPORT_MSAA
+		a_nFlags |= RE::ETextureFlags::FT_USAGE_MSAA;
+#endif
 		ptexTonemapTarget = _Hook_CreateTextureObject("$TonemapTarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, format, -1, a9);
 		ptexPostAATarget = _Hook_CreateTextureObject("$PostAATarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, format, -1, a9);
 		ptexUpscaleTarget = _Hook_CreateTextureObject("$UpscaleTarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, format, -1, a9);

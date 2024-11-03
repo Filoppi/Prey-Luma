@@ -10,12 +10,15 @@
 // - If we only upgraded the necessary textures (the ones we can without the issue mentioned above), then the tonemapper would be clipped to SDR because it re-uses (e.g.) the normal map texture that is UNORM8
 #define ADD_NEW_RENDER_TARGETS 1
 
-// Not necessary anymore
+// Attempted code to keep the native support for MSAA. CryEngine had it but it's unclear how stable it was in Prey (it's not officially exposed to the user, it can just be forced on through configs)
+#define SUPPORT_MSAA 0
+
+// Not necessary anymore, we directly intercept them through cbuffer writes
 #define INJECT_TAA_JITTERS 0
 
 namespace Hooks
 {
-	constexpr RE::ETEX_Format format = RE::ETEX_Format::eTF_R16G16B16A16F;
+	constexpr RE::ETEX_Format format = RE::ETEX_Format::eTF_R16G16B16A16F; // Generic upgrade format (we could also opt for HDR10 format here)
 	constexpr RE::ETEX_Format format16f = RE::ETEX_Format::eTF_R16G16B16A16F;
 
 	class Patches
@@ -31,8 +34,8 @@ namespace Hooks
 	private:
 		static void          Hook_FlashRenderInternal(RE::CD3D9Renderer* a_this, void* pPlayer, bool bStereo, bool bDoRealRender);
 		static void          Hook_OnD3D11PostCreateDevice();
-		static bool          Hook_CreateRenderTarget(const char* a_szTexName, RE::CTexture*& a_pTex, int a_iWidth, int a_iHeight, void* a_cClear, bool a_bUseAlpha, bool a_bMipMaps, RE::ETEX_Format a_eTF, int a_nCustomID, int a_nFlags);
-		static RE::CTexture* Hook_CreateTextureObject(const char* a_name, uint32_t a_nWidth, uint32_t a_nHeight, int a_nDepth, RE::ETEX_Type a_eTT, uint32_t a_nFlags, RE::ETEX_Format a_eTF, int a_nCustomID, uint8_t a9);
+		static bool          Hook_CreateRenderTarget(const char* a_szTexName, RE::CTexture*& a_pTex, int a_iWidth, int a_iHeight, void* a_cClear, bool a_bUseAlpha, bool a_bMipMaps, RE::ETEX_Format a_eTF, int a_nCustomID = -1, /*RE::ETextureFlags*/ int a_nFlags = 0);
+		static RE::CTexture* Hook_CreateTextureObject(const char* a_name, uint32_t a_nWidth, uint32_t a_nHeight, int a_nDepth, RE::ETEX_Type a_eTT, /*RE::ETextureFlags*/ uint32_t a_nFlags, RE::ETEX_Format a_eTF, int a_nCustomID /*= -1*/, uint8_t a9);
 #if INJECT_TAA_JITTERS
 		static void          Hook_UpdateBuffer(RE::CConstantBuffer* a_this, void* a_src, size_t a_size, uint32_t a_numDataBlocks);
 #endif
