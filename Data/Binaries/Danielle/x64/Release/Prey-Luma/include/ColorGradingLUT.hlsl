@@ -611,6 +611,8 @@ float3 SampleLUT(LUT_TEXTURE_TYPE lut, SamplerState samplerState, float3 encoded
 #pragma warning( default : 4000 )
 }
 
+//TODOFT: store the acceleration around the lut's last texel in the alpha channel?
+
 // LUT sample that allows to go beyond the 0-1 coordinates range through extrapolation.
 // It finds the rate of change (acceleration) of the LUT color around the requested clamped coordinates, and guesses what color the sampling would have with the out of range coordinates.
 // Extrapolating LUT by re-apply the rate of change has the benefit of consistency. If the LUT has the same color at (e.g.) uv 0.9 0.9 0.9 and 1.0 1.0 1.0, thus clipping to white (or black) earlier, the extrapolation will also stay clipped, preserving the artistic intention.

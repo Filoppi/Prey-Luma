@@ -4,6 +4,7 @@ The native plugin has the purpose of hooking into the engine code and swapping t
 The ReShade addon has the purpose of adding behaviour by hooking to their DirectX functions, these include: replacing shaders (with versions that add HDR post processing support), change the resolution and quality of effects, add new passes (e.g. DLSS/GTAO), improve anisotropic filtering, ...
 ReShade per se isn't necessarily needed by Luma, we could hook to the DirectX functions ourselves, but it makes things easier and natively adds ImGUI and serialization features (plus it's widely compatible).
 Sorry for the quality of the code not being great (the code itself should be good, but it's almost all dumped in a single file), the focus has been on getting things to work.
+There's some warnings in the DKUtil code, we haven't fixed them as they seem harmless.
 
 Development requirements:
 Windows 11 (Windows 10 probably works fine too)
