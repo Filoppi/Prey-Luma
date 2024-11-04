@@ -6,12 +6,16 @@
 #include "RE.h"
 
 // Replacing (splitting up) some RTs is necessary otherwise:
-// - If we upgraded all UNORM8 textures to FP16, some texture copies done through the ID3D11DeviceContext::CopyResource() function would fail as they have mismatching formats
-// - If we only upgraded the necessary textures (the ones we can without the issue mentioned above), then the tonemapper would be clipped to SDR because it re-uses (e.g.) the normal map texture that is UNORM8
+// - If we upgraded all UNORM8 textures to FP16 (like RenoDX does), some texture copies done through the ID3D11DeviceContext::CopyResource() function would fail as they have mismatching formats, plus there's a multitude of other unknown visual issues
+// - If we only upgraded the necessary textures (the ones we can without the issue mentioned above), then the tonemapper would be clipped to SDR because it re-uses (e.g.) the normal map texture that is UNORM8, which wouldn't be upgraded (if it is, that also causes issues)
 #define ADD_NEW_RENDER_TARGETS 1
 
 // Attempted code to keep the native support for MSAA. CryEngine had it but it's unclear how stable it was in Prey (it's not officially exposed to the user, it can just be forced on through configs)
 #define SUPPORT_MSAA 0
+
+// DLSS usually replaces the TAA pass ("PostAA") and writes to its render target, so that's what we are aiming to allow as UAV (which benefits performance by avoid two texture copies),
+// but if we ever wanted DLSS to replace SMAA instead, we could also force its RT to be a UAV.
+#define FORCE_DLSS_SMAA_UAV 0
 
 // Not necessary anymore, we directly intercept them through cbuffer writes
 #define INJECT_TAA_JITTERS 0

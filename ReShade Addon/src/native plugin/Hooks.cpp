@@ -64,11 +64,12 @@ namespace Hooks
 			dku::Hook::WriteImm(address + 0xB52, format16f);  // $SceneTargetR11G11B10F_1
 		}
 
+#if !ADD_NEW_RENDER_TARGETS && 0 // Force upgrade all the texture we'd replace later too (this leads to issues, like some objects having purple reflections etc)
 		{
 			// CDeferredShading::CreateDeferredMaps
 			const auto address = Offsets::baseAddress + 0xF08200;
 
-			dku::Hook::WriteImm(address + 0xD0, format16f);  // SceneNormalsMap
+			dku::Hook::WriteImm(address + 0xD0, format16f);   // SceneNormalsMap
 			dku::Hook::WriteImm(address + 0x1DC, format16f);  // SceneDiffuse
 			dku::Hook::WriteImm(address + 0x229, format16f);  // SceneSpecular
 		}
@@ -81,6 +82,7 @@ namespace Hooks
 			dku::Hook::WriteImm(address + 0x1BDC, format16f);  // SceneDiffuse
 			dku::Hook::WriteImm(address + 0x1C0F, format16f);  // SceneSpecular
 		}
+#endif
 	}
 
 	void Hooks::Hook()
@@ -135,7 +137,7 @@ namespace Hooks
 #if ADD_NEW_RENDER_TARGETS
 		// Replace with our new RTs
 		{
-			// use TonemapTarget as target for tonemapper
+			// use TonemapTarget as target for tonemapper (instead of SceneDiffuse?)
 			{
 				struct Patch : Xbyak::CodeGenerator
 				{
@@ -429,8 +431,12 @@ namespace Hooks
 #if SUPPORT_MSAA
 		a_nFlags |= RE::ETextureFlags::FT_USAGE_MSAA;
 #endif
+		auto nPostAAFlags = a_nFlags;
+#if FORCE_DLSS_SMAA_UAV
+		nPostAAFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS | RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
+#endif
 		_Hook_CreateRenderTarget("$TonemapTarget", ptexTonemapTarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, a_nFlags);
-		_Hook_CreateRenderTarget("$PostAATarget", ptexPostAATarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, a_nFlags);
+		_Hook_CreateRenderTarget("$PostAATarget", ptexPostAATarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, nPostAAFlags);
 		_Hook_CreateRenderTarget("$UpscaleTarget", ptexUpscaleTarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, a_nFlags);
 #endif
 
@@ -446,8 +452,12 @@ namespace Hooks
 #if SUPPORT_MSAA
 		a_nFlags |= RE::ETextureFlags::FT_USAGE_MSAA;
 #endif
+		auto nPostAAFlags = a_nFlags;
+#if FORCE_DLSS_SMAA_UAV
+		nPostAAFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS | RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
+#endif
 		ptexTonemapTarget = _Hook_CreateTextureObject("$TonemapTarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, format, -1, a9);
-		ptexPostAATarget = _Hook_CreateTextureObject("$PostAATarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, format, -1, a9);
+		ptexPostAATarget = _Hook_CreateTextureObject("$PostAATarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, nPostAAFlags, format, -1, a9);
 		ptexUpscaleTarget = _Hook_CreateTextureObject("$UpscaleTarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, format, -1, a9);
 #endif
 

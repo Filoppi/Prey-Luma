@@ -39,9 +39,11 @@ namespace NativePlugin
 
 	void Init(const char* name, uint32_t version)
 	{
+#ifndef NDEBUG
+        // It's unclear what happens if we don't initialize this, but it seems fine
 		dku::Logger::Init(name, std::to_string(version));
+#endif
 
-		// do stuff
 		AllocTrampoline(1 << 9); // Set the size big enough so that it works
 
 		Offsets::Init();

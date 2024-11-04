@@ -2220,11 +2220,14 @@ void OnPresent(
 //TODOFT5: DICE inverse
 //TODOFT5: remove native DLL dependency and just rely on RenoDX? If so, make sure that our CopyTexture() func works!
 //TODOFT5: finish SDR output. test gamma sRGB mode?
-//TODOFT5: comment "HandlePreDraw"?
 //TODOFT5: Add "UpdateSubresource" to check whether they map buffers with that?
 //TODOFT5: merge all the shader permutations that use the same code
 //TODOFT5: move project files out of the "build" folder? and the "ReShade Addon" folder?
+//TODOFT5: add UAV to DLSS!!!
 
+// Return false to prevent the original draw call from running (e.g. if you replaced it or just want to skip it)
+// Prey always seemengly draws in direct mode. There's a few compute shaders but most passes are classic pixel shaders.
+// If we ever wanted to still run the game's original draw call (first) and then ours (second), we'd need to pass more arguments in this function (to replicate the draw call identically).
 bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = false) {
   const auto* device = cmd_list->get_device();
   auto device_api = device->get_api();
