@@ -1,0 +1,88 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="..\src\main.cpp" />
+    <ClCompile Include="..\src\dlss\DLSS.cpp">
+      <Filter>DLSS</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\native plugin\RE.cpp">
+      <Filter>Native Plugin</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\native plugin\Hooks.cpp">
+      <Filter>Native Plugin</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\native plugin\NativePlugin.cpp">
+      <Filter>Native Plugin</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="DLSS">
+      <UniqueIdentifier>{7ec0fec7-1c94-4182-87e0-653e1c01082e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Utils">
+      <UniqueIdentifier>{b8e435d6-17be-4021-a8aa-c11c6ceb044c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Includes">
+      <UniqueIdentifier>{b448b214-cbb5-4ee4-a88f-4dae17079dfc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Native Plugin">
+      <UniqueIdentifier>{e9979c45-0853-4f5a-9047-7ae0b1cd7704}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Native Plugin\Includes">
+      <UniqueIdentifier>{982235a3-1083-4957-aac1-25df5311adb8}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\src\dlss\DLSS.h">
+      <Filter>DLSS</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\utils\pipeline.hpp">
+      <Filter>Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\utils\shader_compiler.hpp">
+      <Filter>Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\utils\display.hpp">
+      <Filter>Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\utils\format.hpp">
+      <Filter>Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\includes\cbuffers.h">
+      <Filter>Includes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\includes\math.h">
+      <Filter>Includes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\includes\matrix.h">
+      <Filter>Includes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\includes\shader_define.h">
+      <Filter>Includes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\native plugin\Hooks.h">
+      <Filter>Native Plugin</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\native plugin\RE.h">
+      <Filter>Native Plugin</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\native plugin\Offsets.h">
+      <Filter>Native Plugin</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\native plugin\NativePlugin.h">
+      <Filter>Native Plugin</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\includes\globals.h">
+      <Filter>Includes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\native plugin\includes\SharedBegin.h">
+      <Filter>Native Plugin\Includes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\native plugin\includes\SharedEnd.h">
+      <Filter>Native Plugin\Includes</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="vcpkg.json" />
+  </ItemGroup>
+</Project>
