@@ -425,7 +425,7 @@ std::vector<ShaderDefineData> shader_defines_data = {
   {"ENABLE_POST_PROCESS", '1', false, false, "Allows you to disable all post processing (at once)"},
   {"ENABLE_CAMERA_MOTION_BLUR", '0', false, false, "Camera Motion Blur can look pretty botched in Prey, and can mess with DLSS/TAA, it's turned off by default in Luma"},
   {"ENABLE_COLOR_GRADING_LUT", '1', false, false, "Allows you to disable color grading\nDon't disable it unless you know what you are doing"},
-#if DEVELOPMENT || TEST //TODOFT: Disabled for final users for now because these require the "DEVELOPMENT" flag
+#if DEVELOPMENT || TEST //TODOFT: Disabled for final users for now because these require the "DEVELOPMENT" flag to be used atm
   {"ENABLE_SHARPENING", '1', false, false, "Allows you to disable sharpening\nDisabling it is not suggested, especially if you use TAA"},
   {"ENABLE_VIGNETTE", '1', false, false, "Allows you to disable vignette\nIt's not that prominent in Prey, it's only used in certain cases to convey gameplay information,\nso don't disable it unless you know what you are doing"},
   {"ENABLE_FILM_GRAIN", '1', false, false, "Allows you to disable color grading\nIt's not that prominent in Prey, it's only used in certain cases to convey gameplay information,\nso don't disable it unless you know what you are doing"},
@@ -1608,7 +1608,7 @@ void OnInitSwapchain(reshade::api::swapchain* swapchain) {
   if (SUCCEEDED(hr)) {
       output_resolution.x = swapchain_desc.BufferDesc.Width;
       output_resolution.y = swapchain_desc.BufferDesc.Height;
-      //ASSERT_ONCE(output_resolution.x != output_resolution.y); // Square resolutions are NOT supported on the swapchain by Luma, as we use that information to identify if some passes are shadow map projections (separate views) //TODOFT: delete? we aren't relying on this anymore
+      //ASSERT_ONCE(output_resolution.x != output_resolution.y); // Square resolutions are NOT supported on the swapchain by Luma, as we use that information to identify if some passes are shadow map projections (separate views) //TODOFT: delete? we aren't relying on this assumption anymore
       render_resolution.x = output_resolution.x;
       render_resolution.y = output_resolution.y;
   }
@@ -1877,18 +1877,15 @@ void OnBindPipeline(
     reshade::api::pipeline pipeline) {
   const std::lock_guard<std::recursive_mutex> lock(s_mutex_generic);
 
-  if ((stages & reshade::api::pipeline_stage::compute_shader) != 0)
-  {
+  if ((stages & reshade::api::pipeline_stage::compute_shader) != 0) {
       ASSERT_ONCE(stages == reshade::api::pipeline_stage::compute_shader || stages == reshade::api::pipeline_stage::all); // Make sure only one stage happens at a time
       pipeline_state_original_compute_shader = pipeline;
   }
-  if ((stages & reshade::api::pipeline_stage::vertex_shader) != 0)
-  {
+  if ((stages & reshade::api::pipeline_stage::vertex_shader) != 0) {
       ASSERT_ONCE(stages == reshade::api::pipeline_stage::vertex_shader || stages == reshade::api::pipeline_stage::all); // Make sure only one stage happens at a time
       pipeline_state_original_vertex_shader = pipeline;
   }
-  if ((stages & reshade::api::pipeline_stage::pixel_shader) != 0)
-  {
+  if ((stages & reshade::api::pipeline_stage::pixel_shader) != 0) {
       ASSERT_ONCE(stages == reshade::api::pipeline_stage::pixel_shader || stages == reshade::api::pipeline_stage::all); // Make sure only one stage happens at a time
       pipeline_state_original_pixel_shader = pipeline;
   }
@@ -2212,18 +2209,17 @@ void OnPresent(
 #endif // NGX
 }
 
-//TODOFT5: expose DLSS res range multipliers here or to game config
+//TODOFT5: expose DLSS res range multipliers here or to game config (???)
 //TODOFT5: DLSS pre-exposure (duplicate?)
 //TODOFT5: "_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR"?
 //TODOFT5: fix cpp file formatting in general (and make sure it's all thread safe, but it should be) (remove clang.tidy files?)
-//TODOFT5: Do LUTs extrapolation in Log2
-//TODOFT5: DICE inverse
 //TODOFT5: remove native DLL dependency and just rely on RenoDX? If so, make sure that our CopyTexture() func works!
 //TODOFT5: finish SDR output. test gamma sRGB mode?
 //TODOFT5: Add "UpdateSubresource" to check whether they map buffers with that?
 //TODOFT5: merge all the shader permutations that use the same code
-//TODOFT5: move project files out of the "build" folder? and the "ReShade Addon" folder?
-//TODOFT5: add UAV to DLSS!!!
+//TODOFT5: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project?
+//TODOFT5: add UAV flag to DLSS output texture for faster performance!!!
+//TODOFT5: keep SDR at 203 nits and then scale it back to 80 nits at the end? So that TM runs consistently
 
 // Return false to prevent the original draw call from running (e.g. if you replaced it or just want to skip it)
 // Prey always seemengly draws in direct mode. There's a few compute shaders but most passes are classic pixel shaders.
@@ -2275,8 +2271,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
       }
   }
   else {
-      if (pipeline_state_original_vertex_shader.handle != 0)
-      {
+      if (pipeline_state_original_vertex_shader.handle != 0) {
           const auto pipeline_pair = pipeline_cache_by_pipeline_handle.find(pipeline_state_original_vertex_shader.handle);
           if (pipeline_pair != pipeline_cache_by_pipeline_handle.end() && pipeline_pair->second != nullptr) {
               original_shader_hashes = pipeline_pair->second->shader_hashes;
@@ -2284,8 +2279,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
               stages = reshade::api::shader_stage::vertex;
           }
       }
-      if (pipeline_state_original_pixel_shader.handle != 0)
-      {
+      if (pipeline_state_original_pixel_shader.handle != 0) {
           const auto pipeline_pair = pipeline_cache_by_pipeline_handle.find(pipeline_state_original_pixel_shader.handle);
           if (pipeline_pair != pipeline_cache_by_pipeline_handle.end() && pipeline_pair->second != nullptr) {
               original_shader_hashes.insert(original_shader_hashes.end(), pipeline_pair->second->shader_hashes.begin(), pipeline_pair->second->shader_hashes.end());
@@ -2340,8 +2334,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
 //Could it be that we get a swapchain resize event too late and thus our output resolution isn't updated quick enough? (not it can't be because the output res is ... unchanged with DRS).
 //We should probably find a moment where we absolutely stop taking in new cbuffer 13 values, one fixed point in the pipeline (e.g. blur?, AO?, scene composion? ...).
 #if DEVELOPMENT && 0 // We are setting the viewport below now, no need to verify it was already right
-  if (has_drawn_dlss_sr && !has_drawn_upscaling /*&& !is_drawing_lens_optics*/)
-  {
+  if (has_drawn_dlss_sr && !has_drawn_upscaling /*&& !is_drawing_lens_optics*/) {
       D3D11_VIEWPORT viewports[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
       UINT viewports_num = 1;
       native_device_context->RSGetViewports(&viewports_num, nullptr);
@@ -2355,8 +2348,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
 
   if (!original_shader_hashes.empty()) {
 
-      if (!has_drawn_composed_gbuffers)
-      {
+      if (!has_drawn_composed_gbuffers) {
           for (auto shader_hash : shader_hashes_TiledShadingTiledDeferredShading) {
               if (std::find(original_shader_hashes.begin(), original_shader_hashes.end(), shader_hash) != original_shader_hashes.end()) {
                   has_drawn_composed_gbuffers = true;
@@ -2364,8 +2356,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
               }
           }
       }
-      if (!has_drawn_tonemapping)
-      {
+      if (!has_drawn_tonemapping) {
           for (auto shader_hash : shader_hashes_HDRPostProcessHDRFinalScene) {
               if (std::find(original_shader_hashes.begin(), original_shader_hashes.end(), shader_hash) != original_shader_hashes.end()) {
                   has_drawn_tonemapping = true;
@@ -2374,8 +2365,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
           }
       }
       // Note: this doesn't always run, it's based on a user setting!
-      if (!has_drawn_motion_blur)
-      {
+      if (!has_drawn_motion_blur) {
           for (auto shader_hash : shader_hashes_MotionBlur) {
               if (std::find(original_shader_hashes.begin(), original_shader_hashes.end(), shader_hash) != original_shader_hashes.end()) {
                   has_drawn_motion_blur = true;
@@ -2383,8 +2373,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
               }
           }
       }
-      if (!has_drawn_main_post_processing)
-      {
+      if (!has_drawn_main_post_processing) {
           //TODO LUMA: optimize these shader searches by simply marking "CachedPipeline" with a tag on what they are (and whether they have a particular role) (also we can restrict the search to pixel shaders)
           // This is the last known pass that is guaranteed to run before UI draws in
           for (auto shader_hash : shader_hashes_PostAAComposites) {
@@ -2399,8 +2388,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
               }
           }
       }
-      if (!has_drawn_upscaling)
-      {
+      if (!has_drawn_upscaling) {
            if (std::find(original_shader_hashes.begin(), original_shader_hashes.end(), shader_hash_PostAAUpscaleImage) != original_shader_hashes.end()) {
                has_drawn_upscaling = true;
                assert(has_drawn_main_post_processing && prey_drs_active);
@@ -2409,8 +2397,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
            //TODOFT: new (unified) implementation of "DLSS_UPSCALE_LENS_EFFECTS"
            // Between DLSS SR and upscaling, force the viewport to the full render target resolution at all times, because we upscaled early.
            // Usually this matches the swapchain output resolution, but some lens optics passes actually draw on textures with a different resolution (independently of the game render/output res).
-           if (has_drawn_dlss_sr && !has_drawn_upscaling && prey_drs_active)
-           {
+           if (has_drawn_dlss_sr && !has_drawn_upscaling && prey_drs_active) {
                com_ptr<ID3D11RenderTargetView> render_target_view;
                native_device_context->OMGetRenderTargets(1, &render_target_view, nullptr);
 
@@ -2433,12 +2420,10 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                // We need to make sure that all the draw calls after DLSS upscaling run at full resolution and not rendering resolution.
                com_ptr<ID3D11RasterizerState> state;
                native_device_context->RSGetState(&state);
-               if (state.get())
-               {
+               if (state.get()) {
                    D3D11_RASTERIZER_DESC state_desc;
                    state->GetDesc(&state_desc);
-                   if (state_desc.ScissorEnable)
-                   {
+                   if (state_desc.ScissorEnable) {
                        D3D11_RECT scissor_rects[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
                        UINT scissor_rects_num = 1;
                        // This will get the number of scissor rects used
@@ -2457,8 +2442,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                native_device_context->RSGetViewports(&viewports_num, nullptr);
                ASSERT_ONCE(viewports_num == 1); // Possibly innocuous as long as it's > 0, but we should only ever have one viewport and one RT!
                native_device_context->RSGetViewports(&viewports_num, &viewports[0]);
-               for (uint32_t i = 0; i < viewports_num; i++)
-               {
+               for (uint32_t i = 0; i < viewports_num; i++) {
                    viewports[i].Width = render_target_texture_2d_desc.Width;
                    viewports[i].Height = render_target_texture_2d_desc.Height;
                }
@@ -2470,23 +2454,23 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
       // Don't even try to run DLSS if we have no custom shaders loaded, we need them for DLSS to work properly (it might somewhat work even without them, but it's untested and unneeded)
       if (is_custom_pass && dlss_sr && cloned_pipeline_count != 0) {
           //TODOFT (TODO LUMA): make sure DLSS lets scRGB colors pass through, or move this before tonemap/blur (after exposure)...
-          //TODOFT: add sharpening if we did DLSS? It's already in! Do RCAS?
-          //TODOFT: skip SMAA edge detection and edge AA passes, or just disable SMAA in menu
-          //TODOFT: skip the texture copy into ps_shader_resources[1] after TAA if DLSS is running? It's not really necessary AFAIK (though it might be used by other things in the game, it's not clear, but likely not...)
-          //TODOFT: add DLSS transparency mask (e.g. glass, decals, emissive) by caching the g-buffers before and after this stuff draws near the end?
-          //TODOFT: add DLSS bias mask (to ignore animated textures) by marking up some shaders(materials)/textures hashes with it?
-          //TODOFT1: force preset E even with DLAA? Nah, F looks better it seems? Right now preset F is used for DRS (or is it?)!! (try C instead of F in that case though!). Or simply expose it to users, or at least try it for dev settings.
+          //TODOFT: add sharpening if we did DLSS? It's already natively in! Do RCAS instead?
+          //TODOFT: skip SMAA edge detection and edge AA passes, or just disable SMAA in menu settings (make sure the game defaults to TAA from config)
+          //TODOFT: skip the texture copy into ps_shader_resources[1] after TAA if DLSS is running? (it's a separate pass triggered by the game) It's not really necessary AFAIK (though it might be used by other things in the game, it's not clear, but likely not...)
           
+          //TODO LUMA: add DLSS transparency mask (e.g. glass, decals, emissive) by caching the g-buffers before and after transparent stuff draws near the end?
+          //TODO LUMA: add DLSS bias mask (to ignore animated textures) by marking up some shaders(materials)/textures hashes with it?
+          //TODO LUMA: force preset E even with DLAA? Nah, F looks better it seems? Right now preset F is used for DRS (or is it?)!! We could try C instead of F in that case though! Or simply expose it to users, or at least try it for dev settings.
           //TODO LUMA: move DLSS before tonemapping, depth of field, bloom and blur. It wouldn't be easy because exposure is calculated after blur in CryEngine,
           //but we could simply fall back on using DLSS Auto Exposure (even if that wouldn't match the actual value used by post processing...).
-          //To achieve that, we need to add both DRS+DLSS scaling support to all shaders that run after DLSS, as DLSS would upscale the image before the final upscale pass.
+          //To achieve that, we need to add both DRS+DLSS scaling support to all shaders that run after DLSS, as DLSS would upscale the image before the final upscale pass (and native TAA would be skipped).
           //Sun shafts and lens optics effects would (actually, could) draw in native resolution after upscaling then.
           //Overall that solution has no downsides other than the difficulty of running multiple passes at a different resolution (which really isn't hard as we already have a set up for it).
           
-          // We do DLSS after some post processing (e.g. exposure, tonemap, color grading, bloom, blur, objects highlight, other possible AA forms, etc) because running it before post processing
+          // We do DLSS after some post processing (e.g. exposure, tonemap, color grading, bloom, blur, objects highlight, sun shafts, other possible AA forms, etc) because running it before post processing
           // would be harder (we'd need to collect more textures manually and manually skip all later AA steps), most importantly, that wouldn't work with the native dynamic resolution the game supports (without changing every single
           // texture sample coordinates in post processing). Even if it's after pp, it should still have enough quality.
-          // We replace the "TAA"/"SMAA 2TX" pass (whichever of the ones in our list is run), ignoring whatever it would have done (the secondary texture it allocated is kept alive, even if we don't use it, we couldn't really destroy it from ReShade),
+          // We replace the "TAA"/"SMAA 2TX" pass (whichever of the ones in our supported passes list is run), ignoring whatever it would have done (the secondary texture it allocated is kept alive, even if we don't use it, we couldn't really destroy it from ReShade),
           // after there's a "composition" pass (film grain, sharpening, ...) and then an optional upscale pass, both of these are too late for DLSS to run.
           for (auto shader_hash : shader_hashes_PostAA) {
               if (std::find(original_shader_hashes.begin(), original_shader_hashes.end(), shader_hash) != original_shader_hashes.end()) {
@@ -2731,15 +2715,14 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
   }
 
   //TODOFT: avoid re-applying these if the data hasn't changed (within the same frame)?
-  if (is_custom_pass)
-  {
+  if (is_custom_pass) {
       SetPreyLumaConstantBuffers(cmd_list, stages, settings_pipeline_layout, LumaConstantBufferType::LumaSettings);
       //TODOFT: only ever send this after DLSS? We don't really need it before (we barely even need it after!)
       SetPreyLumaConstantBuffers(cmd_list, stages, shared_data_pipeline_layout, LumaConstantBufferType::LumaData);
   }
 
 #if !DEVELOPMENT //TODOFT: re-enable once we are sure we replaced all the post tonemap shaders and we are done debugging the blend states (and remove "is_custom_pass" check from below)
-  //TODOFT: disable UI draw cbuffer call from c++ if game is rendering to gamma
+  //TODOFT: disable UI draw cbuffer call from c++ if game is rendering to gamma?
   if (!is_custom_pass) return false;
 #else // We can't do any further checks in this case because some UI draws at the beginning of the frame (in world computers), and also sometimes the scene doesn't even draw!
   //if (!has_drawn_composed_gbuffers) return false;
@@ -2873,21 +2856,18 @@ bool OnDrawOrDispatchIndirect(
 }
 
 // TODO: use the native ReShade sampler desc instead? It's not really necessary
-com_ptr<ID3D11SamplerState> CreateCustomSampler(reshade::api::device* device, D3D11_SAMPLER_DESC desc)
-{
+com_ptr<ID3D11SamplerState> CreateCustomSampler(reshade::api::device* device, D3D11_SAMPLER_DESC desc) {
     if (samplers_upgrade_mode <= 0)
         return nullptr;
 
     ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
 
 #if !DEVELOPMENT
-    if (desc.Filter == D3D11_FILTER_ANISOTROPIC || desc.Filter == D3D11_FILTER_COMPARISON_ANISOTROPIC)
-    {
+    if (desc.Filter == D3D11_FILTER_ANISOTROPIC || desc.Filter == D3D11_FILTER_COMPARISON_ANISOTROPIC) {
         desc.MaxAnisotropy = D3D11_REQ_MAXANISOTROPY;
         desc.MipLODBias = std::clamp(desc.MipLODBias + texture_mip_lod_bias_offset, D3D11_MIP_LOD_BIAS_MIN, D3D11_MIP_LOD_BIAS_MAX); // Setting this out of range (~ +/- 16) will make DX11 crash
     }
-    else
-    {
+    else {
         return nullptr;
     }
 #else
@@ -2895,33 +2875,26 @@ com_ptr<ID3D11SamplerState> CreateCustomSampler(reshade::api::device* device, D3
     // Note that this might not fix all cases because there's still "ID3D11DeviceContext::SetResourceMinLOD()" and textures that are blurry for other reasons
     // because they use other types of samplers (unfortunately it seems like some decals use "D3D11_FILTER_MIN_MAG_MIP_LINEAR").
     // Note that the AF on different textures in the game seems is possibly linked with other graphics settings than just AF (maybe textures or objects quality).
-    if (desc.Filter == D3D11_FILTER_ANISOTROPIC || desc.Filter == D3D11_FILTER_COMPARISON_ANISOTROPIC)
-    {
+    if (desc.Filter == D3D11_FILTER_ANISOTROPIC || desc.Filter == D3D11_FILTER_COMPARISON_ANISOTROPIC) {
         // Note: this doesn't seem to affect much
-        if (samplers_upgrade_mode == 1)
-        {
+        if (samplers_upgrade_mode == 1) {
             desc.MaxAnisotropy = min(desc.MaxAnisotropy * 2, D3D11_REQ_MAXANISOTROPY);
         }
-        else if (samplers_upgrade_mode == 2)
-        {
+        else if (samplers_upgrade_mode == 2) {
             desc.MaxAnisotropy = min(desc.MaxAnisotropy * 4, D3D11_REQ_MAXANISOTROPY);
         }
-        else if (samplers_upgrade_mode >= 3)
-        {
+        else if (samplers_upgrade_mode >= 3) {
             desc.MaxAnisotropy = D3D11_REQ_MAXANISOTROPY;
         }
         // Note: this is the main ingredient in making textures less blurry
-        if (samplers_upgrade_mode == 4 && desc.MipLODBias <= 0.f)
-        {
+        if (samplers_upgrade_mode == 4 && desc.MipLODBias <= 0.f) {
             desc.MipLODBias = std::clamp(desc.MipLODBias + texture_mip_lod_bias_offset, D3D11_MIP_LOD_BIAS_MIN, D3D11_MIP_LOD_BIAS_MAX);
         }
-        else if (samplers_upgrade_mode >= 5)
-        {
+        else if (samplers_upgrade_mode >= 5) {
             desc.MipLODBias = std::clamp(texture_mip_lod_bias_offset, D3D11_MIP_LOD_BIAS_MIN, D3D11_MIP_LOD_BIAS_MAX);
         }
         // Note: this never seems to affect anything in Prey
-        if (samplers_upgrade_mode >= 6)
-        {
+        if (samplers_upgrade_mode >= 6) {
             desc.MinLOD = min(desc.MinLOD, 0.f);
         }
     }
@@ -2930,31 +2903,26 @@ com_ptr<ID3D11SamplerState> CreateCustomSampler(reshade::api::device* device, D3
         || (desc.Filter == D3D11_FILTER_MIN_MAG_LINEAR_MIP_POINT && samplers_upgrade_mode_2 >= 3)
         || (desc.Filter == D3D11_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT && samplers_upgrade_mode_2 >= 4)
         || (desc.Filter == D3D11_FILTER_MIN_MAG_MIP_POINT && samplers_upgrade_mode_2 >= 5)
-        || (desc.Filter == D3D11_FILTER_COMPARISON_MIN_MAG_MIP_POINT && samplers_upgrade_mode_2 >= 6))
-    {
+        || (desc.Filter == D3D11_FILTER_COMPARISON_MIN_MAG_MIP_POINT && samplers_upgrade_mode_2 >= 6)) {
 #if 0 //TODOFT4: research. Forced this on to see how it behaves. Doesn't work, it doesn't really help any further with (e.g.) blurry decal textures
         desc.Filter == (desc.ComparisonFunc != D3D11_COMPARISON_NEVER) ? D3D11_FILTER_COMPARISON_ANISOTROPIC : D3D11_FILTER_ANISOTROPIC;
         desc.MaxAnisotropy = D3D11_REQ_MAXANISOTROPY;
 #else
         // Note: this doesn't seem to do anything really, it doesn't help with the occasional blurry texture (probably because all samplers that needed anisotropic already had it set)
-        if (samplers_upgrade_mode >= 7)
-        {
+        if (samplers_upgrade_mode >= 7) {
             desc.Filter == (desc.ComparisonFunc != D3D11_COMPARISON_NEVER && samplers_upgrade_mode == 7) ? D3D11_FILTER_COMPARISON_ANISOTROPIC : D3D11_FILTER_ANISOTROPIC;
             desc.MaxAnisotropy = D3D11_REQ_MAXANISOTROPY;
         }
 #endif
         // Note: changing the lod bias of non anisotropic filters makes reflections (cubemap samples?) a lot more specular (shiny) in Prey, so it's best avoided (it can look better is some screenshots, but it's likely not intended).
         // Even if we only fix up textures that didn't have a positive bias, we run into the same problem.
-        if (samplers_upgrade_mode == 4 && desc.MipLODBias <= 0.f)
-        {
+        if (samplers_upgrade_mode == 4 && desc.MipLODBias <= 0.f) {
             desc.MipLODBias = std::clamp(desc.MipLODBias + texture_mip_lod_bias_offset, D3D11_MIP_LOD_BIAS_MIN, D3D11_MIP_LOD_BIAS_MAX);
         }
-        else if (samplers_upgrade_mode >= 5)
-        {
+        else if (samplers_upgrade_mode >= 5) {
             desc.MipLODBias = std::clamp(texture_mip_lod_bias_offset, D3D11_MIP_LOD_BIAS_MIN, D3D11_MIP_LOD_BIAS_MAX);
         }
-        if (samplers_upgrade_mode >= 6)
-        {
+        if (samplers_upgrade_mode >= 6) {
             desc.MinLOD = min(desc.MinLOD, 0.f);
         }
     }
@@ -2967,8 +2935,7 @@ com_ptr<ID3D11SamplerState> CreateCustomSampler(reshade::api::device* device, D3
 }
 
 #if !REPLACE_SAMPLERS_LIVE //TODOFT4: enable "REPLACE_SAMPLERS_LIVE" and clean old branch up (or integrate with CreateCustomSampler())?
-bool OnCreateSampler(reshade::api::device* device, reshade::api::sampler_desc& desc)
-{
+bool OnCreateSampler(reshade::api::device* device, reshade::api::sampler_desc& desc) {
     // CryEngine only used:
     // D3D11_FILTER_ANISOTROPIC
     // D3D11_FILTER_COMPARISON_ANISOTROPIC
@@ -3012,8 +2979,7 @@ bool OnCreateSampler(reshade::api::device* device, reshade::api::sampler_desc& d
 #endif
 
 #if REPLACE_SAMPLERS_LIVE
-void OnInitSampler(reshade::api::device* device, const reshade::api::sampler_desc& desc, reshade::api::sampler sampler)
-{
+void OnInitSampler(reshade::api::device* device, const reshade::api::sampler_desc& desc, reshade::api::sampler sampler) {
     if (sampler == 0)
         return;
 
@@ -3024,8 +2990,7 @@ void OnInitSampler(reshade::api::device* device, const reshade::api::sampler_des
     custom_sampler_by_original_sampler[sampler.handle][texture_mip_lod_bias_offset] = CreateCustomSampler(device, native_desc);
 }
 
-void OnDestroySampler(reshade::api::device* device, reshade::api::sampler sampler)
-{
+void OnDestroySampler(reshade::api::device* device, reshade::api::sampler sampler) {
     //TODOFT: can this actually be called by a separate thread? probably
     // This only seems to happen when the game shuts down in Prey
     const std::lock_guard<std::recursive_mutex> lock_samplers(s_mutex_samplers);
@@ -3118,8 +3083,7 @@ bool UpdateGlobalCBuffer(void* global_buffer_data_ptr)
     cb_per_view_globals_last_drawn_shader.emplace_back(last_drawn_shader); // The shader hash could we unspecified if we didn't replace the shader
 #endif // DEVELOPMENT
 
-    if (!is_valid_cbuffer)
-    {
+    if (!is_valid_cbuffer) {
         return false;
     }
 
@@ -3147,8 +3111,7 @@ bool UpdateGlobalCBuffer(void* global_buffer_data_ptr)
     // Note: we can check if the matrix is identity to detect whether we are currently in a menu (the main menu?)
     bool is_custom_draw_version = /*!output_resolution_matches ||*/ !mathMatrixIsProjection(global_buffer_data.CV_PrevViewProjMatr.GetTransposed());
 
-    if (is_custom_draw_version)
-    {
+    if (is_custom_draw_version) {
         return false;
     }
 
@@ -3169,8 +3132,7 @@ bool UpdateGlobalCBuffer(void* global_buffer_data_ptr)
     // If in the previous frame we didn't render, we don't replace the matrix with the one from the last frame that was rendered,
     // because there's no guaranteed that it would match.
     // If AA is disabled, or if the current form of AA doesn't used jittered rendering, this doesn't really make a difference (but it's still better because it creates motion vectors based on the previous view matrix).
-    if ((fix_prev_matrix_mode == 1 || fix_prev_matrix_mode == 2) && (prey_taa_jittered || dlss_sr) && !has_drawn_tonemapping && has_drawn_main_post_processing_previous)
-    {
+    if ((fix_prev_matrix_mode == 1 || fix_prev_matrix_mode == 2) && (prey_taa_jittered || dlss_sr) && !has_drawn_tonemapping && has_drawn_main_post_processing_previous) {
         //TODOFT4: investigate whether it's actually good that we are using the previous projection matrix FOV,
         //or should we use the current projection matrix with the previous frame's jitters?
         //Test this by seeing if zooming in and out of with the camera in game causes ghosting.
@@ -3185,32 +3147,28 @@ bool UpdateGlobalCBuffer(void* global_buffer_data_ptr)
         }
     }
 #if DEVELOPMENT
-    else if (fix_prev_matrix_mode == 3 && (prey_taa_jittered || dlss_sr) && !has_drawn_tonemapping && has_drawn_main_post_processing_previous)
-    {
+    else if (fix_prev_matrix_mode == 3 && (prey_taa_jittered || dlss_sr) && !has_drawn_tonemapping && has_drawn_main_post_processing_previous) {
         // Use old jitters with new view matrix (this might match how they calculate MVs based on this matrix)
         cb_per_view_global.CV_PrevViewProjMatr.m02 = previous_projection_matrix.m02;
         cb_per_view_global.CV_PrevViewProjMatr.m12 = previous_projection_matrix.m12;
         cb_per_view_global.CV_PrevViewProjNearestMatr.m02 = previous_nearest_projection_matrix.m02;
         cb_per_view_global.CV_PrevViewProjNearestMatr.m12 = previous_nearest_projection_matrix.m12;
     }
-    else if (fix_prev_matrix_mode == 4 && (prey_taa_jittered || dlss_sr) && !has_drawn_tonemapping && has_drawn_main_post_processing_previous)
-    {
+    else if (fix_prev_matrix_mode == 4 && (prey_taa_jittered || dlss_sr) && !has_drawn_tonemapping && has_drawn_main_post_processing_previous) {
         // Remove jitters (test)
         cb_per_view_global.CV_PrevViewProjMatr.m02 = 0.f;
         cb_per_view_global.CV_PrevViewProjMatr.m12 = 0.f;
         cb_per_view_global.CV_PrevViewProjNearestMatr.m02 = 0.f;
         cb_per_view_global.CV_PrevViewProjNearestMatr.m12 = 0.f;
     }
-    else if (fix_prev_matrix_mode == 5 && (prey_taa_jittered || dlss_sr) && !has_drawn_tonemapping && has_drawn_main_post_processing_previous)
-    {
+    else if (fix_prev_matrix_mode == 5 && (prey_taa_jittered || dlss_sr) && !has_drawn_tonemapping && has_drawn_main_post_processing_previous) {
         // Flip jitters (test)
         cb_per_view_global.CV_PrevViewProjMatr.m02 = -cb_per_view_global.CV_PrevViewProjMatr.m02;
         cb_per_view_global.CV_PrevViewProjMatr.m12 = -cb_per_view_global.CV_PrevViewProjMatr.m12;
         cb_per_view_global.CV_PrevViewProjNearestMatr.m02 = -cb_per_view_global.CV_PrevViewProjNearestMatr.m02;
         cb_per_view_global.CV_PrevViewProjNearestMatr.m12 = -cb_per_view_global.CV_PrevViewProjNearestMatr.m12;
     }
-    else if (fix_prev_matrix_mode == 6 && (prey_taa_jittered || dlss_sr) && !has_drawn_tonemapping && has_drawn_main_post_processing_previous)
-    {
+    else if (fix_prev_matrix_mode == 6 && (prey_taa_jittered || dlss_sr) && !has_drawn_tonemapping && has_drawn_main_post_processing_previous) {
         // Remove half of the new jitters
         cb_per_view_global.CV_PrevViewProjMatr = previous_projection_matrix;
         cb_per_view_global.CV_PrevViewProjNearestMatr = previous_nearest_projection_matrix;
@@ -3219,8 +3177,7 @@ bool UpdateGlobalCBuffer(void* global_buffer_data_ptr)
         cb_per_view_global.CV_PrevViewProjNearestMatr.m02 -= current_nearest_projection_matrix.m02 * 0.5;
         cb_per_view_global.CV_PrevViewProjNearestMatr.m12 -= current_nearest_projection_matrix.m12 * 0.5;
     }
-    else if (fix_prev_matrix_mode == 7 && (prey_taa_jittered || dlss_sr) && !has_drawn_tonemapping && has_drawn_main_post_processing_previous)
-    {
+    else if (fix_prev_matrix_mode == 7 && (prey_taa_jittered || dlss_sr) && !has_drawn_tonemapping && has_drawn_main_post_processing_previous) {
         // Remove new jitters based on (current???) render res (random, but might work...), because the problem with dynamic objects MVs only seem to be when we are using DRS
         cb_per_view_global.CV_PrevViewProjMatr = previous_projection_matrix;
         cb_per_view_global.CV_PrevViewProjNearestMatr = previous_nearest_projection_matrix;
@@ -3229,8 +3186,7 @@ bool UpdateGlobalCBuffer(void* global_buffer_data_ptr)
         cb_per_view_global.CV_PrevViewProjNearestMatr.m02 -= current_nearest_projection_matrix.m02 * (1.0 - cb_per_view_global.CV_HPosScale.x);
         cb_per_view_global.CV_PrevViewProjNearestMatr.m12 -= current_nearest_projection_matrix.m12 * (1.0 - cb_per_view_global.CV_HPosScale.y);
     }
-    else if (fix_prev_matrix_mode == 8 && (prey_taa_jittered || dlss_sr) && !has_drawn_tonemapping && has_drawn_main_post_processing_previous)
-    {
+    else if (fix_prev_matrix_mode == 8 && (prey_taa_jittered || dlss_sr) && !has_drawn_tonemapping && has_drawn_main_post_processing_previous) {
         // ...
         cb_per_view_global.CV_PrevViewProjMatr = previous_projection_matrix;
         cb_per_view_global.CV_PrevViewProjNearestMatr = previous_nearest_projection_matrix;
@@ -3243,8 +3199,7 @@ bool UpdateGlobalCBuffer(void* global_buffer_data_ptr)
 
     // Fix up the rendering scale for all passes after DLSS SR, as we upscaled before the game expected,
     // there's only post processing passes after it anyway (and lens optics shaders don't really read cbuffer 13, but still, some of their passes use custom resolutions).
-    if (has_drawn_dlss_sr && prey_drs_active && !has_drawn_upscaling)
-    {
+    if (has_drawn_dlss_sr && prey_drs_active && !has_drawn_upscaling) {
         cb_per_view_global.CV_ScreenSize.x = cb_output_resolution_x;
         cb_per_view_global.CV_ScreenSize.y = cb_output_resolution_y;
 
@@ -3265,12 +3220,10 @@ bool UpdateGlobalCBuffer(void* global_buffer_data_ptr)
         // After vanilla tonemapping (as soon as AA starts),
         // camera jitters are removed from the cbuffer projection matrices, and the render resolution is also set to 100% (after the upscaling pass),
         // so we want to ignore these cases. We stop at the gbuffer compositions draw, because that's the last know cbuffer 13 to have the perfect values we are looking for (that shader is always run, so it's reliable)!
-        if (output_resolution_matches && (/*!found_per_view_globals ||*/ (!has_drawn_composed_gbuffers && !has_drawn_tonemapping && !has_drawn_main_post_processing)) /*&& !prey_drs_active*/)
-        {
+        if (output_resolution_matches && (/*!found_per_view_globals ||*/ (!has_drawn_composed_gbuffers && !has_drawn_tonemapping && !has_drawn_main_post_processing)) /*&& !prey_drs_active*/) {
 #if DEVELOPMENT
             static float2 previous_render_resolution;
-            if (!found_per_view_globals)
-            {
+            if (!found_per_view_globals) {
                 previous_render_resolution.x = cb_per_view_global.CV_ScreenSize.x;
                 previous_render_resolution.y = cb_per_view_global.CV_ScreenSize.y;
             }
@@ -3291,8 +3244,7 @@ bool UpdateGlobalCBuffer(void* global_buffer_data_ptr)
             assert(!found_per_view_globals || !prey_drs_detected || (AlmostEqual(render_resolution.x, previous_render_resolution.x, 0.25f) && AlmostEqual(render_resolution.y, previous_render_resolution.y, 0.25f)));
 
             // Once we detect the user enabled DRS, we can't ever know it's been disabled because the game only occasionally drops to lower rendering resolutions, so we couldn't know if it was ever disabled
-            if (prey_drs_active)
-            {
+            if (prey_drs_active) {
                 prey_drs_detected = true;
                 // Lower the DLSS quality mode (which might introduce a stutter, or a slight blurring of the image as it resets the history),
                 // but this will make DLSS not use DLAA and instead fall back on a quality mode that allows for a dynamic range of resolutions.
@@ -3322,8 +3274,7 @@ bool UpdateGlobalCBuffer(void* global_buffer_data_ptr)
             // Make sure that once we detect that TAA was active within a frame, then it should never be detected as off in the same frame (it would mean we are reading a bad cbuffer 13 that we should have discarded).
             // Ignore this when we have no shaders loaded as it would always break due to the "has_drawn_tonemapping" check failing.
             ASSERT_ONCE(cloned_pipeline_count == 0 || !found_per_view_globals || !prey_taa_enabled_copy || (prey_taa_enabled_copy == prey_taa_enabled));
-            if (prey_taa_enabled_copy != prey_taa_enabled && has_drawn_main_post_processing_previous) // TAA changed
-            {
+            if (prey_taa_enabled_copy != prey_taa_enabled && has_drawn_main_post_processing_previous) { // TAA changed
                 // Detect if TAA was ever detected as on/off/on or off/on/off over 3 frames, because if that was so, our jitter "length" detection method isn't solid enough and we should do more (or add more tolernace to it),
                 // this might even happen every x hours once the randomization triggers specific enough values, though all TAA modes have a pretty short cycle with fixed jitters,
                 // so it should either happen quickly or never.
@@ -3339,22 +3290,18 @@ bool UpdateGlobalCBuffer(void* global_buffer_data_ptr)
             //so should we bias by -1 again by default when the game uses TAA? It remains to be seen how many samplers they change when enabling TAA, if it's most of them, then we should avoid re-biasing by -1
             //by checking whether any SMAA edge AA shaders are running (the ones before TAA).
             // We do this even when DLSS is not on, in case 
-            if (!custom_texture_mip_lod_bias_offset)
-            {
-                if ((dlss_sr || prey_drs_active) && prey_taa_detected)
-                {
+            if (!custom_texture_mip_lod_bias_offset) {
+                if ((dlss_sr || prey_drs_active) && prey_taa_detected) {
                     texture_mip_lod_bias_offset = std::log2(render_resolution.y / output_resolution.y) - 1.f; // This results in -1 at output res
                 }
-                else
-                {
+                else {
                     texture_mip_lod_bias_offset = -1.f; // Reset to default value
                 }
             }
             //TODOFT: re-create all samplers here once to avoid constant hitches when they are first used later on in the pipeline? It's probably fine
 #endif
 
-            if (!has_drawn_main_post_processing_previous)
-            {
+            if (!has_drawn_main_post_processing_previous) {
                 previous_render_resolution = render_resolution;
                 previous_projection_jitters = projection_jitters;
 
@@ -3435,20 +3382,17 @@ bool UpdateGlobalCBuffer(void* global_buffer_data_ptr)
 #endif // DEVELOPMENT
 
             Matrix44_tpl<double> previous_projection_matrix_native = Matrix44_tpl<double>(previous_projection_matrix.GetTransposed());
-            if (matrix_calculation_mode_2 == 1) // Flip jitters (somehow it works and fixes motion vectors generation, it's not 100% clear why)
-            {
+            if (matrix_calculation_mode_2 == 1) { // Flip jitters (somehow it works and fixes motion vectors generation, it's not 100% clear why)
                 projection_matrix_native.m20 = -projection_matrix_native.m20;
                 projection_matrix_native.m21 = -projection_matrix_native.m21;
                 previous_projection_matrix_native.m20 = -previous_projection_matrix_native.m20;
                 previous_projection_matrix_native.m21 = -previous_projection_matrix_native.m21;
             }
-            else if (matrix_calculation_mode_2 == 2)
-            {
+            else if (matrix_calculation_mode_2 == 2) {
                 projection_matrix_native.m20 = -projection_matrix_native.m20;
                 previous_projection_matrix_native.m20 = -previous_projection_matrix_native.m20;
             }
-            else if (matrix_calculation_mode_2 == 3)
-            {
+            else if (matrix_calculation_mode_2 == 3) {
                 projection_matrix_native.m21 = -projection_matrix_native.m21;
                 previous_projection_matrix_native.m21 = -previous_projection_matrix_native.m21;
             }
@@ -3504,16 +3448,14 @@ void OnPushDescriptors(
             const reshade::api::sampler& sampler = static_cast<const reshade::api::sampler*>(update.descriptors)[i];
             if (custom_sampler_by_original_sampler.contains(sampler.handle))
             {
-                if (!custom_sampler_by_original_sampler[sampler.handle].contains(texture_mip_lod_bias_offset))
-                {
+                if (!custom_sampler_by_original_sampler[sampler.handle].contains(texture_mip_lod_bias_offset)) {
                     ID3D11SamplerState* native_sampler = reinterpret_cast<ID3D11SamplerState*>(sampler.handle);
                     D3D11_SAMPLER_DESC native_desc;
                     native_sampler->GetDesc(&native_desc);
                     custom_sampler_by_original_sampler[sampler.handle][texture_mip_lod_bias_offset] = CreateCustomSampler(device, native_desc);
                 }
                 uint64_t custom_sampler_handle = (uint64_t)(custom_sampler_by_original_sampler[sampler.handle][texture_mip_lod_bias_offset].get());
-                if (custom_sampler_handle != 0)
-                {
+                if (custom_sampler_handle != 0) {
                     reshade::api::sampler& custom_sampler = ((reshade::api::sampler*)(custom_update.descriptors))[i];
                     custom_sampler.handle = custom_sampler_handle;
                     any_modified |= true;
@@ -3659,15 +3601,13 @@ void OnMapBufferRegion(reshade::api::device* device, reshade::api::resource reso
     ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
     ID3D11Buffer* buffer = reinterpret_cast<ID3D11Buffer*>(resource.handle);
     // No need to convert to native DX11 flags
-    if (access == reshade::api::map_access::write_only || access == reshade::api::map_access::write_discard)
-    {
+    if (access == reshade::api::map_access::write_only || access == reshade::api::map_access::write_discard) {
         D3D11_BUFFER_DESC buffer_desc;
         buffer->GetDesc(&buffer_desc);
 
         ASSERT_ONCE(buffer_desc.ByteWidth != sizeof(CBPerViewGlobal));
         // There seems to only ever be one buffer type of this size, but it's not guaranteed... //TODOFT: not true, there's more? Check the map data!
-        if (buffer_desc.ByteWidth == CBPerViewGlobal_buffer_size)
-        {
+        if (buffer_desc.ByteWidth == CBPerViewGlobal_buffer_size) {
             cb_per_view_global_buffer = buffer;
 #if DEVELOPMENT
             if (std::find(cb_per_view_global_buffer_pending_verification.begin(), cb_per_view_global_buffer_pending_verification.end(), buffer) == cb_per_view_global_buffer_pending_verification.end()) {
@@ -3687,14 +3627,12 @@ void OnUnmapBufferRegion(reshade::api::device* device, reshade::api::resource re
     ID3D11Buffer* buffer = reinterpret_cast<ID3D11Buffer*>(resource.handle);
     bool is_global_cbuffer = cb_per_view_global_buffer != nullptr && cb_per_view_global_buffer == buffer;
     ASSERT_ONCE(!cb_per_view_global_buffer_map_data || is_global_cbuffer);
-    if (is_global_cbuffer && cb_per_view_global_buffer_map_data != nullptr)
-    {
+    if (is_global_cbuffer && cb_per_view_global_buffer_map_data != nullptr) {
         // The whole buffer size is theoretically "CBPerViewGlobal_buffer_size" but we actually don't have the data for the excessive (padding) bytes,
         // they are never read by shaders on the GPU anyway.
         char global_buffer_data[CBPerViewGlobal_buffer_size];
         std::memcpy(&global_buffer_data[0], cb_per_view_global_buffer_map_data, CBPerViewGlobal_buffer_size);
-        if (UpdateGlobalCBuffer(&global_buffer_data[0]))
-        {
+        if (UpdateGlobalCBuffer(&global_buffer_data[0])) {
             // Write back the cbuffer data after we have fixed it up (we always do!)
             std::memcpy(cb_per_view_global_buffer_map_data, &cb_per_view_global, sizeof(CBPerViewGlobal));
         }
@@ -3721,8 +3659,7 @@ bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource
                 return false;
 
             auto isUnorm8 = [](DXGI_FORMAT format) {
-                switch (format)
-                {
+                switch (format) {
                 case DXGI_FORMAT_R8G8B8A8_TYPELESS:
                 case DXGI_FORMAT_R8G8B8A8_UNORM:
                 case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
@@ -3737,8 +3674,7 @@ bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource
                 return false;
                 };
             auto isFloat16 = [](DXGI_FORMAT format) {
-                switch (format)
-                {
+                switch (format) {
                 case DXGI_FORMAT_R16G16B16A16_TYPELESS:
                 case DXGI_FORMAT_R16G16B16A16_FLOAT:
                     return true;
@@ -3746,8 +3682,7 @@ bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource
                 return false;
                 };
             auto isFloat11 = [](DXGI_FORMAT format) {
-                switch (format)
-                {
+                switch (format) {
                 case DXGI_FORMAT_R11G11B10_FLOAT:
                     return true;
                 }

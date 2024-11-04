@@ -100,7 +100,7 @@ void ApplyArkDistanceSat(inout float3 _cImage, int3 _pixelCoord)
 }
 #endif
 
-#if 1 //TODOFT4 For this path we'd need to invert the DICE tonemapper too (do we?) and match mid gray after DICE had run, except that we delay DICE until the end and also we can't match it after because its peak is already set. Nah it's fine, in untonemapped it's good and with DICE it doesn't really touch mid tones so we can't pre match it
+#if 1 //TODOFT5: For this path we'd need to invert the DICE tonemapper too (do we?) and match mid gray after DICE had run, except that we delay DICE until the end and also we can't match it after because its peak is already set. Nah it's fine, in untonemapped it's good and with DICE it doesn't really touch mid tones so we can't pre match it
 static const float SDRTMMidGrayOut = MidGray;
 static const float SDRTMMidGrayIn = GetLuminance(Tonemap_Hable_Inverse(SDRTMMidGrayOut)); // The "HDRFilmCurve" are not used so we can pre-calculate this offline
 #else

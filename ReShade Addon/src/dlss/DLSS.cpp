@@ -32,6 +32,7 @@ namespace
 	const char* engineVersion = "1.0";
 
 	// DLSS "instance" per output resolution (and other settings)
+	// These never need to be manually destroyed
 	struct DLSSInstance
 	{
 		NVSDK_NGX_Handle* superSamplingFeature = nullptr;

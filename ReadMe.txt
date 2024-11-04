@@ -19,6 +19,7 @@ The code hot spots are in the main.cpp files etc etc etc...
 Run "deploy (*).bat" to run the game. The Steam version of the game can't be launched from the exe, so that bat automatically closes the previous instance of the game, copies the new files and launches the game through Steam.
 The "Data" folder needs to be manually copied into the directory of the game at least once. For development of shaders, it's suggested to make a symbolic link of the "Prey-Luma" folder (to allow git to pick up the changes while also having the latest version in game).
 Note that "Edit and Continue" build settings (\ZI) should not be used as they break the code patches generation.
+To decompile shaders you will need... VSCode is suggested.
 
 The mod version is stored in ... "VERSION"...
 There's a "DEVELOPMENT" and "TEST" flag in main.cpp. They automatically spread to shaders on the next load/compile. Building in Debug (as opposed to Release), simply adds debug symbols etc, but no additional development features.

@@ -31,7 +31,7 @@ float getRCASLuma(float3 rgb)
     return dot(rgb, float3(0.5, 1.0, 0.5));
 }
 
-//TODOFT3: add RCAS (ask Lilium)
+//TODOFT3: add RCAS (ask Lilium) (add to credits) (duplicate)
 [numthreads(32, 32, 1)]
 void CSMain(uint3 DTid : SV_DispatchThreadID)
 {
