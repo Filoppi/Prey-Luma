@@ -61,6 +61,7 @@
 #define ICON_FK_CANCEL reinterpret_cast<const char*>(u8"\uf00d")
 #define ICON_FK_OK reinterpret_cast<const char*>(u8"\uf00c")
 #define ICON_FK_PLUS reinterpret_cast<const char*>(u8"\uf067")
+#define ICON_FK_MINUS reinterpret_cast<const char*>(u8"\uf068")
 #define ICON_FK_REFRESH reinterpret_cast<const char*>(u8"\uf021")
 #define ICON_FK_UNDO reinterpret_cast<const char*>(u8"\uf0e2")
 #define ICON_FK_SEARCH reinterpret_cast<const char*>(u8"\uf002")
@@ -4696,8 +4697,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
     }
 
     if (ImGui::BeginTabItem("Advanced Settings")) {
-      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-      {
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
           ImGui::SetTooltip("Shader Defines: reload shaders after changing these for the changes to apply (and save).\nSome settings are only editable in debug modes, and only apply if the \"DEVELOPMENT\" flag is turned on.\nDo not change unless you know what you are doing.");
       }
 
@@ -4724,15 +4724,26 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
       }
 
 #if DEVELOPMENT || TEST
-      if (shader_defines_data.size() < MAX_SHADER_DEFINES) {
-          ImGui::SameLine();
-          ImGui::PushID("Advanced Settings: Add Define");
-          static const std::string add_button_title = std::string(ICON_FK_PLUS) + std::string(" Add");
-          if (ImGui::Button(add_button_title.c_str())) {
-              shader_defines_data.emplace_back();
-          }
-          ImGui::PopID();
+      ImGui::BeginDisabled(shader_defines_data.empty() || !shader_defines_data[shader_defines_data.size() - 1].IsCustom());
+      ImGui::SameLine();
+      ImGui::PushID("Advanced Settings: Remove Define");
+      static const std::string remove_button_title = std::string(ICON_FK_MINUS) + std::string(" Remove");
+      if (ImGui::Button(remove_button_title.c_str())) {
+          shader_defines_data.pop_back();
+          defines_count--;
       }
+      ImGui::PopID();
+      ImGui::EndDisabled();
+
+      ImGui::BeginDisabled(shader_defines_data.size() >= MAX_SHADER_DEFINES);
+      ImGui::SameLine();
+      ImGui::PushID("Advanced Settings: Add Define");
+      static const std::string add_button_title = std::string(ICON_FK_PLUS) + std::string(" Add");
+      if (ImGui::Button(add_button_title.c_str())) {
+          shader_defines_data.emplace_back();
+      }
+      ImGui::PopID();
+      ImGui::EndDisabled();
 #endif
 
 #if 0 // We simply add a "*" next to the reload shaders button now instead
