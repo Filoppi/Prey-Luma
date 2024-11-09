@@ -18,6 +18,7 @@ Texture2D<float4> _tex3 : register(t3);
 // 3Dmigoto declarations
 #define cmp -
 
+//TODOFT: find name and make sure this looks identical on all resolutions
 void main(
   float4 v0 : SV_Position0,
   float4 v1 : TEXCOORD0,
@@ -32,8 +33,6 @@ void main(
                               { 0.100000, 0.100000, 0.100000, 10.000000},
                               { 0.100000, 0.100000, 0.100000, 10.000000} };
   float4 r0,r1,r2,r3,r4,r5,r6;
-  uint4 bitmask, uiDest;
-  float4 fDest;
 
   r0.x = _tex3.Sample(_tex3_s, v1.xy).w;
   r0.y = cmp(r0.x == 0.000000);

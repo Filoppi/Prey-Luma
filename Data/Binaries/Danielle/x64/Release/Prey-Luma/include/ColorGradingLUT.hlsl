@@ -56,7 +56,7 @@ float3 PQ_to_Linear2(float3 ST2084Color, int clampType = 0)
 }
 
 // 0 None
-// 1 Reduce saturation and increase brightness until luminance is >= 0
+// 1 Reduce saturation and increase brightness until luminance is >= 0 (~gamut mapping)
 // 2 Clip negative colors (makes luminance >= 0)
 // 3 Snap to black
 void FixColorGradingLUTNegativeLuminance(inout float3 col, uint type = 1)

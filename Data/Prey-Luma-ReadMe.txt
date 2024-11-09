@@ -1,5 +1,6 @@
-Luma (Prey (2017)) aims to rewrite the game post processing phase to improve the look of the game without drifting from the original artistic vision.
+Luma (Prey (2017)) aims to rewrite the game post processing phase to improve the look of the game without drifting from the original artistic vision (believe me).
 The highlight feature is adding HDR support, though benefits are not restricted to HDR users, there's a lot more, and it's akin to a small Remastered.
+The mod works by hooking into the game's code and replacing shaders.
 
 Luma was created by Pumbo (graphics) and Ersh (reverse engineering).
 Join our discord here: https://discord.gg/DNGfMZgH3f
