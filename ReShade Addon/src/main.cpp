@@ -4709,9 +4709,9 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
           for (uint32_t i = 0; i < shader_defines_data.size() && is_default; i++) {
               is_default = shader_defines_data[i].IsDefault() && !shader_defines_data[i].IsCustom();
           }
-          ImGui::PushID("Advanced Settings: Reset Defines");
           ImGui::BeginDisabled(is_default);
-          static const std::string reset_button_title = std::string(ICON_FK_REFRESH) + std::string(" Reset");
+          ImGui::PushID("Advanced Settings: Reset Defines");
+          static const std::string reset_button_title = std::string(ICON_FK_UNDO) + std::string(" Reset");
           if (ImGui::Button(reset_button_title.c_str())) {
               // Remove all newly added settings
               ShaderDefineData::RemoveCustomData(shader_defines_data);
@@ -4719,8 +4719,30 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
               // Reset the rest to default
               ShaderDefineData::Reset(shader_defines_data);
           }
-          ImGui::EndDisabled();
+          if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+              ImGui::SetTooltip("Resets the defines to their default value");
+          }
           ImGui::PopID();
+          ImGui::EndDisabled();
+      }
+      // Show restore button (basically "undo")
+      {
+          bool needs_compilation = defines_need_recompilation;
+          for (uint32_t i = 0; i < shader_defines_data.size() && !needs_compilation; i++) {
+              needs_compilation |= shader_defines_data[i].NeedsCompilation();
+          }
+          ImGui::BeginDisabled(!needs_compilation);
+          ImGui::SameLine();
+          ImGui::PushID("Advanced Settings: Restore Defines");
+          static const std::string restore_button_title = std::string(ICON_FK_UNDO) + std::string(" Restore");
+          if (ImGui::Button(restore_button_title.c_str())) {
+              ShaderDefineData::Restore(shader_defines_data);
+          }
+          if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+              ImGui::SetTooltip("Restores the defines to the last compiled values, undoing any changes that haven't been applied");
+          }
+          ImGui::PopID();
+          ImGui::EndDisabled();
       }
 
 #if DEVELOPMENT || TEST
@@ -4740,6 +4762,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
       ImGui::PushID("Advanced Settings: Add Define");
       static const std::string add_button_title = std::string(ICON_FK_PLUS) + std::string(" Add");
       if (ImGui::Button(add_button_title.c_str())) {
+          // We don't default the value to 0 here, we leave it blank
           shader_defines_data.emplace_back();
       }
       ImGui::PopID();

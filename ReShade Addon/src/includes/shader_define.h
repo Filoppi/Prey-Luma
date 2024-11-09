@@ -110,8 +110,12 @@ public:
         strncpy(editable_data.GetName(), default_data.GetName(), SHADER_DEFINES_MAX_NAME_LENGTH);
         editable_data.value[0] = default_data.value[0];
     }
+    void Restore() {
+        strncpy(editable_data.GetName(), compiled_data.GetName(), SHADER_DEFINES_MAX_NAME_LENGTH);
+        editable_data.value[0] = compiled_data.value[0];
+    }
     void Clear() {
-        // No need to clear the remaining characters
+        // No need to clear the remaining characters after the null value (nor to set the value to the value of 0)
         editable_data.name[0] = '\0';
         editable_data.value[0] = '\0';
     }
@@ -138,6 +142,12 @@ public:
     static void Reset(std::vector<ShaderDefineData>& shader_defines_data) {
         for (uint32_t i = 0; i < shader_defines_data.size(); i++) {
             shader_defines_data[i].Reset();
+        }
+    }
+    static void Restore(std::vector<ShaderDefineData>& shader_defines_data) {
+        // TODO: also call something like "RemoveCustomData()" to remove all the custom defines that have been added to the list but never been compiled yet
+        for (uint32_t i = 0; i < shader_defines_data.size(); i++) {
+            shader_defines_data[i].Restore();
         }
     }
     static void OnCompilation(std::vector<ShaderDefineData>& shader_defines_data) {
