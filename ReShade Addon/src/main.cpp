@@ -2221,6 +2221,7 @@ void OnPresent(
 //TODOFT5: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project?
 //TODOFT5: add UAV flag to DLSS output texture for faster performance!!!
 //TODOFT5: keep SDR at 203 nits and then scale it back to 80 nits at the end? So that TM runs consistently
+//TODOFT: add a new RT to draw UI on top (pre-multiplied alpha everywhere), so we could compose it smartly, possibly in the final linearization pass.
 
 // Return false to prevent the original draw call from running (e.g. if you replaced it or just want to skip it)
 // Prey always seemengly draws in direct mode. There's a few compute shaders but most passes are classic pixel shaders.
@@ -2458,7 +2459,8 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
           //TODOFT: add sharpening if we did DLSS? It's already natively in! Do RCAS instead?
           //TODOFT: skip SMAA edge detection and edge AA passes, or just disable SMAA in menu settings (make sure the game defaults to TAA from config)
           //TODOFT: skip the texture copy into ps_shader_resources[1] after TAA if DLSS is running? (it's a separate pass triggered by the game) It's not really necessary AFAIK (though it might be used by other things in the game, it's not clear, but likely not...)
-          
+          //TODOFT: reset history when we toggle DLSS? Or at least make sure we clean up unused DLSS texture resources.
+
           //TODO LUMA: add DLSS transparency mask (e.g. glass, decals, emissive) by caching the g-buffers before and after transparent stuff draws near the end?
           //TODO LUMA: add DLSS bias mask (to ignore animated textures) by marking up some shaders(materials)/textures hashes with it?
           //TODO LUMA: force preset E even with DLAA? Nah, F looks better it seems? Right now preset F is used for DRS (or is it?)!! We could try C instead of F in that case though! Or simply expose it to users, or at least try it for dev settings.
@@ -4265,7 +4267,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
                 }
                 // Highlight loading error
                 if (custom_shader != nullptr && !custom_shader->compilation_error.empty()) {
-                  text_color = IM_COL32(255, 0, 0, 255);
+                  text_color = IM_COL32(255, 0, 0, 255); // TODO: draw orange instead if we have a warning but no errors
                 }
               } else {
                 text_color = IM_COL32(255, 0, 0, 255);
@@ -4342,8 +4344,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
               auto pipeline_handle = trace_pipeline_handles.at(selected_index);
 
               const std::lock_guard<std::recursive_mutex> lock(s_mutex_generic);
-              if (
-                  auto pipeline_pair = pipeline_cache_by_pipeline_handle.find(pipeline_handle);
+              if (auto pipeline_pair = pipeline_cache_by_pipeline_handle.find(pipeline_handle);
                   pipeline_pair != pipeline_cache_by_pipeline_handle.end() && pipeline_pair->second != nullptr) {
 
                 const auto pipeline = pipeline_pair->second;
