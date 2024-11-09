@@ -21,6 +21,9 @@ The "Data" folder needs to be manually copied into the directory of the game at 
 Note that "Edit and Continue" build settings (\ZI) should not be used as they break the code patches generation.
 To decompile shaders you will need... VSCode is suggested.
 
+Vcpkg versioning is very unclear to me. If you simply specify the baseline vcpkg version in the json manifest, their documentation claims that simply determines the minimum version of the libraries to use, so to avoid issues down the line, I've forced all packages to the version I tested the mod on.
+DKUtil also has its own vcpkg dependencies, and they don't seem to be version locked, so that might cause problems in the future.
+
 The mod version is stored in ... "VERSION"...
 There's a "DEVELOPMENT" and "TEST" flag in main.cpp. They automatically spread to shaders on the next load/compile. Building in Debug (as opposed to Release), simply adds debug symbols etc, but no additional development features.
 
