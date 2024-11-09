@@ -158,15 +158,15 @@ void UberGamePostProcessPS(float4 WPos, float4 inBaseTC, out float4 outColor)
 
 	float4 cScreen;
 
-// LUMA FT: this isn't exactly chromatic aberration but it's close enough
+// LUMA FT: this isn't exactly chromatic aberration but it's close enough (this also does screen warping distortion a bit)
 #if ENABLE_CHROMATIC_ABERRATION && _RT_SAMPLE0 && !_RT_SAMPLE1
 
-  float screenAspectRatio = CV_ScreenSize.x / CV_ScreenSize.y;
+	float screenAspectRatio = CV_ScreenSize.x / CV_ScreenSize.y;
   
-  // LUMA FT: fixed chroma shift being broken in ultrawide (it wasn't scaling correctly by aspect ratio, "UberPostParams1.w" was fixed independently of the resolution or aspect ratio).
-  // We fixed around 16:9, assuming that was the intended behaviour, even if the code seemed to target a 1:1 aspect ratio.
-  float2 uvOffsetR = float2(UberPostParams1.w * 0.15 * (NativeAspectRatio / screenAspectRatio), UberPostParams1.w * 0.15);
-  float2 uvOffsetGB = float2(UberPostParams1.w * 0.1 * (NativeAspectRatio / screenAspectRatio), UberPostParams1.w * 0.1);
+	// LUMA FT: fixed chroma shift being broken in ultrawide (it wasn't scaling correctly by aspect ratio, "UberPostParams1.w" was fixed independently of the resolution or aspect ratio).
+	// We fixed around 16:9, assuming that was the intended behaviour, even if the code seemed to target a 1:1 aspect ratio.
+	float2 uvOffsetR = float2(UberPostParams1.w * 0.15 * (NativeAspectRatio / screenAspectRatio), UberPostParams1.w * 0.15);
+	float2 uvOffsetGB = float2(UberPostParams1.w * 0.1 * (NativeAspectRatio / screenAspectRatio), UberPostParams1.w * 0.1);
 	cScreen.ra = _tex0.Sample(_tex0_s, (tcFinal-0.5) * (1.0 - uvOffsetR) + 0.5).ra; // "a" is unused
 	cScreen.gb = _tex0.Sample(_tex0_s, (tcFinal-0.5) * (1.0 - uvOffsetGB) + 0.5).gb;
 

@@ -11,6 +11,8 @@ Texture2D<float4> _tex0 : register(t0);
 Texture2D<float4> _tex1 : register(t1);
 
 // Screen space blur
+// This is run after upscaling (and usually after GaussBlurBilinearPS, TexToTexSampledPS),
+// and determines the amount of blur (or sharpening) to use (the blurred image is created before with a "fixed" intensity)
 void main(
   float4 v0 : SV_Position0,
   float4 inBaseTC : TEXCOORD0,
@@ -26,6 +28,7 @@ void main(
 #endif
   // LUMA FT: we ignore "POST_PROCESS_SPACE_TYPE" here, it will look fine regardless (we could implement DecodeBackBufferToLinearSDRRange()/EncodeBackBufferFromLinearSDRRange() if ever needed, running them as UI)
   outColor = lerp(screenColor, blurredColor, blurAmount);
-  outColor.rgb = FixUpSharpeningOrBlurring(outColor.rgb, screenColor.rgb);
+  if (blurAmount < 0.f)
+    outColor.rgb = FixUpSharpeningOrBlurring(outColor.rgb, screenColor.rgb);
   return;
 }

@@ -21,6 +21,7 @@ Texture2D<float4> _tex0 : register(t0);
 // This is some kind of blurring (or sharpening? in case the blend mode was additive or something). It's run after upscaling (as least in the main use case).
 // This always runs in post process if we forced sharpening or chromatic aberration, before them, so it probably does nothing in that case (they just have a fixed pipeline).
 // Note that this also runs many times in the middle of the rendering pipeline, possibly to downscale textures and stuff like that.
+// Note that this can generate invalid luminances, but we can't fix it here as the shader is too generic.
 void main(
   float4 v0 : SV_Position0,
   float2 v1 : TEXCOORD0,

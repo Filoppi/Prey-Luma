@@ -287,7 +287,9 @@ void ApplyDithering(inout float3 color, float2 uv, bool gammaSpace = true, float
 
 // Fix up sharpening/blurring when done on HDR images in post processing. In SDR, the source color could only be between 0 and 1,
 // so the halos (rings) that can appear around rapidly changing colors were limited, but in HDR lights can go much brighter so the halos got noticeable with default settings.
+// This might be best avoided on blur passes unless shown to be needed.
 // This should work with any "POST_PROCESS_SPACE_TYPE" setting.
+// Note that sharpening can always generated invalid luminances (I think), so that should be accounted for.
 float3 FixUpSharpeningOrBlurring(float3 postSharpeningColor, float3 preSharpeningColor)
 {
 #if ENABLE_SHARPENING //TODOFT: skip this in SDR mode?

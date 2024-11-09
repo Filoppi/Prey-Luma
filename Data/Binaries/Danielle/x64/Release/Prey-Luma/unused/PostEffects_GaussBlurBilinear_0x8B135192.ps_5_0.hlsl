@@ -8,7 +8,7 @@ SamplerState _tex0_s : register(s0);
 Texture2D<float4> _tex0 : register(t0);
 
 // LUMA: Unchanged.
-//TODOFT: when does this run? Does it need DLSS support (CV_HPosScale/MapViewportToRaster())?
+// This blurs the image. It's run after upscaling (and usually after TexToTexSampledPS), so it supports DLSS fine and doesn't need any "CV_HPosScale"/"MapViewportToRaster()" adjustments.
 void main(
   float4 HPosition : SV_Position0,
   float4 tc0 : TEXCOORD0,
@@ -51,6 +51,7 @@ void main(
 	sum += col * psWeights[7].x;
 
   // LUMA FT: this seems to already be acknowledging the aspect ratio and thus it blurs equally (in screen space) for ultrawide or 16:9 or any aspect ratio. This is used in menus backgrounds and other scene texture operations in Prey anyways
+  // LUMA FT: note that this can cause invalid luminances in the downscaled image
   outColor = sum;
   return;
 }
