@@ -56,40 +56,41 @@ float3 RestoreLuminance(float3 targetColor, float sourceColorLuminance)
 // 
 // In the "POST_PROCESS_SPACE_TYPE != 1" cases, we apply the gamma correction in the very final linearization shader, to make the code simpler
 // and make (e.g. UI) gamma blends look like Vanilla.
-// 
-// The "GAMMA_CORRECTION_TYPE >= 2" case here is ignored based on "ANTICIPATE_ADVANCED_GAMMA_CORRECTION", as it can either be applied during tonemapping/grading and other later passes, or in the final linearization shader.
-// The reasoning is that the formula is not easily reversible and is slow to run many times (it might be possible to perfectly reverse it, but for now we haven't found a big need).
-// We fall back on gamma sRGB for intermediary buffers if "ANTICIPATE_ADVANCED_GAMMA_CORRECTION" is not true.
-float3 game_gamma_to_linear_mirrored(float3 Color)
+float3 game_gamma_to_linear(float3 Color, bool Mirrored = true)
 {
-#if POST_PROCESS_SPACE_TYPE == 1 && (GAMMA_CORRECTION_TYPE >= 2 && ANTICIPATE_ADVANCED_GAMMA_CORRECTION)
+#if POST_PROCESS_SPACE_TYPE == 1 && GAMMA_CORRECTION_TYPE >= 2 && 0 // Disabled for intermediary conversions (fall back to sRGB). Moved to final linearization shader
 #if 1
-  return RestoreLuminance(gamma_sRGB_to_linear_mirrored(Color), gamma_to_linear_mirrored(Color));
+  return RestoreLuminance(gamma_sRGB_to_linear(Color, Mirrored ? GCT_MIRROR : GCT_NONE), gamma_to_linear(Color, Mirrored ? GCT_MIRROR : GCT_NONE));
 #else // Alternaitve version (by luminance instead of by channel)
-  return RestoreLuminance(gamma_sRGB_to_linear_mirrored(Color), gamma_to_linear_mirrored(GetLuminance(Color)));
+  return RestoreLuminance(gamma_sRGB_to_linear(Color, Mirrored ? GCT_MIRROR : GCT_NONE), gamma_to_linear1(GetLuminance(Color), Mirrored ? GCT_MIRROR : GCT_NONE));
 #endif
-#elif POST_PROCESS_SPACE_TYPE == 1 && GAMMA_CORRECTION_TYPE == 1
-	return gamma_to_linear_mirrored(Color);
-#else // GAMMA_CORRECTION_TYPE <= 0
-  return gamma_sRGB_to_linear_mirrored(Color);
 #endif
+
+#if POST_PROCESS_SPACE_TYPE == 1 && GAMMA_CORRECTION_TYPE == 1
+	return gamma_to_linear(Color, Mirrored ? GCT_MIRROR : GCT_NONE);
+#endif
+
+  // any other "GAMMA_CORRECTION_TYPE", any "POST_PROCESS_SPACE_TYPE"
+  return gamma_sRGB_to_linear(Color, Mirrored ? GCT_MIRROR : GCT_NONE);
 }
 // This function undoes any gamma correction we had done
-float3 linear_to_game_gamma_mirrored(float3 Color)
+float3 linear_to_game_gamma(float3 Color, bool Mirrored = true)
 {
-#if POST_PROCESS_SPACE_TYPE == 1 && (GAMMA_CORRECTION_TYPE >= 2 && ANTICIPATE_ADVANCED_GAMMA_CORRECTION)
+#if POST_PROCESS_SPACE_TYPE == 1 && GAMMA_CORRECTION_TYPE >= 2 && 0 // Disabled for intermediary conversions (fall back to sRGB). Moved to final linearization shader
 #if 1 // This version of this inverse formula is a little more accurate, though none of the two are a perfect mirror, as the original operation is destructive (and if it's not, it's complicated and slow to accurately revert)
-  float3 gammaCorrectedColor = gamma_sRGB_to_linear_mirrored(linear_to_gamma_mirrored(Color));
-	return linear_to_sRGB_gamma_mirrored(RestoreLuminance(Color, gammaCorrectedColor));
+    float3 gammaCorrectedColor = gamma_sRGB_to_linear(linear_to_gamma(Color, Mirrored ? GCT_MIRROR : GCT_NONE), Mirrored ? GCT_MIRROR : GCT_NONE);
 #else
-  float gammaCorrectedLuminance = gamma_sRGB_to_linear_mirrored(linear_to_gamma_mirrored(GetLuminance(Color))).x;
-	return linear_to_sRGB_gamma_mirrored(RestoreLuminance(Color, gammaCorrectedLuminance));
+    float gammaCorrectedColor = gamma_sRGB_to_linear1(linear_to_gamma1(GetLuminance(Color), Mirrored ? GCT_MIRROR : GCT_NONE), Mirrored ? GCT_MIRROR : GCT_NONE); // "gammaCorrectedLuminance"
 #endif
-#elif POST_PROCESS_SPACE_TYPE == 1 && GAMMA_CORRECTION_TYPE == 1
-	return linear_to_gamma_mirrored(Color);
-#else // GAMMA_CORRECTION_TYPE <= 0
-  return linear_to_sRGB_gamma_mirrored(Color);
+	  return linear_to_sRGB_gamma(RestoreLuminance(Color, gammaCorrectedColor), Mirrored ? GCT_MIRROR : GCT_NONE);
 #endif
+
+#if POST_PROCESS_SPACE_TYPE == 1 && GAMMA_CORRECTION_TYPE == 1
+	return linear_to_gamma(Color, Mirrored ? GCT_MIRROR : GCT_NONE);
+#endif
+
+  // any other "GAMMA_CORRECTION_TYPE", any "POST_PROCESS_SPACE_TYPE"
+  return linear_to_sRGB_gamma(Color, Mirrored ? GCT_MIRROR : GCT_NONE);
 }
 
 // Luma per pass or per frame data
@@ -141,7 +142,7 @@ float3 SDRToHDR(float3 Color, bool InGammaSpace = true, bool UI = false)
   {
     if (InGammaSpace)
     {
-      Color.rgb = game_gamma_to_linear_mirrored(Color.rgb);
+      Color.rgb = game_gamma_to_linear(Color.rgb);
       InGammaSpace = false;
     }
     const float paperWhite = (UI ? UIPaperWhiteNits : GamePaperWhiteNits) / sRGB_WhiteLevelNits;
@@ -156,7 +157,7 @@ float3 SDRToHDR(float3 Color, bool InGammaSpace = true, bool UI = false)
       // Linearize for the brightness multiplication
       if (InGammaSpace)
       {
-        Color.rgb = game_gamma_to_linear_mirrored(Color.rgb);
+        Color.rgb = game_gamma_to_linear(Color.rgb);
         InGammaSpace = false;
       }
       const float UIRelativePaperWhite = UIPaperWhiteNits / GamePaperWhiteNits;
@@ -164,7 +165,7 @@ float3 SDRToHDR(float3 Color, bool InGammaSpace = true, bool UI = false)
     }
     if (!InGammaSpace)
     {
-      Color.rgb = linear_to_game_gamma_mirrored(Color.rgb);
+      Color.rgb = linear_to_game_gamma(Color.rgb);
     }
   }
 	return Color;
@@ -185,7 +186,7 @@ float3 EncodeBackBufferFromLinearSDRRange(float3 color, bool UI = false)
   }
   else
   {
-  	return linear_to_game_gamma_mirrored(color);
+  	return linear_to_game_gamma(color);
   }
 }
 float3 DecodeBackBufferToLinearSDRRange(float3 color, bool UI = false)
@@ -198,7 +199,7 @@ float3 DecodeBackBufferToLinearSDRRange(float3 color, bool UI = false)
   }
   else
   {
-  	return game_gamma_to_linear_mirrored(color);
+  	return game_gamma_to_linear(color);
   }
 }
 
@@ -246,7 +247,7 @@ void ApplyDithering(inout float3 color, float2 uv, bool gammaSpace = true, float
   //TODO LUMA: use log10 gamma or HDR10 PQ, it should match human perception more accurately
   if (!gammaSpace)
   {
-    color = linear_to_game_gamma_mirrored(color); // Just use the same gamma function we use across the code, to keep it simple
+    color = linear_to_game_gamma(color); // Just use the same gamma function we use across the code, to keep it simple
   }
   float3 lastGammaColor = color;
 
@@ -277,9 +278,9 @@ void ApplyDithering(inout float3 color, float2 uv, bool gammaSpace = true, float
   if (!gammaSpace)
   {
 #if HIGH_QUALITY_POST_PROCESS_SPACE_CONVERSIONS
-    color = lastLinearColor + (game_gamma_to_linear_mirrored(color) - game_gamma_to_linear_mirrored(lastGammaColor));
+    color = lastLinearColor + (game_gamma_to_linear(color) - game_gamma_to_linear(lastGammaColor));
 #else // HIGH_QUALITY_POST_PROCESS_SPACE_CONVERSIONS
-    color = game_gamma_to_linear_mirrored(color);
+    color = game_gamma_to_linear(color);
 #endif // HIGH_QUALITY_POST_PROCESS_SPACE_CONVERSIONS
   }
   color *= paperWhite;

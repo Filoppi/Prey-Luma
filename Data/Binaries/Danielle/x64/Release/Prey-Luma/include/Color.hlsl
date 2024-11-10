@@ -13,6 +13,16 @@ static const float ITU_WhiteLevelNits = 203.0f;
 static const float Rec709_WhiteLevelNits = 100.0f;
 static const float sRGB_WhiteLevelNits = 80.0f;
 
+// "Gamma" clamp type "enum":
+// 0 None
+// 1 Remove negative numbers
+// 2 Remove numbers beyond 0-1
+// 3 Mirror negative numbers before and after encoding
+#define GCT_NONE 0
+#define GCT_POSITIVE 1
+#define GCT_SATURATE 2
+#define GCT_MIRROR 3
+
 static const float3x3 BT709_2_XYZ = float3x3
   (0.412390798f,  0.357584327f, 0.180480793f,
    0.212639003f,  0.715168654f, 0.0721923187f, // ~same as "Rec709_Luminance"
@@ -23,14 +33,19 @@ float GetLuminance( float3 color )
 	return dot( color, Rec709_Luminance );
 }
 
-float3 linear_to_gamma(float3 Color, float Gamma = DefaultGamma)
+float3 linear_to_gamma(float3 Color, int ClampType = GCT_NONE, float Gamma = DefaultGamma)
 {
-	return pow(Color, 1.f / Gamma);
-}
-
-float3 linear_to_gamma_mirrored(float3 Color, float Gamma = DefaultGamma)
-{
-	return linear_to_gamma(abs(Color), Gamma) * sign(Color);
+	float3 colorSign = sign(Color);
+	if (ClampType == GCT_POSITIVE)
+		Color = max(Color, 0.f);
+	else if (ClampType == GCT_SATURATE)
+		Color = saturate(Color);
+	else if (ClampType == GCT_MIRROR)
+		Color = abs(Color);
+	Color = pow(Color, 1.f / Gamma);
+	if (ClampType == GCT_MIRROR)
+		Color *= sign(colorSign);
+	return Color;
 }
 
 // 1 component
@@ -39,75 +54,69 @@ float gamma_to_linear1(float Color, float Gamma = DefaultGamma)
 	return pow(Color, Gamma);
 }
 
-float3 gamma_to_linear(float3 Color, float Gamma = DefaultGamma)
+float3 gamma_to_linear(float3 Color, int ClampType = GCT_NONE, float Gamma = DefaultGamma)
 {
-	return pow(Color, Gamma);
+	float3 colorSign = sign(Color);
+	if (ClampType == GCT_POSITIVE)
+		Color = max(Color, 0.f);
+	else if (ClampType == GCT_SATURATE)
+		Color = saturate(Color);
+	else if (ClampType == GCT_MIRROR)
+		Color = abs(Color);
+	Color = pow(Color, Gamma);
+	if (ClampType == GCT_MIRROR)
+		Color *= sign(colorSign);
+	return Color;
 }
 
-float3 gamma_to_linear_mirrored(float3 Color, float Gamma = DefaultGamma)
-{
-	return gamma_to_linear(abs(Color), Gamma) * sign(Color);
-}
-
-float gamma_sRGB_to_linear(float channel)
+float gamma_sRGB_to_linear1(float channel)
 {
 	if (channel <= 0.04045f)
-	{
 		channel = channel / 12.92f;
-	}
 	else
-	{
 		channel = pow((channel + 0.055f) / 1.055f, 2.4f);
-	}
 	return channel;
 }
 
-float3 gamma_sRGB_to_linear(float3 Color)
+// The sRGB gamma formula already works beyond the 0-1 range but mirroring (and thus running the pow below 0 too) makes it look better
+float3 gamma_sRGB_to_linear(float3 Color, int ClampType = GCT_NONE)
 {
-	return float3(gamma_sRGB_to_linear(Color.r), gamma_sRGB_to_linear(Color.g), gamma_sRGB_to_linear(Color.b));
+	float3 colorSign = sign(Color);
+	if (ClampType == GCT_POSITIVE)
+		Color = max(Color, 0.f);
+	else if (ClampType == GCT_SATURATE)
+		Color = saturate(Color);
+	else if (ClampType == GCT_MIRROR)
+		Color = abs(Color);
+	Color = float3(gamma_sRGB_to_linear1(Color.r), gamma_sRGB_to_linear1(Color.g), gamma_sRGB_to_linear1(Color.b));
+	if (ClampType == GCT_MIRROR)
+		Color *= sign(colorSign);
+	return Color;
 }
 
-// The sRGB gamma formula already works beyond the 0-1 range but mirroring (and thus running the pow below 0 too makes it look better)
-float3 gamma_sRGB_to_linear_mirrored(float3 Color)
-{
-	return gamma_sRGB_to_linear(abs(Color)) * sign(Color);
-}
-
-float linear_to_sRGB_gamma(float channel)
+float linear_to_sRGB_gamma1(float channel)
 {
 	if (channel <= 0.0031308f)
-	{
 		channel = channel * 12.92f;
-	}
 	else
-	{
 		channel = 1.055f * pow(channel, 1.f / 2.4f) - 0.055f;
-	}
 	return channel;
 }
 
-float3 linear_to_sRGB_gamma(float3 Color)
+// The sRGB gamma formula already works beyond the 0-1 range but mirroring (and thus running the pow below 0 too) makes it look better
+float3 linear_to_sRGB_gamma(float3 Color, int ClampType = GCT_NONE)
 {
-	return float3(linear_to_sRGB_gamma(Color.r), linear_to_sRGB_gamma(Color.g), linear_to_sRGB_gamma(Color.b));
-}
-
-// The sRGB gamma formula already works beyond the 0-1 range but mirroring (and thus running the pow below 0 too makes it look better)
-float3 linear_to_sRGB_gamma_mirrored(float3 Color)
-{
-	return linear_to_sRGB_gamma(abs(Color)) * sign(Color);
-}
-
-// LUMA FT: avoid using this, use "linear_to_sRGB_gamma_mirrored()" instead
-float3 LinearToSRGB(float3 col)
-{
-#if 0 // LUMA FT: disabled saturate(), it's unnecessary
-	col = saturate(col);
-#endif
-#if 1
-  return linear_to_sRGB_gamma(col);
-#else // CryEngine version (compiles to the same code)
-	return (col < 0.0031308) ? 12.92 * col : 1.055 * pow(col, 1.0 / 2.4) - float3(0.055, 0.055, 0.055);
-#endif
+	float3 colorSign = sign(Color);
+	if (ClampType == GCT_POSITIVE)
+		Color = max(Color, 0.f);
+	else if (ClampType == GCT_SATURATE)
+		Color = saturate(Color);
+	else if (ClampType == GCT_MIRROR)
+		Color = abs(Color);
+	Color = float3(linear_to_sRGB_gamma1(Color.r), linear_to_sRGB_gamma1(Color.g), linear_to_sRGB_gamma1(Color.b));
+	if (ClampType == GCT_MIRROR)
+		Color *= sign(colorSign);
+	return Color;
 }
 
 // Optimized gamma<->linear functions (don't use unless really necessary, they are not accurate)
@@ -127,60 +136,39 @@ static const float PQ_constant_C2 = 18.8515625f;
 static const float PQ_constant_C3 = 18.6875f;
 
 // PQ (Perceptual Quantizer - ST.2084) encode/decode used for HDR10 BT.2100.
-// Clamp type:
-// 0 None
-// 1 Remove negative numbers
-// 2 Remove numbers beyond 0-1
-// 3 Mirror negative numbers
-float3 Linear_to_PQ(float3 LinearColor, int clampType = 0)
+float3 Linear_to_PQ(float3 LinearColor, int clampType = GCT_NONE)
 {
 	float3 LinearColorSign = sign(LinearColor);
-	if (clampType == 1)
-	{
+	if (clampType == GCT_POSITIVE)
 		LinearColor = max(LinearColor, 0.f);
-	}
-	else if (clampType == 2)
-	{
+	else if (clampType == GCT_SATURATE)
 		LinearColor = saturate(LinearColor);
-	}
-	else if (clampType == 3)
-	{
+	else if (clampType == GCT_MIRROR)
 		LinearColor = abs(LinearColor);
-	}
 	float3 colorPow = pow(LinearColor, PQ_constant_M1);
 	float3 numerator = PQ_constant_C1 + PQ_constant_C2 * colorPow;
 	float3 denominator = 1.f + PQ_constant_C3 * colorPow;
 	float3 pq = pow(numerator / denominator, PQ_constant_M2);
-	if (clampType == 3)
-	{
+	if (clampType == GCT_MIRROR)
 		return pq * LinearColorSign;
-	}
 	return pq;
 }
 
-float3 PQ_to_Linear(float3 ST2084Color, int clampType = 0)
+float3 PQ_to_Linear(float3 ST2084Color, int clampType = GCT_NONE)
 {
 	float3 ST2084ColorSign = sign(ST2084Color);
-	if (clampType == 1)
-	{
+	if (clampType == GCT_POSITIVE)
 		ST2084Color = max(ST2084Color, 0.f);
-	}
-	else if (clampType == 2)
-	{
+	else if (clampType == GCT_SATURATE)
 		ST2084Color = saturate(ST2084Color);
-	}
-	else if (clampType == 3)
-	{
+	else if (clampType == GCT_MIRROR)
 		ST2084Color = abs(ST2084Color);
-	}
 	float3 colorPow = pow(ST2084Color, 1.f / PQ_constant_M2);
 	float3 numerator = max(colorPow - PQ_constant_C1, 0.f);
 	float3 denominator = PQ_constant_C2 - (PQ_constant_C3 * colorPow);
 	float3 linearColor = pow(numerator / denominator, 1.f / PQ_constant_M1);
-	if (clampType == 3)
-	{
+	if (clampType == GCT_MIRROR)
 		return linearColor * ST2084ColorSign;
-	}
 	return linearColor;
 }
 
@@ -208,34 +196,26 @@ float3 logToLinear_internal(float3 logColor, float3 logGrey = LogGrey)
 // Perceptual encoding functions (more accurate than HDR10 PQ).
 // "linearColor" is expected to be >= 0 and with a white point around 80-100.
 // These function are "normalized" so that they will map a linear color value of 0 to a log encoding of 0.
-float3 linearToLog(float3 linearColor, int clampType = 0, float3 logGrey = LogGrey)
+float3 linearToLog(float3 linearColor, int clampType = GCT_NONE, float3 logGrey = LogGrey)
 {
-	if (clampType == 1 || clampType == 2)
-	{
+	float3 linearColorSign = sign(linearColor);
+	if (clampType == GCT_POSITIVE || clampType == GCT_SATURATE)
 		linearColor = max(linearColor, 0.f);
-	}
-	else if (clampType == 3)
-	{
+	else if (clampType == GCT_MIRROR)
 		linearColor = abs(linearColor);
-	}
     float3 normalizedLogColor = linearToLog_internal(linearColor + logToLinear_internal(FLT_MIN, logGrey), logGrey);
-	if (clampType == 3)
-	{
-		normalizedLogColor *= sign(linearColor);
-	}
+	if (clampType == GCT_MIRROR)
+		normalizedLogColor *= sign(linearColorSign);
 	return normalizedLogColor;
 }
-float3 logToLinear(float3 normalizedLogColor, int clampType = 0, float3 logGrey = LogGrey)
+float3 logToLinear(float3 normalizedLogColor, int clampType = GCT_NONE, float3 logGrey = LogGrey)
 {
-	if (clampType == 3)
-	{
+	float3 normalizedLogColorSign = sign(normalizedLogColor);
+	if (clampType == GCT_MIRROR)
 		normalizedLogColor = abs(normalizedLogColor);
-	}
 	float3 linearColor = max(logToLinear_internal(normalizedLogColor, logGrey) - logToLinear_internal(FLT_MIN, logGrey), 0.f);
-	if (clampType == 3)
-	{
-		linearColor *= sign(normalizedLogColor);
-	}
+	if (clampType == GCT_MIRROR)
+		linearColor *= sign(normalizedLogColorSign);
 	return linearColor;
 }
 

@@ -35,7 +35,7 @@ void main(
   {
 	  const float paperWhite = GamePaperWhiteNits / sRGB_WhiteLevelNits; // Use the game brightness, not the UI one, as these are usually videos that are seamless with gameplay (except the main menu background), or represent 3D graphics anyway
 #if POST_PROCESS_SPACE_TYPE == 1 || AUTO_HDR_VIDEOS
-    outColor.rgb = game_gamma_to_linear_mirrored(outColor.rgb);
+    outColor.rgb = game_gamma_to_linear(outColor.rgb);
 #endif // POST_PROCESS_SPACE_TYPE == 1 || AUTO_HDR_VIDEOS
 
 #if AUTO_HDR_VIDEOS
@@ -43,7 +43,7 @@ void main(
     outColor.rgb = PumboAutoHDR(outColor.rgb, BinkVideosAutoHDRPeakWhiteNits, GamePaperWhiteNits, BinkVideosAutoHDRShoulderPow); // This won't multiply the paper white in, it just uses it as a modifier for the AutoHDR logic
 
 #if POST_PROCESS_SPACE_TYPE <= 0 || POST_PROCESS_SPACE_TYPE >= 2
-    outColor.rgb = linear_to_game_gamma_mirrored(outColor.rgb);
+    outColor.rgb = linear_to_game_gamma(outColor.rgb);
 #endif // POST_PROCESS_SPACE_TYPE <= 0 || POST_PROCESS_SPACE_TYPE >= 2
 
 #endif // AUTO_HDR_VIDEOS

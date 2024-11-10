@@ -199,7 +199,7 @@ void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
 	float paperWhite = GamePaperWhiteNits / sRGB_WhiteLevelNits;
 #if POST_PROCESS_SPACE_TYPE >= 1 // LUMA FT: added support for linear space input, making sure we blend in vignette and film grain and lens component in "SDR" gamma space
   float3 preEffectsLinearColor = outColor.rgb;
-	outColor.rgb = linear_to_game_gamma_mirrored(outColor.rgb / paperWhite);
+	outColor.rgb = linear_to_game_gamma(outColor.rgb / paperWhite);
   gammaSpace = true;
   float3 preEffectsGammaColor = outColor.rgb;
 #endif
@@ -228,10 +228,10 @@ void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
 #if DELAY_HDR_TONEMAP
 
 #if POST_PROCESS_SPACE_TYPE >= 1 && HIGH_QUALITY_POST_PROCESS_SPACE_CONVERSIONS
-  outColor.rgb = preEffectsLinearColor + ((game_gamma_to_linear_mirrored(outColor.rgb) - game_gamma_to_linear_mirrored(preEffectsGammaColor)) * paperWhite);
+  outColor.rgb = preEffectsLinearColor + ((game_gamma_to_linear(outColor.rgb) - game_gamma_to_linear(preEffectsGammaColor)) * paperWhite);
 #else
   float3 preTonemapGammaColor = outColor.rgb;
-  float3 preTonemapLinearColor = game_gamma_to_linear_mirrored(outColor.rgb); // Not scaled by paper white
+  float3 preTonemapLinearColor = game_gamma_to_linear(outColor.rgb); // Not scaled by paper white
 	outColor.rgb = preTonemapLinearColor * paperWhite;
 #endif
   gammaSpace = false;
@@ -250,9 +250,9 @@ void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
   if (!gammaSpace) // This can only happen if "DELAY_HDR_TONEMAP" was true
   {
 #if HIGH_QUALITY_POST_PROCESS_SPACE_CONVERSIONS && DELAY_HDR_TONEMAP && POST_PROCESS_SPACE_TYPE <= 0
-    outColor.rgb = preTonemapGammaColor + (linear_to_game_gamma_mirrored(outColor.rgb / paperWhite) - linear_to_game_gamma_mirrored(preTonemapLinearColor));
+    outColor.rgb = preTonemapGammaColor + (linear_to_game_gamma(outColor.rgb / paperWhite) - linear_to_game_gamma(preTonemapLinearColor));
 #else
-    outColor.rgb = linear_to_game_gamma_mirrored(outColor.rgb / paperWhite);
+    outColor.rgb = linear_to_game_gamma(outColor.rgb / paperWhite);
 #endif
     gammaSpace = true;
   }
@@ -260,9 +260,9 @@ void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
   if (gammaSpace) // This can only happen if "DELAY_HDR_TONEMAP" was false
   {
 #if POST_PROCESS_SPACE_TYPE >= 1 && HIGH_QUALITY_POST_PROCESS_SPACE_CONVERSIONS
-    outColor.rgb = preEffectsLinearColor + ((game_gamma_to_linear_mirrored(outColor.rgb) - game_gamma_to_linear_mirrored(preEffectsGammaColor)) * paperWhite);
+    outColor.rgb = preEffectsLinearColor + ((game_gamma_to_linear(outColor.rgb) - game_gamma_to_linear(preEffectsGammaColor)) * paperWhite);
 #else
-    outColor.rgb = game_gamma_to_linear_mirrored(outColor.rgb) * paperWhite;
+    outColor.rgb = game_gamma_to_linear(outColor.rgb) * paperWhite;
 #endif
     gammaSpace = false;
   }

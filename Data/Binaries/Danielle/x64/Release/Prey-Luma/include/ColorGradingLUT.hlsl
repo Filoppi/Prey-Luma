@@ -44,12 +44,12 @@ uint3 ConditionalConvert3DTo2DLUTCoordinates(uint3 Coordinates3D, uint lutSize =
 }
 
 //TODOFT
-float3 Linear_to_PQ2(float3 LinearColor, int clampType = 0)
+float3 Linear_to_PQ2(float3 LinearColor, int clampType = GCT_NONE)
 {
 	return Linear_to_PQ(LinearColor, clampType);
 	//return LinearColor;
 }
-float3 PQ_to_Linear2(float3 ST2084Color, int clampType = 0)
+float3 PQ_to_Linear2(float3 ST2084Color, int clampType = GCT_NONE)
 {
 	return PQ_to_Linear(ST2084Color, clampType);
 	//return ST2084Color;
@@ -152,24 +152,16 @@ float3 ColorGradingLUTTransferFunctionIn(float3 col, uint transferFunction, bool
 {
   if (transferFunction == LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB)
   {
-    return mirrored ? linear_to_sRGB_gamma_mirrored(col) : linear_to_sRGB_gamma(col);
+    return linear_to_sRGB_gamma(col, mirrored ? GCT_MIRROR : GCT_NONE);
   }
   else if (transferFunction == LUT_EXTRAPOLATION_TRANSFER_FUNCTION_GAMMA_2_2)
   {
-    return mirrored ? linear_to_gamma_mirrored(col) : linear_to_gamma(col);
+    return linear_to_gamma(col, mirrored ? GCT_MIRROR : GCT_NONE);
   }
   else // LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB_WITH_GAMMA_2_2_LUMINANCE
   {
-    if (mirrored)
-    {
-      float3 gammaCorrectedColor = gamma_sRGB_to_linear_mirrored(linear_to_gamma_mirrored(col));
-      return linear_to_sRGB_gamma_mirrored(RestoreLuminance(col, gammaCorrectedColor));
-    }
-    else
-    {
-      float3 gammaCorrectedColor = gamma_sRGB_to_linear(linear_to_gamma(col));
-      return linear_to_sRGB_gamma(RestoreLuminance(col, gammaCorrectedColor));
-    }
+    float3 gammaCorrectedColor = gamma_sRGB_to_linear(linear_to_gamma(col, mirrored ? GCT_MIRROR : GCT_NONE), mirrored ? GCT_MIRROR : GCT_NONE);
+    return linear_to_sRGB_gamma(RestoreLuminance(col, gammaCorrectedColor), mirrored ? GCT_MIRROR : GCT_NONE);
   }
 }
 // Decode.
@@ -177,22 +169,15 @@ float3 ColorGradingLUTTransferFunctionOut(float3 col, uint transferFunction, boo
 {
   if (transferFunction == LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB)
   {
-    return mirrored ? gamma_sRGB_to_linear_mirrored(col) : gamma_sRGB_to_linear(col);
+    return gamma_sRGB_to_linear(col, mirrored ? GCT_MIRROR : GCT_NONE);
   }
   else if (transferFunction == LUT_EXTRAPOLATION_TRANSFER_FUNCTION_GAMMA_2_2)
   {
-    return mirrored ? gamma_to_linear_mirrored(col) : gamma_to_linear(col);
+    return gamma_to_linear(col, mirrored ? GCT_MIRROR : GCT_NONE);
   }
   else // LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB_WITH_GAMMA_2_2_LUMINANCE
   {
-    if (mirrored)
-    {
-      return RestoreLuminance(gamma_sRGB_to_linear_mirrored(col), gamma_to_linear_mirrored(col));
-    }
-    else
-    {
-      return RestoreLuminance(gamma_sRGB_to_linear(col), gamma_to_linear(col));
-    }
+    return RestoreLuminance(gamma_sRGB_to_linear(col, mirrored ? GCT_MIRROR : GCT_NONE), gamma_to_linear(col, mirrored ? GCT_MIRROR : GCT_NONE));
   }
 }
 
@@ -733,8 +718,8 @@ float3 SampleLUTWithExtrapolation(LUT_TEXTURE_TYPE lut, SamplerState samplerStat
 		const float PQNormalizationFactor = HDR10_MaxWhiteNits / settings.whiteLevelNits;
 
 		const float3 clampedUV_PQ = Linear_to_PQ2(clampedNeutralLUTColorLinear / PQNormalizationFactor); // "clampedNeutralLUTColorLinear" is equal to "ColorGradingLUTTransferFunctionOut(clampedUV, settings.transferFunctionIn, false)"
-		const float3 unclampedTonemappedUV_PQ = Linear_to_PQ2(neutralLUTColorLinearTonemapped / PQNormalizationFactor, 3);
-		const float3 clampedSample_PQ = Linear_to_PQ2(clampedSample / PQNormalizationFactor, 3);
+		const float3 unclampedTonemappedUV_PQ = Linear_to_PQ2(neutralLUTColorLinearTonemapped / PQNormalizationFactor, GCT_MIRROR);
+		const float3 clampedSample_PQ = Linear_to_PQ2(clampedSample / PQNormalizationFactor, GCT_MIRROR);
 		const float3 clampedUV_UCS = DarktableUcs::RGBToUCSLUV(clampedNeutralLUTColorLinear);
 		const float3 unclampedTonemappedUV_UCS = DarktableUcs::RGBToUCSLUV(neutralLUTColorLinearTonemapped);
 		const float3 clampedSample_UCS = DarktableUcs::RGBToUCSLUV(clampedSample);
@@ -763,13 +748,13 @@ float3 SampleLUTWithExtrapolation(LUT_TEXTURE_TYPE lut, SamplerState samplerStat
 
 			const float3 centeredUV = clampedUV - (centeringNormal * backwardsAmount * lutBackwardsDiagonalMultiplier);
 			float3 centeredSample = SampleLUT(lut, samplerState, centeredUV, settings, lutOutputLinear);
-			float3 centeredSample_PQ = Linear_to_PQ2(centeredSample / PQNormalizationFactor, 3);
+			float3 centeredSample_PQ = Linear_to_PQ2(centeredSample / PQNormalizationFactor, GCT_MIRROR);
 			float3 centeredUV_PQ = Linear_to_PQ2(ColorGradingLUTTransferFunctionOut(centeredUV, settings.transferFunctionIn, false) / PQNormalizationFactor);
 
 			const float distanceFromUnclampedToClampedUV_PQ = length(unclampedTonemappedUV_PQ - clampedUV_PQ);
 			const float distanceFromClampedToCenteredUV_PQ = length(clampedUV_PQ - centeredUV_PQ);
 			const float extrapolationRatio = safeDivision(distanceFromUnclampedToClampedUV_PQ, distanceFromClampedToCenteredUV_PQ, 0);
-			extrapolatedSample = PQ_to_Linear2(lerp(centeredSample_PQ, clampedSample_PQ, 1.0 + extrapolationRatio), 3) * PQNormalizationFactor;
+			extrapolatedSample = PQ_to_Linear2(lerp(centeredSample_PQ, clampedSample_PQ, 1.0 + extrapolationRatio), GCT_MIRROR) * PQNormalizationFactor;
 
 #if DEVELOPMENT && 1
     bool oklab = LumaSettings.DevSetting06 >= 0.5;
@@ -935,7 +920,7 @@ float3 SampleLUTWithExtrapolation(LUT_TEXTURE_TYPE lut, SamplerState samplerStat
 				{
 					float3 localCenteredUV = float3(i == 0 ? centeredUV.r : clampedUV.r, i == 1 ? centeredUV.g : clampedUV.g, i == 2 ? centeredUV.b : clampedUV.b);
 					centeredSamples[i] = SampleLUT(lut, samplerState, localCenteredUV, settings, lutOutputLinear);
-					centeredSamples_PQ[i] = Linear_to_PQ2(centeredSamples[i] / PQNormalizationFactor, 3);
+					centeredSamples_PQ[i] = Linear_to_PQ2(centeredSamples[i] / PQNormalizationFactor, GCT_MIRROR);
 					centeredSamples_UCS[i] = DarktableUcs::RGBToUCSLUV(centeredSamples[i]);
 					centeredUVs_UCS[i] = DarktableUcs::RGBToUCSLUV(ColorGradingLUTTransferFunctionOut(localCenteredUV, settings.transferFunctionIn, false));
 
@@ -944,7 +929,7 @@ float3 SampleLUTWithExtrapolation(LUT_TEXTURE_TYPE lut, SamplerState samplerStat
 					{
 						localCenteredUV = float3(i == 0 ? centeredUV_2.r : clampedUV.r, i == 1 ? centeredUV_2.g : clampedUV.g, i == 2 ? centeredUV_2.b : clampedUV.b);
 						centeredSamples_2[i] = SampleLUT(lut, samplerState, localCenteredUV, settings, lutOutputLinear);
-						centeredSamples_PQ_2[i] = Linear_to_PQ2(centeredSamples_2[i] / PQNormalizationFactor, 3);
+						centeredSamples_PQ_2[i] = Linear_to_PQ2(centeredSamples_2[i] / PQNormalizationFactor, GCT_MIRROR);
 					}
 				}
 			}
@@ -1058,7 +1043,7 @@ float3 SampleLUTWithExtrapolation(LUT_TEXTURE_TYPE lut, SamplerState samplerStat
 
       //return (extrapolatedOffset) * 5;
 
-			extrapolatedSample = PQ_to_Linear2(clampedSample_PQ + extrapolatedOffset, 3) * PQNormalizationFactor;
+			extrapolatedSample = PQ_to_Linear2(clampedSample_PQ + extrapolatedOffset, GCT_MIRROR) * PQNormalizationFactor;
       
 #if DEVELOPMENT && 1
     bool oklab = LumaSettings.DevSetting06 >= 0.5;
@@ -1098,7 +1083,7 @@ float3 SampleLUTWithExtrapolation(LUT_TEXTURE_TYPE lut, SamplerState samplerStat
 #if DEVELOPMENT
         if (LumaSettings.DevSetting05 > 0.5) // Seems to look better even if it makes little sense
         {
-          //float3 unclampedUV_PQ = Linear_to_PQ2(neutralLUTColorLinear / PQNormalizationFactor, 3);
+          //float3 unclampedUV_PQ = Linear_to_PQ2(neutralLUTColorLinear / PQNormalizationFactor, GCT_MIRROR);
           //const float3 centeringNormal = normalize(unclampedUV_PQ - clampedUV_PQ);
           const float3 centeringVectorAbs = abs(unclampedUV - clampedUV);
           extrapolationRatio = centeringVectorAbs;
@@ -1135,7 +1120,7 @@ float3 SampleLUTWithExtrapolation(LUT_TEXTURE_TYPE lut, SamplerState samplerStat
       // can actually change all 3 color channels, we can't adjust the tonemapping restoration by channel, and we are forced to do it by length.
       // Given this is about ratios and perception, it might arguably be better done in PQ space, but given the original tonemapper above was done in linear, for the sake of simplicity we also do this in linear.
 #if 1 // 1D path (length) for per max channel tonemapper
-			//float extrapolationRatio = safeDivision(length(Linear_to_PQ2(extrapolatedSample / PQNormalizationFactor, 3) - clampedSample_PQ), length(unclampedTonemappedUV_PQ - saturate(unclampedTonemappedUV_PQ)), 0);
+			//float extrapolationRatio = safeDivision(length(Linear_to_PQ2(extrapolatedSample / PQNormalizationFactor, GCT_MIRROR) - clampedSample_PQ), length(unclampedTonemappedUV_PQ - saturate(unclampedTonemappedUV_PQ)), 0);
 			float extrapolationRatio = safeDivision(length(extrapolatedSample - clampedSample), length(neutralLUTColorLinearTonemapped - saturate(neutralLUTColorLinearTonemapped)), 0);
 #else // Per channel path for per channel tonemapper
 			float3 extrapolationRatio = safeDivision(extrapolatedSample - clampedSample, neutralLUTColorLinearTonemapped - saturate(neutralLUTColorLinearTonemapped), 0); // This is the broken one
@@ -1160,13 +1145,13 @@ float3 SampleLUTWithExtrapolation(LUT_TEXTURE_TYPE lut, SamplerState samplerStat
       // Restore the extrapolated sample luminance onto the clamped sample, so we keep the clamped hue and saturation while maintaining the extrapolated luminance.
       float3 extrapolatedClampedSample = RestoreLuminance(clampedSample, extrapolatedSample);
 #else // Disabled as this can have random results
-      float3 unclampedUV_PQ = Linear_to_PQ2(neutralLUTColorLinear / PQNormalizationFactor, 3); // "neutralLUTColorLinear" is equal to "ColorGradingLUTTransferFunctionOut(unclampedUV, settings.transferFunctionIn, true)"
+      float3 unclampedUV_PQ = Linear_to_PQ2(neutralLUTColorLinear / PQNormalizationFactor, GCT_MIRROR); // "neutralLUTColorLinear" is equal to "ColorGradingLUTTransferFunctionOut(unclampedUV, settings.transferFunctionIn, true)"
 			float3 extrapolationRatio = unclampedUV_PQ - clampedUV_PQ;
       // Restore the original unclamped color offset on the clamped sample in PQ space (so it's more perceptually accurate).
       // Note that this will cause hue shifts and possibly very random results, it only works on neutral LUTs.
       // This code is not far from "neutralLUTRestorationAmount".
       // Near black we opt for a sum as opposed to a multiplication, to avoid failing to restore the ratio when the source number is zero.
-			float3 extrapolatedClampedSample = PQ_to_Linear2(lerp(clampedSample_PQ + extrapolationRatio, clampedSample_PQ * (1.0 + extrapolationRatio), saturate(abs(clampedSample_PQ))), 3) * PQNormalizationFactor;
+			float3 extrapolatedClampedSample = PQ_to_Linear2(lerp(clampedSample_PQ + extrapolationRatio, clampedSample_PQ * (1.0 + extrapolationRatio), saturate(abs(clampedSample_PQ))), GCT_MIRROR) * PQNormalizationFactor;
 #endif
 			extrapolatedSample = lerp(extrapolatedSample, extrapolatedClampedSample, settings.clampedLUTRestorationAmount);
 		}
@@ -1325,7 +1310,7 @@ float3 DrawLUTTexture(LUT_TEXTURE_TYPE lut, SamplerState samplerState, float2 Pi
     extrapolationSettings.transferFunctionIn = LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB;
 // We might not want gamma correction on the debug LUT, gamma correction comes after extrapolation and isn't directly a part of the LUT, so it shouldn't affect its "raw" visualization
 #if 1
-    extrapolationSettings.transferFunctionOut = (bool(POST_PROCESS_SPACE_TYPE == 1) && (GAMMA_CORRECTION_TYPE == 1 || (GAMMA_CORRECTION_TYPE >= 2 && ANTICIPATE_ADVANCED_GAMMA_CORRECTION))) ? (GAMMA_CORRECTION_TYPE == 1 ? LUT_EXTRAPOLATION_TRANSFER_FUNCTION_GAMMA_2_2 : LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB_WITH_GAMMA_2_2_LUMINANCE) : extrapolationSettings.transferFunctionIn;
+    extrapolationSettings.transferFunctionOut = (bool(POST_PROCESS_SPACE_TYPE == 1) && GAMMA_CORRECTION_TYPE == 1) ? LUT_EXTRAPOLATION_TRANSFER_FUNCTION_GAMMA_2_2 : extrapolationSettings.transferFunctionIn;
 #else
     extrapolationSettings.transferFunctionOut = extrapolationSettings.transferFunctionIn;
 #endif

@@ -2031,6 +2031,7 @@ void OnPresent(
 
     // "POST_PROCESS_SPACE_TYPE" 0 and 2 mean that the final image was stored textures in gamma space,
     // so we need to linearize it for scRGB HDR (linear) output.
+    // "GAMMA_CORRECTION_TYPE" 2 is always re-corrected in the final shader.
     // 
     // If there are no shaders being currently replaced in the game (cloned_pipeline_count),
     // we can assume that we either missed replacing some shaders, or that we have unloaded all of our shaders.
@@ -2039,10 +2040,6 @@ void OnPresent(
     // We don't always lock "s_mutex_shader_defines" here as it wouldn't be particularly relevant.
     bool shader_defines_need_linearization = shader_defines_data[post_process_space_define_index].GetNumericalCompiledValue() != 1;
     bool shader_defines_need_gamma_correction = shader_defines_data[post_process_space_define_index].GetNumericalCompiledValue() == 1 && shader_defines_data[gamma_correction_define_index].GetNumericalCompiledValue() >= 2;
-    if (shader_defines_need_gamma_correction) {
-        const std::lock_guard<std::recursive_mutex> lock(s_mutex_shader_defines);
-        shader_defines_need_gamma_correction &= code_shaders_defines.contains("ANTICIPATE_ADVANCED_GAMMA_CORRECTION") && code_shaders_defines["ANTICIPATE_ADVANCED_GAMMA_CORRECTION"] == 0;
-    } 
     if (shader_defines_need_linearization || shader_defines_need_gamma_correction || cloned_pipeline_count == 0) {
         const std::lock_guard<std::recursive_mutex> lock_shader_objects(s_mutex_shader_objects);
         if (copy_vertex_shader && transfer_function_copy_pixel_shader) {

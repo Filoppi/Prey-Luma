@@ -12,7 +12,7 @@ float GetLuma(float3 cColor)
 {
 #if POST_PROCESS_SPACE_TYPE >= 1
 	const float paperWhite = GamePaperWhiteNits / sRGB_WhiteLevelNits;
-  cColor = linear_to_game_gamma_mirrored(cColor / paperWhite);
+  cColor = linear_to_game_gamma(cColor / paperWhite);
 #endif // POST_PROCESS_SPACE_TYPE >= 1
   return GetLuminance(cColor);
 }

@@ -55,10 +55,10 @@ float4 ConditionalLinearizeUI(float4 UIColor, bool ForceStraightAlphaBlend = fal
 	// to emulate vanilla gamma space blends as closely as possible, while avoiding the hue shift from gamma space blends too (which will shift the look from Vanilla a bit, but might possibly look even better).
 	if (LumaUIData.AlphaBlendState == 1 || ForceStraightAlphaBlend)
 	{
-		float3 UIColorLinearSpace = game_gamma_to_linear_mirrored(UIColor.rgb);
+		float3 UIColorLinearSpace = game_gamma_to_linear(UIColor.rgb);
 
-		float targetUIAlpha = safePow(UIColor.a, DefaultGamma); // Same as "gamma_to_linear_mirrored()"
-		// This is equivalent to "game_gamma_to_linear_mirrored(UIColor.rgb * UIColor.a)", despite that not being so intuitive, we can apply the same pow to either the color or the alpha to get the same result
+		float targetUIAlpha = safePow(UIColor.a, DefaultGamma); // Same as "gamma_to_linear(GCT_MIRROR)"
+		// This is equivalent to "game_gamma_to_linear(UIColor.rgb * UIColor.a)", despite that not being so intuitive, we can apply the same pow to either the color or the alpha to get the same result
 		float3 targetPostPreMultipliedAlphaUIColorLinearSpace = UIColorLinearSpace * targetUIAlpha;
 
 #if 1
@@ -66,7 +66,7 @@ float4 ConditionalLinearizeUI(float4 UIColor, bool ForceStraightAlphaBlend = fal
 		// As the UI color grows or shrinks, we pick a different alpha modulation for our background,
 		// when the UI color is near black, we modulate the alpha in one direction,
 		// while when its near white, we modulate it in the opposite direction.
-		// The result is is always as close as it can be to gamma space blends, especially when the UI color is near black,
+		// The result is always as close as it can be to gamma space blends, especially when the UI color is near black,
 		// and when the background color is either black or white.
 		// Note that arguably, we should take the average of the UI color as the lerp alpha, instead of its luminance, because luminance
 		// shouldn't really matter, and we wouldn't want green to react different from blue (ideally we'd have 3 alphas, one of each channel, but we don't),
@@ -101,9 +101,9 @@ float4 ConditionalLinearizeUI(float4 UIColor, bool ForceStraightAlphaBlend = fal
 	else if (LumaUIData.AlphaBlendState == 2)
 	{
 		float3 prePreMultipliedAlphaUIColor = UIColor.a != 0 ? (UIColor.rgb / UIColor.a) : UIColor.rgb;
-		float targetUIAlpha = safePow(UIColor.a, DefaultGamma); // Same as "gamma_to_linear_mirrored()"
+		float targetUIAlpha = safePow(UIColor.a, DefaultGamma); // Same as "gamma_to_linear(GCT_MIRROR)"
 #if EMPYRICAL_UI_BLENDING // This case seems to look ~identical to vanilla in Prey
-		float targetBackgroundAlpha = lerp(1.0 - safePow(1.0 - UIColor.a, DefaultGamma), targetUIAlpha, saturate(ColorIntensity(UIColor.rgb)));
+		float targetBackgroundAlpha = lerp(1.0 - safePow(1.0 - UIColor.a, DefaultGamma), targetUIAlpha, saturate(UIColorIntensity(UIColor.rgb)));
 #else // Theoretically this is more "mathematically accurate" and should provide the best results possible (except it doesn't, at least in the Prey use cases)
 		float targetBackgroundAlpha = lerp(1.0 - safePow(1.0 - UIColor.a, DefaultGamma), targetUIAlpha, saturate(UIColorIntensity(prePreMultipliedAlphaUIColor)));
 #endif
@@ -127,7 +127,7 @@ float4 ConditionalLinearizeUI(float4 UIColor, bool ForceStraightAlphaBlend = fal
 #if 0 // Not needed until proven otherwise
 		// Bias towards the right result, at the cost of having a worse result if the background was too far from the guessed value
 		float3 averageBlendedColor = (UIColor.rgb * UIColor.a) + AverageUIBackgroundColorGammaSpace;
-		float3 averageLinearBlendedColor = linear_to_game_gamma_mirrored((game_gamma_to_linear_mirrored(UIColor.rgb) * UIColor.a) + safePow(AverageUIBackgroundColorGammaSpace, DefaultGamma));
+		float3 averageLinearBlendedColor = linear_to_game_gamma((game_gamma_to_linear(UIColor.rgb) * UIColor.a) + safePow(AverageUIBackgroundColorGammaSpace, DefaultGamma));
 		UIColor.rgb += safeDivision(averageBlendedColor - averageLinearBlendedColor, UIColor.a, 0);
 #endif
 	}

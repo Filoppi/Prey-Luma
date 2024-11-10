@@ -45,8 +45,6 @@
 #ifndef GAMMA_CORRECTION_TYPE
 #define GAMMA_CORRECTION_TYPE 1
 #endif
-// See the implementations (note that this is referenced in c++)
-#define ANTICIPATE_ADVANCED_GAMMA_CORRECTION 1
 // Necessary for HDR to work correctly
 #ifndef ENABLE_LUT_EXTRAPOLATION
 #define ENABLE_LUT_EXTRAPOLATION 1

@@ -206,7 +206,7 @@ void UberGamePostProcessPS(float4 WPos, float4 inBaseTC, out float4 outColor)
 	float3 lastLinearColor = cScreen.rgb;
 	// Apply all effects in SDR gamma space
 	paperWhite = GamePaperWhiteNits / sRGB_WhiteLevelNits;
-	cScreen.rgb = linear_to_game_gamma_mirrored(cScreen.rgb / paperWhite);
+	cScreen.rgb = linear_to_game_gamma(cScreen.rgb / paperWhite);
 	float3 lastGammaColor = cScreen.rgb;
 #endif // POST_PROCESS_SPACE_TYPE == 1
 
@@ -214,9 +214,9 @@ void UberGamePostProcessPS(float4 WPos, float4 inBaseTC, out float4 outColor)
 
 #if POST_PROCESS_SPACE_TYPE == 1
 #if HIGH_QUALITY_POST_PROCESS_SPACE_CONVERSIONS
-	cImageFinalArtefacts = lastLinearColor + ((game_gamma_to_linear_mirrored(cImageFinalArtefacts) - game_gamma_to_linear_mirrored(lastGammaColor)) * paperWhite);
+	cImageFinalArtefacts = lastLinearColor + ((game_gamma_to_linear(cImageFinalArtefacts) - game_gamma_to_linear(lastGammaColor)) * paperWhite);
 #else // HIGH_QUALITY_POST_PROCESS_SPACE_CONVERSIONS
-	cImageFinalArtefacts = game_gamma_to_linear_mirrored(cImageFinalArtefacts) * paperWhite;
+	cImageFinalArtefacts = game_gamma_to_linear(cImageFinalArtefacts) * paperWhite;
 #endif // HIGH_QUALITY_POST_PROCESS_SPACE_CONVERSIONS
 #endif // POST_PROCESS_SPACE_TYPE == 1
 

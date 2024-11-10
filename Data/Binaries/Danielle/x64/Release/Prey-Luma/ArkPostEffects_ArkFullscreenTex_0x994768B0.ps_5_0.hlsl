@@ -30,7 +30,7 @@ void main(
 	if (LumaUIData.WritingOnSwapchain)
 	{
 		const float paperWhite = GamePaperWhiteNits / sRGB_WhiteLevelNits;
-		outColor.rgb = game_gamma_to_linear_mirrored(outColor.rgb);
+		outColor.rgb = game_gamma_to_linear(outColor.rgb);
 		outColor.rgb *= paperWhite;
 	}
 #endif // POST_PROCESS_SPACE_TYPE == 1

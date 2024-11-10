@@ -33,7 +33,7 @@ void TestOutput(inout float3 outColor)
 #if POST_PROCESS_SPACE_TYPE >= 1
   else if (GetLuminance(outColor.rgb) < -FLT_MIN)
 #else // POST_PROCESS_SPACE_TYPE <= 0
-  else if (GetLuminance(game_gamma_to_linear_mirrored(outColor.rgb)) < -FLT_MIN)
+  else if (GetLuminance(game_gamma_to_linear(outColor.rgb)) < -FLT_MIN)
 #endif // POST_PROCESS_SPACE_TYPE >= 1
   {
     outColor.rgb = float3(0, 0, 1);
@@ -367,7 +367,7 @@ void HDRFinalScenePS(float4 WPos, float4 baseTC, out float4 outColor)
   extrapolationSettings.transferFunctionIn = LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB;
   // If we are working in gamma space ("POST_PROCESS_SPACE_TYPE" 0), we don't want gamma correction to be applied on the output color (beyond 0-1),
   // it will be up to the last pass to linearize that with the target gamma (which will automatically apply the correction)
-  extrapolationSettings.transferFunctionOut = (bool(POST_PROCESS_SPACE_TYPE == 1) && (GAMMA_CORRECTION_TYPE == 1 || (GAMMA_CORRECTION_TYPE >= 2 && ANTICIPATE_ADVANCED_GAMMA_CORRECTION))) ? (GAMMA_CORRECTION_TYPE == 1 ? LUT_EXTRAPOLATION_TRANSFER_FUNCTION_GAMMA_2_2 : LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB_WITH_GAMMA_2_2_LUMINANCE) : LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB;
+  extrapolationSettings.transferFunctionOut = (bool(POST_PROCESS_SPACE_TYPE == 1) && GAMMA_CORRECTION_TYPE == 1) ? LUT_EXTRAPOLATION_TRANSFER_FUNCTION_GAMMA_2_2 : LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB;
   extrapolationSettings.samplingQuality = (HIGH_QUALITY_POST_PROCESS_SPACE_CONVERSIONS || ENABLE_LUT_TETRAHEDRAL_INTERPOLATION) ? (ENABLE_LUT_TETRAHEDRAL_INTERPOLATION ? 2 : 1) : 0;
 #if DEVELOPMENT && 1 // Test LUT extrapolation parameters //TODOFT4 (//)
   extrapolationSettings.inputTonemapToPeakWhiteNits = 10000 * LumaSettings.DevSetting01;
@@ -405,9 +405,9 @@ void HDRFinalScenePS(float4 WPos, float4 baseTC, out float4 outColor)
 
 #else // !ENABLE_COLOR_GRADING_LUT
 
-#if POST_PROCESS_SPACE_TYPE == 1 && (GAMMA_CORRECTION_TYPE == 1 || (GAMMA_CORRECTION_TYPE >= 2 && ANTICIPATE_ADVANCED_GAMMA_CORRECTION))
+#if POST_PROCESS_SPACE_TYPE == 1 && GAMMA_CORRECTION_TYPE == 1
   // Apply gamma correction (only in the 0-1 range) even if we are skipping the LUT
-  ColorGradingLUTTransferFunctionInOutCorrected(outColor.rgb, LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB, GAMMA_CORRECTION_TYPE == 1 ? LUT_EXTRAPOLATION_TRANSFER_FUNCTION_GAMMA_2_2 : LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB_WITH_GAMMA_2_2_LUMINANCE, true);
+  ColorGradingLUTTransferFunctionInOutCorrected(outColor.rgb, LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB, LUT_EXTRAPOLATION_TRANSFER_FUNCTION_GAMMA_2_2, true);
 #endif
 
 #endif // ENABLE_COLOR_GRADING_LUT
@@ -444,7 +444,7 @@ void HDRFinalScenePS(float4 WPos, float4 baseTC, out float4 outColor)
 #if _RT_SAMPLE0
   // FXAA
 #if POST_PROCESS_SPACE_TYPE >= 1 // LUMA FT: FXAA needs luma, not luminance
-  outColor.w = GetLuminance(linear_to_game_gamma_mirrored(outColor.xyz / paperWhite)); 
+  outColor.w = GetLuminance(linear_to_game_gamma(outColor.xyz / paperWhite)); 
 #else // POST_PROCESS_SPACE_TYPE <= 0
   outColor.w = GetLuminance(outColor.xyz) / paperWhite; // LUMA FT: fixed BT.601 luminance being erroneously used
 #endif // POST_PROCESS_SPACE_TYPE >= 1

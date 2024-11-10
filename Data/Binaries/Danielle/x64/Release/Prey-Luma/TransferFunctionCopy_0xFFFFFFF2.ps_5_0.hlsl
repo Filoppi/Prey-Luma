@@ -2,7 +2,7 @@
 
 Texture2D<float4> sourceTexture : register(t0);
 
-// Custom Luma shader to apply the display (or output) transfer function from a linear input
+// Custom Luma shader to apply the display (or output) transfer function from a linear input (or apply custom gamma correction)
 float4 main(float4 pos : SV_Position0) : SV_Target0
 {
 	float4 color = sourceTexture.Load((int3)pos.xyz);
@@ -17,8 +17,7 @@ float4 main(float4 pos : SV_Position0) : SV_Target0
 
 #if POST_PROCESS_SPACE_TYPE == 1
 		// Revert whatever gamma adjustment "GAMMA_CORRECTION_TYPE" would have made, and get the color is sRGB gamma encoding (which would have been meant for 2.2 displays)
-		// Note that in the "GAMMA_CORRECTION_TYPE == 2" + "ANTICIPATE_ADVANCED_GAMMA_CORRECTION" case, this inverse formula doesn't perfectly mirror the original one, so that value should be avoided for SDR.
-		color.rgb = linear_to_game_gamma_mirrored(color.rgb); //TODO LUMA: make non linear versions as optimization, we don't need them here
+		color.rgb = linear_to_game_gamma(color.rgb, false);
 #endif // POST_PROCESS_SPACE_TYPE == 1
 
 		// In SDR, we ignore "GAMMA_CORRECTION_TYPE" as they are not that relevant
@@ -26,7 +25,7 @@ float4 main(float4 pos : SV_Position0) : SV_Target0
 		// we linearize with sRGB because scRGB HDR buffers (Luma) in SDR are re-encoded with sRGB and then (likely) linearized by the display with 2.2, which would then apply the gamma correction.
 		// For any user that wanted to play in sRGB, they'd need to have an sRGB monitor.
 		// We could theoretically add a mode that fakes sRGB output on scRGB->2.2 but it wouldn't really be useful as the game was likely designed for 2.2 displays (unconsciously).
-		color.rgb = gamma_sRGB_to_linear(color.rgb);
+		color.rgb = gamma_sRGB_to_linear(color.rgb, GCT_NONE);
 	}
 	// HDR and SDR in HDR: in this case the UI paper white would have already been mutliplied in, relatively to the game paper white, so we only apply the game paper white.
 	else if (LumaSettings.DisplayMode == 1 || LumaSettings.DisplayMode == 2)
@@ -42,18 +41,25 @@ float4 main(float4 pos : SV_Position0) : SV_Target0
 #else // Apply gamma correction around the whole range
 
 #if GAMMA_CORRECTION_TYPE >= 2
-  		color.rgb = RestoreLuminance(gamma_sRGB_to_linear_mirrored(color.rgb), gamma_to_linear_mirrored(color.rgb));
+  		color.rgb = RestoreLuminance(gamma_sRGB_to_linear(color.rgb, GCT_MIRROR), gamma_to_linear(color.rgb, GCT_MIRROR));
 #elif GAMMA_CORRECTION_TYPE == 1
-		color.rgb = gamma_to_linear_mirrored(color.rgb);
+		color.rgb = gamma_to_linear(color.rgb, GCT_MIRROR);
 #else // GAMMA_CORRECTION_TYPE <= 0
-  		color.rgb = gamma_sRGB_to_linear_mirrored(color.rgb);
+  		color.rgb = gamma_sRGB_to_linear(color.rgb, GCT_MIRROR);
 #endif // GAMMA_CORRECTION_TYPE >= 2
 
 #endif // GAMMA_CORRECTION_TYPE != 0 && 1
 		
 		color.rgb *= paperWhite;
 
-#elif GAMMA_CORRECTION_TYPE >= 2 && !ANTICIPATE_ADVANCED_GAMMA_CORRECTION // Linear->Linear space (POST_PROCESS_SPACE_TYPE == 1)
+// The "GAMMA_CORRECTION_TYPE >= 2" type was always delayed until the end and treated as sRGB gamma before.
+// We originally applied this gamma correction directly during tonemapping/grading and other later passes,
+// but given that the formula is slow to execute and isn't easily revertible
+// (mirroring back and forth is lossy, at least in the current lightweight implementation),
+// we moved it to a single application here (it might not look as good but it's certainly good enough).
+// Any linear->gamma->linear encoding (e.g. PostAACoposites) or linear->gamma->luminance encoding (e.g. Anti Aliasing)
+// should fall back on gamma 2.2 instead of sRGB for this gamma correction type, but we haven't bothered implementing that (it's not worth it).
+#elif GAMMA_CORRECTION_TYPE >= 2 // Linear->Linear space (POST_PROCESS_SPACE_TYPE == 1)
 
 		// Implement the "GAMMA_CORRECTION_TYPE == 2" case, thus convert from sRGB to sRGB with 2.2 luminance.
 		// Doing this is here is a bit late, as we can't acknowledge the UI brightness at this point, though that's not a huge deal.
@@ -61,27 +67,27 @@ float4 main(float4 pos : SV_Position0) : SV_Target0
 		color.rgb /= paperWhite;
    		float3 colorInExcess = color.rgb - saturate(color.rgb); // Only correct in the 0-1 range
 		color.rgb = saturate(color.rgb);
-#if 1 // This code mirrors "game_gamma_to_linear_mirrored()"
+#if 1 // This code mirrors "game_gamma_to_linear()"
 		float3 gammaCorrectedColor = gamma_to_linear(linear_to_sRGB_gamma(color.rgb));
 		color.rgb = RestoreLuminance(color.rgb, gammaCorrectedColor);
 #else
-		float gammaCorrectedLuminance = gamma_to_linear(linear_to_sRGB_gamma(GetLuminance(color.rgb))).x;
+		float gammaCorrectedLuminance = gamma_to_linear1(linear_to_sRGB_gamma1(GetLuminance(color.rgb)));
 		color.rgb = RestoreLuminance(color.rgb, gammaCorrectedLuminance);
 #endif
 		color.rgb += colorInExcess;
 		color.rgb *= paperWhite;
 
-#endif
+#endif // POST_PROCESS_SPACE_TYPE != 1
 	}
 	// This case means the game currently doesn't have Luma custom shaders built in (fallback in case of problems), so the value of most macro defines doesn't matter
 	else
 	{
 #if 1 // HDR (we assume this is the default case for Luma users/devs, this isn't an officially supported case anyway) (if we wanted we could still check Luma defines or cbuffer settings)
 		// Forcefully linearize with gamma 2.2 (gamma correction) (the default setting)
-		color.rgb = gamma_to_linear_mirrored(color.rgb);
+		color.rgb = gamma_to_linear(color.rgb, GCT_MIRROR);
 		color.rgb *= paperWhite;
 #else // SDR (on SDR)
-		color.rgb = gamma_sRGB_to_linear_mirrored(color.rgb);
+		color.rgb = gamma_sRGB_to_linear(color.rgb, GCT_SATURATE);
 #endif
 	}
 
