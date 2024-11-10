@@ -1,8 +1,8 @@
 #include "include/CBuffer_PerViewGlobal.hlsl"
 
-// tex0 = edgesTex
-// tex1 = areaTex
-// tex2 = searchTex
+// tex0 = edgesTex (HDR, generated based on the rendering)
+// tex1 = areaTex (SDR/8bit, unclear who generates this, is it fixed in value?)
+// tex2 = searchTex (SDR/8bit, unclear who generates this, is it fixed in value?)
 SamplerState _tex0_s : register(s0);
 SamplerState _tex1_s : register(s1);
 SamplerState _tex2_s : register(s2);
