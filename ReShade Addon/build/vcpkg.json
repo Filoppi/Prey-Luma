@@ -9,11 +9,5 @@
       { "name": "simpleini" },
       { "name": "xbyak" }
     ],
-  "builtin-baseline": "e60236ee051183f1122066bee8c54a0b47c43a60",
-  "overrides": [
-    { "name": "spdlog", "version": "1.14.1" },
-    { "name": "nlohmann-json", "version": "3.11.3" },
-    { "name": "simpleini", "version": "4.22" },
-    { "name": "xbyak", "version": "7.7" }
-  ]
+  "builtin-baseline": "e60236ee051183f1122066bee8c54a0b47c43a60"
 }
