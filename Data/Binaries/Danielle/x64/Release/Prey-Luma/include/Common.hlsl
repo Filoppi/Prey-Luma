@@ -126,9 +126,9 @@ float3 PumboAutoHDR(float3 SDRColor, float _PeakWhiteNits, float _PaperWhiteNits
 	const float SDRRatio = max(GetLuminance(SDRColor), 0.f);
 	// Limit AutoHDR brightness, it won't look good beyond a certain level.
 	// The paper white multiplier is applied later so we account for that.
-	const float AutoHDRMaxWhite = min(_PeakWhiteNits, PeakWhiteNits) / _PaperWhiteNits;
+	const float AutoHDRMaxWhite = max(min(_PeakWhiteNits, PeakWhiteNits) / _PaperWhiteNits, 1.f);
 	const float AutoHDRShoulderRatio = 1.f - max(1.f - SDRRatio, 0.f);
-	const float AutoHDRExtraRatio = pow(AutoHDRShoulderRatio, ShoulderPow) * (AutoHDRMaxWhite - 1.f);
+	const float AutoHDRExtraRatio = pow(max(AutoHDRShoulderRatio, 0.f), ShoulderPow) * (AutoHDRMaxWhite - 1.f);
 	const float AutoHDRTotalRatio = SDRRatio + AutoHDRExtraRatio;
 	return SDRColor * safeDivision(AutoHDRTotalRatio, SDRRatio, 1);
 }
