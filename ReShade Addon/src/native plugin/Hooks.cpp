@@ -14,54 +14,54 @@ namespace Hooks
 		// Patch internal CryEngine RGBA8 to RGBA16F
 		{
 			// SPostEffectsUtils::Create
-			const auto address = Offsets::baseAddress + 0x1071510;
+			const auto address = Offsets::GetAddress(Offsets::SPostEffectsUtils_Create);
 
-			dku::Hook::WriteImm(address + 0x435, format);   // $PrevFrameScaled (recreate)
-			dku::Hook::WriteImm(address + 0x47D, format);   // $PrevFrameScaled (initial)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_PrevFrameScaled_1), format);   // $PrevFrameScaled (recreate)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_PrevFrameScaled_2), format);   // $PrevFrameScaled (initial)
 
-			dku::Hook::WriteImm(address + 0x371, format);   // $BackBufferScaled_d2 (recreate)
-			dku::Hook::WriteImm(address + 0x3B9, format);   // $BackBufferScaled_d2 (initial)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaled_d2_1), format);   // $BackBufferScaled_d2 (recreate)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaled_d2_2), format);   // $BackBufferScaled_d2 (initial)
 
-			dku::Hook::WriteImm(address + 0x4F9, format);   // $BackBufferScaledTemp_d2 (recreate)
-			dku::Hook::WriteImm(address + 0x541, format);   // $BackBufferScaledTemp_d2 (initial)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaledTemp_d2_1), format);   // $BackBufferScaledTemp_d2 (recreate)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaledTemp_d2_2), format);   // $BackBufferScaledTemp_d2 (initial)
 
-			dku::Hook::WriteImm(address + 0x743, format);   // $BackBufferScaled_d4 (recreate)
-			dku::Hook::WriteImm(address + 0x78D, format);   // $BackBufferScaled_d4 (initial)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaled_d4_1), format);   // $BackBufferScaled_d4 (recreate)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaled_d4_2), format);   // $BackBufferScaled_d4 (initial)
 
-			dku::Hook::WriteImm(address + 0x80A, format);   // $BackBufferScaledTemp_d4 (recreate)
-			dku::Hook::WriteImm(address + 0x852, format);   // $BackBufferScaledTemp_d4 (initial)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaledTemp_d4_1), format);   // $BackBufferScaledTemp_d4 (recreate)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaledTemp_d4_2), format);   // $BackBufferScaledTemp_d4 (initial)
 
-			dku::Hook::WriteImm(address + 0x8FE, format);   // $BackBufferScaled_d8 (recreate)
-			dku::Hook::WriteImm(address + 0x92D, format);   // $BackBufferScaled_d8 (initial)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaled_d8_1), format);   // $BackBufferScaled_d8 (recreate)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaled_d8_2), format);   // $BackBufferScaled_d8 (initial)
 		}
 
 		{
 			// CTexture::GenerateSceneMap
-			const auto address = Offsets::baseAddress + 0xF57090;
+			const auto address = Offsets::GetAddress(Offsets::CTexture_GenerateSceneMap);
 
-			dku::Hook::WriteImm(address + 0xEE, format);    // $BackBuffer
-			dku::Hook::WriteImm(address + 0x151, format);   // $BackBuffer
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateSceneMap_BackBuffer_1), format);   // $BackBuffer
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateSceneMap_BackBuffer_2), format);   // $BackBuffer
 		}
 
 		{
 			// CColorGradingControllerD3D::InitResources
-			const auto address = Offsets::baseAddress + 0xF036D0;
+			const auto address = Offsets::GetAddress(Offsets::CColorGradingControllerD3D_InitResources);
 
-			dku::Hook::WriteImm(address + 0xA3, format16f);  // ColorGradingMergeLayer0
-			dku::Hook::WriteImm(address + 0xFA, format16f);  // ColorGradingMergeLayer1
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CColorGradingControllerD3D_InitResources_ColorGradingMergeLayer0), format16f);  // ColorGradingMergeLayer0
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CColorGradingControllerD3D_InitResources_ColorGradingMergeLayer1), format16f);  // ColorGradingMergeLayer1
 		}
 
 		{
 			// CTexture::GenerateHDRMaps
-			const auto address = Offsets::baseAddress + 0xF15280;
+			const auto address = Offsets::GetAddress(Offsets::CTexture_GenerateHDRMaps);
 
-			dku::Hook::WriteImm(address + 0x11A, format16f);  // used to calculate bits per pixel 
-			dku::Hook::WriteImm(address + 0x14B, format16f);  // $HDRTargetPrev
-			dku::Hook::WriteImm(address + 0x52A, format16f);  // $HDRTempBloom0
-			dku::Hook::WriteImm(address + 0x5B0, format16f);  // $HDRTempBloom1
-			dku::Hook::WriteImm(address + 0x630, format16f);  // $HDRFinalBloom
-			dku::Hook::WriteImm(address + 0xAB7, format16f);  // $SceneTargetR11G11B10F_0
-			dku::Hook::WriteImm(address + 0xB52, format16f);  // $SceneTargetR11G11B10F_1
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_BitsPerPixel), format16f);  // used to calculate bits per pixel 
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_HDRTargetPrev), format16f);  // $HDRTargetPrev
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_HDRTempBloom0), format16f);  // $HDRTempBloom0
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_HDRTempBloom1), format16f);  // $HDRTempBloom1
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_HDRFinalBloom), format16f);  // $HDRFinalBloom
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_SceneTargetR11G11B10F_0), format16f);  // $SceneTargetR11G11B10F_0
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_SceneTargetR11G11B10F_1), format16f);  // $SceneTargetR11G11B10F_1
 		}
 
 #if !ADD_NEW_RENDER_TARGETS && 0 // Force upgrade all the texture we'd replace later too (this leads to issues, like some objects having purple reflections etc)
@@ -113,24 +113,24 @@ namespace Hooks
 			Patch patch(reinterpret_cast<uintptr_t>(PatchSwapchainDesc));
 			patch.ready();
 
-			auto offset = std::make_pair(0x50E, 0x515);
-			auto hook = dku::Hook::AddASMPatch(Offsets::baseAddress + 0xF50000, offset, &patch);
+			auto offset = std::make_pair(Offsets::Get(Offsets::SwapchainDesc_Start), Offsets::Get(Offsets::SwapchainDesc_End));
+			auto hook = dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::SwapchainDesc_Func), offset, &patch);
 			hook->Enable();
 		}
 
 		// Hook swapchain creation and set colorspace
 		{
-			_Hook_OnD3D11PostCreateDevice = dku::Hook::write_call(Offsets::baseAddress + 0xF53F66, Hook_OnD3D11PostCreateDevice);
+			_Hook_OnD3D11PostCreateDevice = dku::Hook::write_call(Offsets::GetAddress(Offsets::OnD3D11PostCreateDevice), Hook_OnD3D11PostCreateDevice);
 		}
 
 #if ADD_NEW_RENDER_TARGETS
 		// Replicate how the game treats render targets
 		{
 			// Hook SD3DPostEffectsUtils::CreateRenderTarget for $SceneDiffuse in CDeferredShading::CreateDeferredMaps
-			_Hook_CreateRenderTarget = dku::Hook::write_call(Offsets::baseAddress + 0xF083F0, Hook_CreateRenderTarget);
+			_Hook_CreateRenderTarget = dku::Hook::write_call(Offsets::GetAddress(Offsets::CreateRenderTarget), Hook_CreateRenderTarget);
 
 			// Hook CTexture::CreateTextureObject for $SceneDiffuse
-			_Hook_CreateTextureObject = dku::Hook::write_call(Offsets::baseAddress + 0x100F61F, Hook_CreateTextureObject);
+			_Hook_CreateTextureObject = dku::Hook::write_call(Offsets::GetAddress(Offsets::CreateTextureObject), Hook_CreateTextureObject);
 		}
 #endif
 
@@ -157,8 +157,8 @@ namespace Hooks
 				Patch patch(reinterpret_cast<uintptr_t>(GetTonemapTargetRT));
 				patch.ready();
 
-				auto offset = std::make_pair(0x78D, 0x794);
-				auto hook = dku::Hook::AddASMPatch(Offsets::baseAddress + 0xFB00C0, offset, &patch);
+				auto offset = std::make_pair(Offsets::Get(Offsets::TonemapTarget1_Start), Offsets::Get(Offsets::TonemapTarget1_End));
+				auto hook = dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::TonemapTarget1_Func), offset, &patch);
 				hook->Enable();
 			}
 
@@ -178,8 +178,8 @@ namespace Hooks
 				Patch patch(reinterpret_cast<uintptr_t>(GetTonemapTargetRT));
 				patch.ready();
 
-				auto offset = std::make_pair(0x10, 0x17);
-				auto hook = dku::Hook::AddASMPatch(Offsets::baseAddress + 0xF9C790, offset, &patch);
+				auto offset = std::make_pair(Offsets::Get(Offsets::TonemapTarget2_Start), Offsets::Get(Offsets::TonemapTarget2_End));
+				auto hook = dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::TonemapTarget2_Func), offset, &patch);
 				hook->Enable();
 			}
 
@@ -199,8 +199,8 @@ namespace Hooks
 				Patch patch(reinterpret_cast<uintptr_t>(GetTonemapTargetRT));
 				patch.ready();
 
-				auto offset = std::make_pair(0x105, 0x10C);
-				auto hook = dku::Hook::AddASMPatch(Offsets::baseAddress + 0xF3B860, offset, &patch);
+				auto offset = std::make_pair(Offsets::Get(Offsets::TonemapTarget3_Start), Offsets::Get(Offsets::TonemapTarget3_End));
+				auto hook = dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::TonemapTarget3_Func), offset, &patch);
 				hook->Enable();
 			}
 
@@ -220,8 +220,8 @@ namespace Hooks
 				Patch patch(reinterpret_cast<uintptr_t>(GetTonemapTargetRT));
 				patch.ready();
 
-				auto offset = std::make_pair(0x41A, 0x421);
-				auto hook = dku::Hook::AddASMPatch(Offsets::baseAddress + 0xFBD100, offset, &patch);
+				auto offset = std::make_pair(Offsets::Get(Offsets::TonemapTarget4_Start), Offsets::Get(Offsets::TonemapTarget4_End));
+				auto hook = dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::TonemapTarget4_Func), offset, &patch);
 				hook->Enable();
 			}
 
@@ -245,8 +245,8 @@ namespace Hooks
 				Patch patch(reinterpret_cast<uintptr_t>(GetPostAATargetRT));
 				patch.ready();
 
-				auto offset = std::make_pair(0x28, 0x2F);
-				auto hook = dku::Hook::AddASMPatch(Offsets::baseAddress + 0xF9C790, offset, &patch);
+				auto offset = std::make_pair(Offsets::Get(Offsets::PostAATarget1_Start), Offsets::Get(Offsets::PostAATarget1_End));
+				auto hook = dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::PostAATarget1_Func), offset, &patch);
 				hook->Enable();
 			}
 
@@ -266,33 +266,8 @@ namespace Hooks
 				Patch patch(reinterpret_cast<uintptr_t>(GetPostAATargetRT));
 				patch.ready();
 
-				auto offset = std::make_pair(0x1A, 0x21);
-				auto hook = dku::Hook::AddASMPatch(Offsets::baseAddress + 0xF99500, offset, &patch);
-				hook->Enable();
-			}
-
-			// Use UpscaleTarget instead of SceneSpecular (CPostAAStage::DoFinalComposition)
-			{
-				struct Patch : Xbyak::CodeGenerator
-				{
-					Patch(uintptr_t a_addr)
-					{
-						push(rax);
-
-						// call our function
-						mov(rax, a_addr);
-						call(rax);
-						mov(rcx, rax);
-
-						pop(rax);
-					}
-				};
-
-				Patch patch(reinterpret_cast<uintptr_t>(GetUpscaleTargetRT));
-				patch.ready();
-
-				auto offset = std::make_pair(0x3B, 0x42);
-				auto hook = dku::Hook::AddASMPatch(Offsets::baseAddress + 0xF9BBB0, offset, &patch);
+				auto offset = std::make_pair(Offsets::Get(Offsets::PostAATarget2_Start), Offsets::Get(Offsets::PostAATarget2_End));
+				auto hook = dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::PostAATarget2_Func), offset, &patch);
 				hook->Enable();
 			}
 
@@ -316,8 +291,32 @@ namespace Hooks
 				Patch patch(reinterpret_cast<uintptr_t>(GetPostAATargetRT));
 				patch.ready();
 
-				auto offset = std::make_pair(0x9B, 0xA3);
-				auto hook = dku::Hook::AddASMPatch(Offsets::baseAddress + 0xF9BBB0, offset, &patch);
+				auto offset = std::make_pair(Offsets::Get(Offsets::PostAATarget3_Start), Offsets::Get(Offsets::PostAATarget3_End));
+				auto hook = dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::PostAATarget3_Func), offset, &patch);
+				hook->Enable();
+			}
+
+			// Use UpscaleTarget instead of SceneSpecular (CPostAAStage::DoFinalComposition)
+			{
+				struct Patch : Xbyak::CodeGenerator
+				{
+					Patch(uintptr_t a_addr)
+					{
+						push(rax);
+
+						// call our function
+						mov(rax, a_addr);
+						call(rax);
+						mov(rcx, rax);
+
+						pop(rax);
+					}
+				};
+
+				Patch patch(reinterpret_cast<uintptr_t>(GetUpscaleTargetRT));
+				patch.ready();
+				auto offset = std::make_pair(Offsets::Get(Offsets::UpscaleTarget1_Start), Offsets::Get(Offsets::UpscaleTarget1_End));
+				auto hook = dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::UpscaleTarget1_Func), offset, &patch);
 				hook->Enable();
 			}
 
@@ -336,8 +335,8 @@ namespace Hooks
 				Patch patch(reinterpret_cast<uintptr_t>(GetUpscaleTargetRT));
 				patch.ready();
 
-				auto offset = std::make_pair(0x47, 0x4E);
-				auto hook = dku::Hook::AddASMPatch(Offsets::baseAddress + 0xF7EB20, offset, &patch);
+				auto offset = std::make_pair(Offsets::Get(Offsets::UpscaleTarget2_Start), Offsets::Get(Offsets::UpscaleTarget2_End));
+				auto hook = dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::UpscaleTarget2_Func), offset, &patch);
 				hook->Enable();
 			}
 
@@ -363,8 +362,8 @@ namespace Hooks
 				Patch patch(reinterpret_cast<uintptr_t>(GetUpscaleTargetRT));
 				patch.ready();
 
-				auto offset = std::make_pair(0x10E, 0x115);
-				auto hook = dku::Hook::AddASMPatch(Offsets::baseAddress + 0xF7EB20, offset, &patch);
+				auto offset = std::make_pair(Offsets::Get(Offsets::UpscaleTarget3_Start), Offsets::Get(Offsets::UpscaleTarget3_End));
+				auto hook = dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::UpscaleTarget3_Func), offset, &patch);
 				hook->Enable();
 			}
 		}
