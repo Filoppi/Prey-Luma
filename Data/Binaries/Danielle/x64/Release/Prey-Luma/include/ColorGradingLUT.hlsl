@@ -43,16 +43,31 @@ uint3 ConditionalConvert3DTo2DLUTCoordinates(uint3 Coordinates3D, uint lutSize =
 #endif
 }
 
-//TODOFT
+// WIP (rename if ever...)
+#ifndef HIGH_QUALITY_ENCODING_TYPE
+#define HIGH_QUALITY_ENCODING_TYPE 1
+#endif
+
+//TODOFT3: use Log (10? 2?) instead of PQ? It's actually not making much difference
 float3 Linear_to_PQ2(float3 LinearColor, int clampType = GCT_NONE)
 {
+#if HIGH_QUALITY_ENCODING_TYPE == 0
+	return LinearColor;
+#elif HIGH_QUALITY_ENCODING_TYPE == 1
 	return Linear_to_PQ(LinearColor, clampType);
-	//return LinearColor;
+#else // HIGH_QUALITY_ENCODING_TYPE >= 2
+	return linearToLog(LinearColor, clampType);
+#endif
 }
 float3 PQ_to_Linear2(float3 ST2084Color, int clampType = GCT_NONE)
 {
+#if HIGH_QUALITY_ENCODING_TYPE == 0
+	return ST2084Color;
+#elif HIGH_QUALITY_ENCODING_TYPE == 1
 	return PQ_to_Linear(ST2084Color, clampType);
-	//return ST2084Color;
+#else // HIGH_QUALITY_ENCODING_TYPE >= 2
+	return logToLinear(ST2084Color, clampType);
+#endif
 }
 
 // 0 None
@@ -878,7 +893,6 @@ float3 SampleLUTWithExtrapolation(LUT_TEXTURE_TYPE lut, SamplerState samplerStat
 #endif
       }
 		}
-    //TODOFT3: use Log (10? 2?) instead of PQ?
 		else //if (settings.extrapolationQuality >= 1)
 		{
       // We always run the UV centering logic in the vanilla transfer function space (e.g. sRGB), not PQ, as all these transfer functions are reliable enough within the 0-1 range.
