@@ -3991,7 +3991,7 @@ void DumpShader(uint32_t shader_hash, bool auto_detect_type = true) {
       static const std::string template_vertex_shader_name = "vs_";
       static const std::string template_pixel_shader_name = "ps_";
       static const std::string template_compute_shader_name = "cs_";
-      static const std::string template_shader_full_name = "x_x";
+      static const std::string template_shader_model_version_name = "x_x";
 
       std::string_view template_shader_name;
       switch (cached_shader->type) {
@@ -4009,11 +4009,15 @@ void DumpShader(uint32_t shader_hash, bool auto_detect_type = true) {
           break;
         }
       }
-      const auto type_index = cached_shader->disasm.find(template_shader_name);
-      if (type_index != std::string::npos) {
-        const std::string type = cached_shader->disasm.substr(type_index, template_shader_name.length() + template_shader_full_name.length());
-        dump_path += ".";
-        dump_path += type;
+      for (char i = '0'; i <= '9'; i++) {
+          std::string type_wildcard = std::string(template_shader_name) + i + '_';
+          const auto type_index = cached_shader->disasm.find(type_wildcard);
+          if (type_index != std::string::npos) {
+              const std::string type = cached_shader->disasm.substr(type_index, template_shader_name.length() + template_shader_model_version_name.length());
+              dump_path += ".";
+              dump_path += type;
+              break;
+          }
       }
     }
   }
@@ -4047,7 +4051,9 @@ void AutoDumpShaders() {
   }
   for (auto shader_to_dump : shaders_to_dump_copy) {
     const std::lock_guard<std::recursive_mutex> lock_dumping(s_mutex_dumping);
-    if (!dumped_shaders.contains(shader_to_dump)) {
+    // Set this to true in case your old dumped shaders have bad naming (e.g. missing the "ps_5_0" appendix) and you want to replace them (on the next boot, the duplicate shaders with the shorter name will be deleted)
+    constexpr bool force_redump_shaders = false;
+    if (force_redump_shaders || !dumped_shaders.contains(shader_to_dump)) {
       DumpShader(shader_to_dump, true);
     }
   }
@@ -5018,6 +5024,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 void Init(bool async) {
   // Add all the shaders we have already dumped to the dumped list to avoid live re-dumping them
   dumped_shaders.clear();
+  std::set<std::filesystem::path> dumped_shaders_paths;
   auto dump_path = GetShaderPath();
   if (std::filesystem::exists(dump_path)) {
     dump_path /= "dump";
@@ -5028,11 +5035,32 @@ void Init(bool async) {
         if (!entry.is_regular_file()) continue;
         const auto& entry_path = entry.path();
         if (entry_path.extension() != ".cso") continue;
-        const auto& entry_path_string = entry_path.filename().string();
-        if (entry_path_string.starts_with("0x") && entry_path_string.length() > 2 + HASH_CHARACTERS_LENGTH) {
-          const std::string hash = entry_path_string.substr(2, HASH_CHARACTERS_LENGTH);
+        const auto& entry_strem_string = entry_path.stem().string();
+        if (entry_strem_string.starts_with("0x") && entry_strem_string.length() >= 2 + HASH_CHARACTERS_LENGTH) {
+          const std::string shader_hash_string = entry_strem_string.substr(2, HASH_CHARACTERS_LENGTH);
           try {
-            dumped_shaders.emplace(std::stoul(hash, nullptr, 16));
+            uint32_t shader_hash = std::stoul(shader_hash_string, nullptr, 16);
+            bool duplicate = dumped_shaders.contains(shader_hash);
+#if DEVELOPMENT
+            ASSERT_ONCE(!duplicate); // We have a duplicate shader dumped, cancel here to avoid deleting it
+#endif
+            if (duplicate) {
+                for (const auto& prev_entry_path : dumped_shaders_paths) {
+                    if (prev_entry_path.string().contains(shader_hash_string)) {
+                        // Delete the old version if it's shorter in name (e.g. it might have missed the "ps_5_0" appendix, or simply missing a name we manually appended to it)
+                        if (prev_entry_path.string().length() < entry_path.string().length()) {
+                            if (std::filesystem::remove(prev_entry_path)) {
+                                duplicate = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            if (!duplicate) {
+                dumped_shaders.emplace(shader_hash);
+                dumped_shaders_paths.emplace(entry_path);
+            }
           } catch (const std::exception& e) {
             continue;
           }
