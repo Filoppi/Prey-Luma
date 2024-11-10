@@ -78,15 +78,23 @@ float4 main(float4 pos : SV_Position0) : SV_Target0
 
 #endif // POST_PROCESS_SPACE_TYPE != 1
 	}
-	// This case means the game currently doesn't have Luma custom shaders built in (fallback in case of problems), so the value of most macro defines doesn't matter
+	// This case means the game currently doesn't have Luma custom shaders built in (fallback in case of problems), so the value of most macro defines doesn't matter (we don't want it to)
 	else
 	{
 #if 1 // HDR (we assume this is the default case for Luma users/devs, this isn't an officially supported case anyway) (if we wanted we could still check Luma defines or cbuffer settings)
-		// Forcefully linearize with gamma 2.2 (gamma correction) (the default setting)
-		color.rgb = gamma_to_linear(color.rgb, GCT_MIRROR);
+
+		// Forcefully linearize with gamma 2.2 outside of a dev environment (gamma correction) (the default setting)
+#if GAMMA_CORRECTION_TYPE <= 0 && DEVELOPMENT
+		color.rgb = gamma_sRGB_to_linear(color.rgb, GCT_MIRROR);
+#else // GAMMA_CORRECTION_TYPE >= 1
+  		color.rgb = gamma_to_linear(color.rgb, GCT_MIRROR);
+#endif // GAMMA_CORRECTION_TYPE <= 0
 		color.rgb *= paperWhite;
+
 #else // SDR (on SDR)
+
 		color.rgb = gamma_sRGB_to_linear(color.rgb, GCT_SATURATE);
+
 #endif
 	}
 
