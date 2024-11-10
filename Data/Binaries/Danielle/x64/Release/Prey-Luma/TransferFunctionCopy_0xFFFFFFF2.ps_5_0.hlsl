@@ -69,11 +69,10 @@ float4 main(float4 pos : SV_Position0) : SV_Target0
 		color.rgb = saturate(color.rgb);
 #if 1 // This code mirrors "game_gamma_to_linear()"
 		float3 gammaCorrectedColor = gamma_to_linear(linear_to_sRGB_gamma(color.rgb));
-		color.rgb = RestoreLuminance(color.rgb, gammaCorrectedColor);
 #else
-		float gammaCorrectedLuminance = gamma_to_linear1(linear_to_sRGB_gamma1(GetLuminance(color.rgb)));
-		color.rgb = RestoreLuminance(color.rgb, gammaCorrectedLuminance);
+		float gammaCorrectedColor = gamma_to_linear1(linear_to_sRGB_gamma1(GetLuminance(color.rgb))); // "gammaCorrectedLuminance"
 #endif
+		color.rgb = RestoreLuminance(color.rgb, gammaCorrectedColor);
 		color.rgb += colorInExcess;
 		color.rgb *= paperWhite;
 
@@ -90,6 +89,9 @@ float4 main(float4 pos : SV_Position0) : SV_Target0
 		color.rgb = gamma_sRGB_to_linear(color.rgb, GCT_SATURATE);
 #endif
 	}
+
+	// TODO LUMA: add "FixColorGradingLUTNegativeLuminance()" call here? It's not really needed until proven otherwise (we should never have negative luminances, no code can generate them (?)).
+	// Either way this shader doesn't always run and there's stuff that optionally runs before this, like sharpening (which can randomly affect luminance as it's by channel).
 
 #if 0 // Test
 	color.rgb = float3(1, 0, 0);

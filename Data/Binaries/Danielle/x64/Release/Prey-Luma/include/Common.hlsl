@@ -39,16 +39,16 @@ static const float BinkVideosAutoHDRPeakWhiteNits = 400; // Values beyond 700 wi
 // The higher it is, the "later" highlights start
 static const float BinkVideosAutoHDRShoulderPow = 2.75; // A somewhat conservative value
 
-float3 RestoreLuminance(float3 targetColor, float3 sourceColor)
+float3 RestoreLuminance(float3 targetColor, float sourceColorLuminance, bool safe = false)
 {
-  float sourceColorLuminance = GetLuminance(sourceColor);
   float targetColorLuminance = GetLuminance(targetColor);
-  return targetColor * max(safeDivision(sourceColorLuminance, targetColorLuminance, 1), 0.0);
+  if (safe)
+    return targetColor * safeDivision(max(sourceColorLuminance, 0.0), max(targetColorLuminance, 0.0), 0);
+  return targetColor * safeDivision(sourceColorLuminance, targetColorLuminance, 1);
 }
-float3 RestoreLuminance(float3 targetColor, float sourceColorLuminance)
+float3 RestoreLuminance(float3 targetColor, float3 sourceColor, bool safe = false)
 {
-  float targetColorLuminance = GetLuminance(targetColor);
-  return targetColor * max(safeDivision(sourceColorLuminance, targetColorLuminance, 1), 0.0);
+  return RestoreLuminance(targetColor, GetLuminance(sourceColor), safe);
 }
 
 // Formulas that either use 2.2 or sRGB gamma depending on a global definition.
