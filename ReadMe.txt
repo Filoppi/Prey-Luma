@@ -31,6 +31,8 @@ Luma shaders can be found in ".\Data\Binaries\Danielle\x64\Release\Prey-Luma\".
 
 The steam game won't start if launched directly from the executable, unless u have a cracked steam dll. That's also the only way to hook graphics debuggers to the Steam version (NV and Intel work...?). no reshade
 
+To zip CryEngine packages do this ...
+
 Luma inherits code from the following repositories:
 https://github.com/ersh1/Luma-Prey/
 https://github.com/clshortfuse/renodx
