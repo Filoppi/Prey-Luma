@@ -4183,7 +4183,9 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
       CleanShadersCache();
       // Force recompile all shaders the next time
       for (const auto& custom_shader_pair : custom_shaders_cache) {
-          custom_shader_pair.second->preprocessed_hash = 0;
+          if (custom_shader_pair.second) {
+              custom_shader_pair.second->preprocessed_hash = 0;
+          }
       }
   }
 #endif
