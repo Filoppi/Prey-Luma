@@ -16,6 +16,9 @@
 #define _DEBUG 1
 #endif // !NDEBUG
 
+// Disables loading the ReShade Addon code (useful to test the mod without any ReShade dependencies)
+#define DISABLE_RESHADE 0
+
 #pragma comment(lib, "dxguid.lib")
 
 #include <d3d11.h>
@@ -5243,14 +5246,22 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
           }
       }
 
+#if DISABLE_RESHADE
+      if (!asi_loaded) return FALSE;
+#else
       // Register the ReShade addon.
       // We simply cancel everything else if reshade is not present or failed to register,
       // we could still load the native plugin,
       const bool reshade_addon_register_succeeded = reshade::register_addon(h_module);
       if (!reshade_addon_register_succeeded) return FALSE;
+#endif // DISABLE_RESHADE
 
       // Initialize the "native plugin" (our code hooks/patches)
       NativePlugin::Init(NAME, Globals::VERSION);
+
+#if DISABLE_RESHADE
+      if (asi_loaded) return TRUE;
+#endif // DISABLE_RESHADE
 
       reshade::register_event<reshade::addon_event::init_device>(OnInitDevice);
       reshade::register_event<reshade::addon_event::destroy_device>(OnDestroyDevice);
