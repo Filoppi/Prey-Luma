@@ -20,6 +20,11 @@ void main(
 {
   float2 sampleUV = MapViewportToRaster(inBaseTC.xy);
 
+#if REJITTER_SUNSHAFTS
+  // Dejitter the background depth/color, to get a more consistent result over time (basically a quick way of resolving TAA)
+  sampleUV -= LumaData.CameraJitters.xy * float2(0.5, -0.5);
+#endif
+
   float sceneDepth = _tex0.Sample(_tex0_s, sampleUV).x; // Linear depth (0 near, 1 far)
   outColor = float4(sceneDepth, sceneDepth, sceneDepth, 1 - sceneDepth.x);
 

@@ -8,7 +8,7 @@ cbuffer PER_BATCH : register(b0)
 SamplerState occMap_s : register(s1);
 Texture2D<float4> occMap : register(t1);
 
-struct OutputShafeVS
+struct OutputShaftVS // LUMA FT: fixed "OutputShafeVS" typo
 {
 	float4 hpos:POSITION;
 	float2 uv:TEXCOORD0;
@@ -20,7 +20,7 @@ struct OutputShafeVS
 // This draws on a square around the sun, based on the occlusion+color buffer (shaftsOccPS).
 // This also writes to an "SDR" buffer (though this time R16G16B16A16_UNORM for some reason), even with the LUMA mod (I think, but not 100% sure, it doesn't really matter as it doesn't need values beyond 1).
 // This doesn't run at full resolution, but at 1/2.5 (of the output resolution, this isn't scaled with DRS) (might vary depending on the base resolution? there might be some mip map pow 2 rounding?).
-void main(OutputShafeVS IN, out float4 outColor : SV_Target0)
+void main(OutputShaftVS IN, out float4 outColor : SV_Target0)
 {
 #if 0 // LUMA FT: quick test to visualize the occlusion texture
 	outColor = float4( occMap.Sample(occMap_s, IN.center.zw).rgb, 1 );
@@ -51,12 +51,12 @@ void main(OutputShafeVS IN, out float4 outColor : SV_Target0)
 	for( int i=0; i<N_SAMPLE; i++ )
 	{
 		cuv -= duv;
-		color.rgb += occMap.Sample(occMap_s, cuv).rgb * decay; // LUMA FT: this doesn't seem to need to be scaled by "CV_HPosScale" (or maybe it was already, in that case, we should also saturate the uv to avoid reading texels out of bounds)
+		color.rgb += occMap.Sample(occMap_s, cuv).rgb * decay; // LUMA FT: this doesn't seem to need to be scaled by "CV_HPosScale.xy" (or maybe it was already, in that case, we should also saturate the uv to avoid reading texels out of bounds)
 		decay *= decayFactor;
 	}
 	const float ssFalloff = decayFactor * 0.01;  // falloff curve base factor
 	float2 ndcUV = IN.uv.xy*2-1;
-	float vig = saturate( 1-pow( dot(ndcUV,ndcUV), 0.25) );
+	float vig = saturate( 1-pow( dot(ndcUV,ndcUV), 0.25) ); // vignette?
 	outColor = ToneMappedPreMulAlpha(float4(color.rgb*IN.color.rgb*vig/N_SAMPLE, IN.color.a), false);
 	return;
 	#undef decay

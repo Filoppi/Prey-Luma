@@ -42,8 +42,14 @@ void main(
   //TODOFT: if we added perspective correction and increased the baseline FOV, we should add a FOV scale modifier here, to avoid the sun shafts looking huge.
   float screenAspectRatio = CV_ScreenSize.w / CV_ScreenSize.z;
   float aspectRatioCorrection = max(screenAspectRatio / NativeAspectRatio, 1.0);
+
+  float2 jitteredBaseTC = inBaseTC;
+#if REJITTER_SUNSHAFTS
+  // Selectively pick what we jitter and what not (e.g. the depth buffer (occlusion map), was already dejittered so we don't need to re-jitter it)
+  jitteredBaseTC += LumaData.CameraJitters.xy * float2(0.5, -0.5) / LumaData.RenderResolutionScale;
+#endif
   
-  float2 sunVec = (sunPosProj.xy - inBaseTC.xy) * aspectRatioCorrection;
+  float2 sunVec = (sunPosProj.xy - jitteredBaseTC.xy) * aspectRatioCorrection;
   
   // This code makes the sun shafts aspect ratio independent from our screen aspect ratio. By default we want them a bit wider than a square.
 #if 1 // LUMA FT: de-approximated aspect ratio 1.333 multiplier and fixed aspect ratio scaling not being done on the actual output resolution (the math made now sense, it was trying to go from the rendering resolution to the output resolution but the math went in the opposite direction)

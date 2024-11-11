@@ -82,6 +82,9 @@
 #ifndef SUNSHAFTS_LOOK_TYPE
 #define SUNSHAFTS_LOOK_TYPE 2
 #endif
+// Unjitter the sun shafts depth buffer and re-jitter their generation.
+// This is because they draw before TAA/DLSS but with screen space logic, so jittering needs to be done manually.
+#define REJITTER_SUNSHAFTS 1
 // Lens optics were clipped to 1 due to being rendered before tonemapping. As long as "DELAY_HDR_TONEMAP" is true, now these will also be tonemapped instead of clipped.
 #ifndef ENABLE_LENS_OPTICS_HDR
 #define ENABLE_LENS_OPTICS_HDR 1
