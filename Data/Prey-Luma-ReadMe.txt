@@ -1,4 +1,4 @@
-Luma (Prey (2017)) aims to rewrite the game post processing phase to improve the look of the game without drifting from the original artistic vision (believe me).
+Luma (Prey (2017) + Mooncrash) aims to rewrite the game post processing phase to improve the look of the game without drifting from the original artistic vision (believe me).
 The highlight feature is adding HDR support, though benefits are not restricted to HDR users, there's a lot more, and it's akin to a small Remastered.
 The mod works by hooking into the game's code and replacing shaders.
 
@@ -19,7 +19,7 @@ List of features:
 -Improved Dynamic Resolution Scaling support (film grain, bloom, TAA, lens optics, ... did not scale properly with dynamic rendering resolutions, and it generally just did not look very nice)
 -Improved Anisotropic Filtering (it was not set to 16x on all textures)
 -Improved swapchain flip model
--More (e.g. the sun got progressively smaller at higher resolutions in some scenes, added optional HDR post process filter on video cutscenes)!
+-More (e.g. the sun got progressively smaller at higher resolutions in some scenes, objects highlights didn't look right at higher resolutions, added optional HDR post process filter on video cutscenes)!
 
 How to use:
 Drop all the files into the game installation folder (including "autoexec.cfg" and "system.cfg"), except the "game.cfg" file that goes into the user data folder (this is optional, but suggested).
@@ -49,7 +49,6 @@ Issues and limitations:
 Compatibility:
 This mod should work with any other mod for Prey, just be careful of what you install, because some of the most popular mods change very random stuff with the game, or its graphics config (they will still be compatible with Luma).
 Replace their files with the Luma version if necessary, none of the game's mods rely on config changes, so the Luma version of the configs will work with them too, and Luma only changes what's strictly necessary and with careful research behind it.
-"Prey: Mooncrash" is not supported.
 If you want to load the mod with an asi loader instead of through ReShade Addons automatic loading, you can name the asi loader with the following names: bink2w64.dll, dinput8.dll, version.dll, winhttp.dll, winmm.dll (untested), wininet.dll.
 
 Donations:
