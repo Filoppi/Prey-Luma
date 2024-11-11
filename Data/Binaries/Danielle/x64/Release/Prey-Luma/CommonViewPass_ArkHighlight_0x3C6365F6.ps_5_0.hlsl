@@ -11,12 +11,13 @@ cbuffer PER_MATERIAL : register(b3)
   float2 __0__1SSSIndex__2__3 : packoffset(c25);
 }
 
+#include "include/CBuffer_PerViewGlobal.hlsl"
+
 SamplerState ssMaterialAnisoHigh_s : register(s0);
 Texture2D<float4> diffuseTex : register(t0);
 
 #define cmp -
 
-//TODOFT3: should we apply jitter to these (they aren't drawn in fullscreen), or are they already jittered? What about its alpha output channel?
 void main(
   float4 v0 : SV_Position0,
   float4 v1 : TEXCOORD0,
@@ -26,6 +27,9 @@ void main(
   uint v5 : SV_IsFrontFace0,
   out float4 o0 : SV_Target0)
 {
+  v0.xy *= float2(BaseHorizontalResolution, BaseVerticalResolution) / (CV_ScreenSize.xy / CV_HPosScale.xy);
+	v0.xy += LumaData.CameraJitters.xy * float2(0.5, -0.5) * (CV_ScreenSize.xy / CV_HPosScale.xy);
+
   float4 r0,r1;
 
   r0.x = diffuseTex.Sample(ssMaterialAnisoHigh_s, v1.xy).w;

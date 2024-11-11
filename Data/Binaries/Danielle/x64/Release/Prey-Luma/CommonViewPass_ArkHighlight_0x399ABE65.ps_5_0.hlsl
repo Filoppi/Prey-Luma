@@ -2,6 +2,8 @@
 
 #define _RT_SAMPLE0 1
 
+#include "include/CBuffer_PerViewGlobal.hlsl"
+
 // 3Dmigoto declarations
 #define cmp -
 
@@ -14,6 +16,9 @@ void main(
   uint v5 : SV_IsFrontFace0,
   out float4 o0 : SV_Target0)
 {
+  v0.xy *= float2(BaseHorizontalResolution, BaseVerticalResolution) / (CV_ScreenSize.xy / CV_HPosScale.xy);
+	v0.xy += LumaData.CameraJitters.xy * float2(0.5, -0.5) * (CV_ScreenSize.xy / CV_HPosScale.xy);
+
   float4 r0,r1;
 
   r0.x = dot(-v2.xyz, -v2.xyz);

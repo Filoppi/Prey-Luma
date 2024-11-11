@@ -25,6 +25,7 @@ static const float NativeAspectRatio = NativeAspectRatioWidth / NativeAspectRati
 // According to the developers, the game was mostly developed on 1080p displays, and some 1440p ones, so
 // we are going for their middle point, but 1080 or 1440 would also work fine.
 static const float BaseVerticalResolution = 1260.0;
+static const float BaseHorizontalResolution = BaseVerticalResolution * 16.0 / 9.f;
 
 // Exposure multiplier for sunshafts. It's useful to shift them towards a better range for float textures to avoid banding.
 // This comes from vanilla values, it's not really meant to be changed.
