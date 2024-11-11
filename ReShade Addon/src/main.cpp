@@ -354,6 +354,10 @@ constexpr float texture_mip_lod_bias_offset = -1.0f; // Value tweaked for DLSS (
 float dlss_custom_exposure = 1.0;
 float dlss_custom_pre_exposure = 1.0;
 
+#if DEVELOPMENT
+int frame_sleep_ms = 0;
+#endif
+
 //TODOFT: put all of these in a better place (e.g. device data? frame data?). Probably not needed given it's all single threaded
 // Per frame states:
 bool has_drawn_main_post_processing = false;
@@ -2031,6 +2035,11 @@ void OnPresent(
     const reshade::api::rect* dirty_rects) {
     ID3D11Device* native_device = (ID3D11Device*)(queue->get_device()->get_native());
     ID3D11DeviceContext* native_device_context = (ID3D11DeviceContext*)(queue->get_immediate_command_list()->get_native());
+
+#if DEVELOPMENT // Allow to tank performance to test auto rendering resolution scaling
+    if (frame_sleep_ms > 0)
+        Sleep(frame_sleep_ms);
+#endif
 
     // "POST_PROCESS_SPACE_TYPE" 0 and 2 mean that the final image was stored textures in gamma space,
     // so we need to linearize it for scRGB HDR (linear) output.
@@ -4670,6 +4679,9 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         ImGui::SliderFloat("Developer Setting 5", &cb_luma_frame_settings.DevSetting5, 0.0, 1.0);
         ImGui::SliderFloat("Developer Setting 6", &cb_luma_frame_settings.DevSetting6, 0.0, 1.0);
         ImGui::SliderFloat("Developer Setting 7", &cb_luma_frame_settings.DevSetting7, 0.0, 1.0);
+
+        ImGui::NewLine();
+        ImGui::SliderInt("Tank Performance (Per Frame Sleep MS)", &frame_sleep_ms, 0, 100);
 
         ImGui::NewLine();
         ImGui::SliderFloat("DLSS Custom Exposure", &dlss_custom_exposure, 0.01, 10.0);
