@@ -33,7 +33,7 @@ cbuffer CBPerViewGlobal : register(b13)
   // zw is the half of the inverse of the final/output resolution (no rendering resolution scaling acknowledged by it).
   // Note that this is not always the actual "swapchain" resolution, in most passes it's adapted to actually represent the render target texture resolution.
   float4 CV_ScreenSize : packoffset(c32);
-  // "CV_ScreenSize.xy" divided by "CV_HPosScale.xy" gives the final output resolution (so this has values < 1 for a rendering resolution lower than the output one). zw are the values from the previous frame.
+  // "CV_ScreenSize.xy" divided by "CV_HPosScale.xy" gives the final output resolution (so this has values < 1 for a rendering resolution lower than the output one) (basically it's the rendering res scale). zw are the values from the previous frame.
   float4 CV_HPosScale : packoffset(c33);
   // Max (bottom right) texture UV coordinates of the render resolution area of the target texture. Z and W are the ones from the previous frame.
   float4 CV_HPosClamp : packoffset(c34);

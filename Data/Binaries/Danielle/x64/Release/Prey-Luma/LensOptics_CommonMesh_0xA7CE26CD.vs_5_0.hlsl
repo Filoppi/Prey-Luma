@@ -9,9 +9,6 @@ cbuffer PER_BATCH : register(b0)
   float4 meshCenterAndBrt : packoffset(c6);
 }
 
-// Unused. Needed to compile LensOptics.hlsl.
-#define HDRParams float3(24.8, 0.5, 0.06)
-
 #include "include/LensOptics.hlsl"
 
 // commonMeshVS

@@ -42,6 +42,11 @@
 // while everything stays in sRGB gamma (as theoretically it would have been originally, even if it was displayed on 2.2) when stored in textures,
 // so this determines how the final shader should linearize (if >=1, from 2.2, if <=0, from sRGB, thus causing raised blacks compared to how the gamma would have appeared on gamma 2.2 displays).
 // Note that by gamma correction we mean fixing up the game's bad gamma implementation, though sometimes this term is used to imply "display encoding".
+// We do not have a gamma 2.4 setting, because the game was seemengly not meant for that. It'd be easily possible to add one if ever needed (e.g. replace the "DefaultGamma" value, or directly expose that to the user (don't!)).
+// 
+// 0 sRGB
+// 1 Gamma 2.2
+// 2 sRGB (color hues) with gamma 2.2 luminance
 #ifndef GAMMA_CORRECTION_TYPE
 #define GAMMA_CORRECTION_TYPE 1
 #endif

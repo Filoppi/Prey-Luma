@@ -9,9 +9,6 @@ cbuffer PER_BATCH : register(b0)
   row_major float3x4 xform : packoffset(c3);
 }
 
-// Unused. Needed to compile LensOptics.hlsl.
-#define HDRParams float3(24.8, 0.5, 0.06)
-
 #include "include/LensOptics.hlsl"
 
 // shaftsVS

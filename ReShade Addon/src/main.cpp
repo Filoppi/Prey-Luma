@@ -3051,9 +3051,9 @@ void OnDestroyResourceView(reshade::api::device* device, reshade::api::resource_
 // Call this after reading the global cbuffer (index 13) memory (from CPU or GPU memory).
 // This will update the "cb_per_view_global" values if the ptr is found to be the right type of buffer (and return true in that case),
 // correct some of its values, and cache information for other usage.
-bool UpdateGlobalCBuffer(void* global_buffer_data_ptr)
+bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
 {
-    const CBPerViewGlobal& global_buffer_data = *((CBPerViewGlobal*)global_buffer_data_ptr);
+    const CBPerViewGlobal& global_buffer_data = *((const CBPerViewGlobal*)global_buffer_data_ptr);
 
     //TODOFT: optimize?
     // Is this the cbuffer we are looking for?

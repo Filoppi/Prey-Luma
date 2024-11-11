@@ -325,7 +325,7 @@ void HDRFinalScenePS(float4 WPos, float4 baseTC, out float4 outColor)
 #if 1
 	outColor.rgb += sunShafts.rgb * sunShaftsAlpha; // Blend in ldr sunshafts
   cSDRColor.rgb += sunShafts.rgb * sunShaftsAlpha;
-// LUMA FT: even if theoretically this is more correct and vanilla like, we can't do this because the sun center becomes overly too strong due to the pow(),
+// LUMA FT: even if theoretically this is more correct and vanilla like, we can't do this because the sun center becomes overly strong due to the pow(),
 // and it ends up looking less colorful and more clipped. Maybe we could limit to blending in gamma space within the 0-1 range, but it's not worth the performance cost.
 // If using this branch, make sure to also implement "HIGH_QUALITY_POST_PROCESS_SPACE_CONVERSIONS" here, and add to "cSDRColor" as well.
 #else

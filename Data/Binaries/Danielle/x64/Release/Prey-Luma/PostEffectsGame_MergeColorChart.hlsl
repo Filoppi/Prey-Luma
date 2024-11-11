@@ -36,6 +36,8 @@ float4 MergeColorChartsPS(v2f_cch IN)
 	// (it avoids hue shifts, though in case widely different LUTs were blended (e.g. black and white), it would make a 50% value less perceptually accurate,
 	// but there doesn't seem to be such a use case for Prey).
 	// For simplicity we use sRGB gamma, independently of "GAMMA_CORRECTION_TYPE", LUT correction is applied at the end anyway, after extrapolation, and so it should always be.
+	// Note that we don't linearize the LUT here independently of "ENABLE_LINEAR_COLOR_GRADING_LUT" because this shader doesn't always run
+	// (we don't know when it does, we could cache that information and re-use it later, but it's not worth the trouble).
 
 #if !_RT_SAMPLE1 && !_RT_SAMPLE0 // Optimized branch for the passthrough version of this shader (skip the gamma back and forth conversions)
 	float3 col = layer0Sampler.Sample(layer0Sampler_s, IN.baseTC.xy).rgb * LayerBlendAmount.x;
