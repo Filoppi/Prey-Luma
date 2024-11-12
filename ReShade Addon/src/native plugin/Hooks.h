@@ -53,9 +53,6 @@ namespace Hooks
 #endif
 
 		static void PatchSwapchainDesc(DXGI_SWAP_CHAIN_DESC& a_desc);
-		static uintptr_t            GetTonemapTargetRT() { return reinterpret_cast<uintptr_t>(ptexTonemapTarget); }
-		static uintptr_t            GetPostAATargetRT() { return reinterpret_cast<uintptr_t>(ptexPostAATarget); }
-		static uintptr_t            GetUpscaleTargetRT() { return reinterpret_cast<uintptr_t>(ptexUpscaleTarget); }
 		static inline RE::CTexture* ptexTonemapTarget;
 		static inline RE::CTexture* ptexPostAATarget;
 		static inline RE::CTexture* ptexUpscaleTarget;

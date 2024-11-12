@@ -11,10 +11,10 @@ namespace RE
 	CCryNameR::CCryNameR(const char* s)
 	{
 		using func1_t = void* (*)(CCryNameR*);
-		static func1_t func1 = reinterpret_cast<func1_t>(Offsets::baseAddress + 0xEAAE00);
+		static func1_t func1 = reinterpret_cast<func1_t>(Offsets::GetAddress(Offsets::CCryNameR_Func1));
 
 		using func2_t = const char* (*)(void*, const char* s);
-		static func2_t func2 = reinterpret_cast<func2_t>(Offsets::baseAddress + 0xF035A0);
+		static func2_t func2 = reinterpret_cast<func2_t>(Offsets::GetAddress(Offsets::CCryNameR_Func2));
 
 		if (s && *s) {
 			auto buf = func1(this);

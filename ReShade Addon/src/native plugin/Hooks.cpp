@@ -145,16 +145,14 @@ namespace Hooks
 					{
 						push(rax);
 
-						// call our function
-						mov(rax, a_addr);
-						call(rax);
+						mov(rax, ptr[a_addr]);
 						mov(rsi, rax);
 
 						pop(rax);
 					}
 				};
 
-				Patch patch(reinterpret_cast<uintptr_t>(GetTonemapTargetRT));
+				Patch patch(reinterpret_cast<uintptr_t>(&ptexTonemapTarget));
 				patch.ready();
 
 				auto offset = std::make_pair(Offsets::Get(Offsets::TonemapTarget1_Start), Offsets::Get(Offsets::TonemapTarget1_End));
@@ -168,14 +166,16 @@ namespace Hooks
 				{
 					Patch(uintptr_t a_addr)
 					{
-						// call our function
-						mov(rax, a_addr);
-						call(rax);
+						push(rax);
+
+						mov(rax, ptr[a_addr]);
 						mov(rdi, rax);
+
+						pop(rax);
 					}
 				};
 
-				Patch patch(reinterpret_cast<uintptr_t>(GetTonemapTargetRT));
+				Patch patch(reinterpret_cast<uintptr_t>(&ptexTonemapTarget));
 				patch.ready();
 
 				auto offset = std::make_pair(Offsets::Get(Offsets::TonemapTarget2_Start), Offsets::Get(Offsets::TonemapTarget2_End));
@@ -189,14 +189,16 @@ namespace Hooks
 				{
 					Patch(uintptr_t a_addr)
 					{
-						// call our function
-						mov(rax, a_addr);
-						call(rax);
+						push(rax);
+
+						mov(rax, ptr[a_addr]);
 						mov(r8, rax);
+
+						pop(rax);
 					}
 				};
 
-				Patch patch(reinterpret_cast<uintptr_t>(GetTonemapTargetRT));
+				Patch patch(reinterpret_cast<uintptr_t>(&ptexTonemapTarget));
 				patch.ready();
 
 				auto offset = std::make_pair(Offsets::Get(Offsets::TonemapTarget3_Start), Offsets::Get(Offsets::TonemapTarget3_End));
@@ -210,14 +212,16 @@ namespace Hooks
 				{
 					Patch(uintptr_t a_addr)
 					{
-						// call our function
-						mov(rax, a_addr);
-						call(rax);
+						push(rax);
+
+						mov(rax, ptr[a_addr]);
 						mov(r8, rax);
+
+						pop(rax);
 					}
 				};
 
-				Patch patch(reinterpret_cast<uintptr_t>(GetTonemapTargetRT));
+				Patch patch(reinterpret_cast<uintptr_t>(&ptexTonemapTarget));
 				patch.ready();
 
 				auto offset = std::make_pair(Offsets::Get(Offsets::TonemapTarget4_Start), Offsets::Get(Offsets::TonemapTarget4_End));
@@ -231,18 +235,16 @@ namespace Hooks
 				{
 					Patch(uintptr_t a_addr)
 					{
-						push(rcx);
+						push(rax);
 
-						// call our function
-						mov(rax, a_addr);
-						call(rax);
+						mov(rax, ptr[a_addr]);
 						mov(r15, rax);
 
-						pop(rcx);
+						pop(rax);
 					}
 				};
 
-				Patch patch(reinterpret_cast<uintptr_t>(GetPostAATargetRT));
+				Patch patch(reinterpret_cast<uintptr_t>(&ptexPostAATarget));
 				patch.ready();
 
 				auto offset = std::make_pair(Offsets::Get(Offsets::PostAATarget1_Start), Offsets::Get(Offsets::PostAATarget1_End));
@@ -256,14 +258,16 @@ namespace Hooks
 				{
 					Patch(uintptr_t a_addr)
 					{
-						// call our function
-						mov(rax, a_addr);
-						call(rax);
+						push(rax);
+
+						mov(rax, ptr[a_addr]);
 						mov(r12, rax);
+
+						pop(rax);
 					}
 				};
 
-				Patch patch(reinterpret_cast<uintptr_t>(GetPostAATargetRT));
+				Patch patch(reinterpret_cast<uintptr_t>(&ptexPostAATarget));
 				patch.ready();
 
 				auto offset = std::make_pair(Offsets::Get(Offsets::PostAATarget2_Start), Offsets::Get(Offsets::PostAATarget2_End));
@@ -279,16 +283,24 @@ namespace Hooks
 					{
 						push(rax);
 
-						// call our function
-						mov(rax, a_addr);
-						call(rax);
-						cmovnz(rcx, rax);
+						mov(rax, ptr[a_addr]);
+						switch (Offsets::gameVersion)
+						{
+						case Offsets::GameVersion::PreySteam:
+						case Offsets::GameVersion::MooncrashSteam:
+							cmovnz(r15, rax);
+							break;
+						case Offsets::GameVersion::PreyGOG:
+						case Offsets::GameVersion::MooncrashGOG:
+							cmovnz(r14, rax);
+							break;
+						}
 
 						pop(rax);
 					}
 				};
 
-				Patch patch(reinterpret_cast<uintptr_t>(GetPostAATargetRT));
+				Patch patch(reinterpret_cast<uintptr_t>(&ptexPostAATarget));
 				patch.ready();
 
 				auto offset = std::make_pair(Offsets::Get(Offsets::PostAATarget3_Start), Offsets::Get(Offsets::PostAATarget3_End));
@@ -304,16 +316,14 @@ namespace Hooks
 					{
 						push(rax);
 
-						// call our function
-						mov(rax, a_addr);
-						call(rax);
+						mov(rax, ptr[a_addr]);
 						mov(rcx, rax);
 
 						pop(rax);
 					}
 				};
 
-				Patch patch(reinterpret_cast<uintptr_t>(GetUpscaleTargetRT));
+				Patch patch(reinterpret_cast<uintptr_t>(&ptexUpscaleTarget));
 				patch.ready();
 				auto offset = std::make_pair(Offsets::Get(Offsets::UpscaleTarget1_Start), Offsets::Get(Offsets::UpscaleTarget1_End));
 				auto hook = dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::UpscaleTarget1_Func), offset, &patch);
@@ -326,13 +336,11 @@ namespace Hooks
 				{
 					Patch(uintptr_t a_addr)
 					{
-						// call our function
-						mov(rax, a_addr);
-						call(rax);
+						mov(rax, ptr[a_addr]);
 					}
 				};
 
-				Patch patch(reinterpret_cast<uintptr_t>(GetUpscaleTargetRT));
+				Patch patch(reinterpret_cast<uintptr_t>(&ptexUpscaleTarget));
 				patch.ready();
 
 				auto offset = std::make_pair(Offsets::Get(Offsets::UpscaleTarget2_Start), Offsets::Get(Offsets::UpscaleTarget2_End));
@@ -347,19 +355,15 @@ namespace Hooks
 					Patch(uintptr_t a_addr)
 					{
 						push(rax);
-						push(rcx);
 
-						// call our function
-						mov(rax, a_addr);
-						call(rax);
+						mov(rax, ptr[a_addr]);
 						mov(rdx, rax);
 
-						pop(rcx);
 						pop(rax);
 					}
 				};
 
-				Patch patch(reinterpret_cast<uintptr_t>(GetUpscaleTargetRT));
+				Patch patch(reinterpret_cast<uintptr_t>(&ptexUpscaleTarget));
 				patch.ready();
 
 				auto offset = std::make_pair(Offsets::Get(Offsets::UpscaleTarget3_Start), Offsets::Get(Offsets::UpscaleTarget3_End));
