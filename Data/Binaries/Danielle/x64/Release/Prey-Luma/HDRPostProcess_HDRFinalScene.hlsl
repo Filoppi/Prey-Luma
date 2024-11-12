@@ -101,7 +101,7 @@ void ApplyArkDistanceSat(inout float3 _cImage, int3 _pixelCoord)
 #endif
 
 #if 1
-static const float SDRTMMidGrayOut = MidGray; // We don't strictly need to acknowledge the HDR TM (its inverse) here, because it's pretty much meant to keep colors "linear" and doesn't really shift mid gray (if it did, it only did to conserve visiblity, so we can probably afford not adjusting for that)
+static const float SDRTMMidGrayOut = MidGray; // We don't strictly need to acknowledge the HDR TM (its inverse) here, because it's pretty much meant to keep colors "linear" and doesn't really shift mid gray (at least as long as the peak white is in HDR range) (if it did, it only did to conserve visiblity, so we can probably afford not adjusting for that)
 static const float SDRTMMidGrayIn = GetLuminance(Tonemap_Hable_Inverse(SDRTMMidGrayOut)); // The "HDRFilmCurve" are not used (they are fixed in value) so we can pre-calculate this offline
 #else // Worse version, but it avoids the inverse formula case (it makes little sense to find the mid gray TM ratio starting from pre-TM colors)
 static const float SDRTMMidGrayIn = MidGray;

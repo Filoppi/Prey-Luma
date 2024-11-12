@@ -425,7 +425,7 @@ bool NGX::DLSS::Draw(ID3D11DeviceContext* commandList, ID3D11Resource* outputCol
 #elif 1 // This is what's needed by vanilla Prey
 	evalParams.InJitterOffsetX = jitterX * static_cast<float>(renderWidth) * -0.5f;
 	evalParams.InJitterOffsetY = jitterY * static_cast<float>(renderHeight) * 0.5f;
-#elif 0 // This is what's needed by vanilla Prey, without the Luma DLL mod fixing up its code //TODOFT4: verify and clean up, it really doesn't seem to be true anymore!
+#elif 0 // This is what's needed by vanilla Prey, without the Luma DLL mod fixing up its code //TODOFT4: verify and clean up, it really doesn't seem to be true anymore! (yeah, it's def wrong)
 	evalParams.InJitterOffsetX = jitterX * static_cast<float>(data->outputWidth) * -0.5f * (static_cast<float>(data->outputWidth) / static_cast<float>(renderWidth));
 	evalParams.InJitterOffsetY = jitterY * static_cast<float>(data->outputHeight) * 0.5f * (static_cast<float>(data->outputHeight) / static_cast<float>(renderHeight));
 #else
