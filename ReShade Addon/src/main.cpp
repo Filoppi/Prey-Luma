@@ -355,6 +355,7 @@ float dlss_custom_exposure = 1.0;
 float dlss_custom_pre_exposure = 1.0;
 
 #if DEVELOPMENT
+bool disable_taa_jitters = false;
 int frame_sleep_ms = 0;
 #endif
 
@@ -3207,6 +3208,18 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
         cb_per_view_global.CV_PrevViewProjNearestMatr.m02 *= cb_per_view_global.CV_HPosScale.x;
         cb_per_view_global.CV_PrevViewProjNearestMatr.m12 *= cb_per_view_global.CV_HPosScale.y;
     }
+
+    // Just for test. This doesn't fully disable jitters, it just zeroes our copy of it, but rendering will still be jittered.
+    if (disable_taa_jitters) {
+        current_projection_matrix.m02 = 0;
+        current_projection_matrix.m12 = 0;
+        current_nearest_projection_matrix.m02 = 0;
+        current_nearest_projection_matrix.m12 = 0;
+        cb_per_view_global.CV_PrevViewProjMatr.m02 = 0;
+        cb_per_view_global.CV_PrevViewProjMatr.m12 = 0;
+        cb_per_view_global.CV_PrevViewProjNearestMatr.m02 = 0;
+        cb_per_view_global.CV_PrevViewProjNearestMatr.m12 = 0;
+    }
 #endif // DEVELOPMENT
 
     // Fix up the rendering scale for all passes after DLSS SR, as we upscaled before the game expected,
@@ -3283,6 +3296,9 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
             // they can be if we use the "srand" method, but it would happen one in a billion years;
             // they could also be zero with Halton if the frame index was reset to zero (it is every x frames), but that happens very rarely, and for one frame only.
             prey_taa_enabled = (std::abs(projection_jitters.x * render_resolution.x) >= 0.00075) || (std::abs(projection_jitters.y * render_resolution.y) >= 0.00075); //TODOFT: make calculations more accurate (the threshold)
+#if DEVELOPMENT
+            prey_taa_enabled |= disable_taa_jitters;
+#endif // DEVELOPMENT
             // Make sure that once we detect that TAA was active within a frame, then it should never be detected as off in the same frame (it would mean we are reading a bad cbuffer 13 that we should have discarded).
             // Ignore this when we have no shaders loaded as it would always break due to the "has_drawn_tonemapping" check failing.
             ASSERT_ONCE(cloned_pipeline_count == 0 || !found_per_view_globals || !prey_taa_enabled_copy || (prey_taa_enabled_copy == prey_taa_enabled));
@@ -4692,6 +4708,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         ImGui::SliderInt("Fix Motion Vectors Generation Projection Matrix", &fix_prev_matrix_mode, 0, 8);
         //ImGui::SliderInt("matrix_calculation_mode", &matrix_calculation_mode, 0, 3); // Disabled
         ImGui::SliderInt("matrix_calculation_mode_2", &matrix_calculation_mode_2, 0, 4);
+        ImGui::Checkbox("Disable Camera Jitters", &disable_taa_jitters);
 
 #if REPLACE_SAMPLERS_LIVE
         ImGui::NewLine();
