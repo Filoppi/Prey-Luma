@@ -2220,13 +2220,11 @@ void OnPresent(
 }
 
 //TODOFT5: expose DLSS res range multipliers here or to game config (???)
-//TODOFT5: DLSS pre-exposure (duplicate?)
+//TODOFT5: DLSS pre-exposure "dlss_custom_exposure". set it to 203/80 or 1/(203/80)? it seems fine as it is.
 //TODOFT5: "_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR"?
 //TODOFT5: fix cpp file formatting in general (and make sure it's all thread safe, but it should be) (remove clang.tidy files?)
-//TODOFT5: remove native DLL dependency and just rely on RenoDX? If so, make sure that our CopyTexture() func works!
-//TODOFT5: finish SDR output. test gamma sRGB mode?
-//TODOFT5: Add "UpdateSubresource" to check whether they map buffers with that?
-//TODOFT5: merge all the shader permutations that use the same code
+//TODOFT5: Add "UpdateSubresource" to check whether they map buffers with that? Also make sure that our CopyTexture() func works!
+//TODOFT5: merge all the shader permutations that use the same code (and then move shader binaries to bin folder?)
 //TODOFT5: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project?
 //TODOFT5: add UAV flag to DLSS output texture for faster performance!!!
 //TODOFT5: keep SDR at 203 nits and then scale it back to 80 nits at the end? So that TM runs consistently
@@ -2464,7 +2462,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
 #if ENABLE_NGX
       // Don't even try to run DLSS if we have no custom shaders loaded, we need them for DLSS to work properly (it might somewhat work even without them, but it's untested and unneeded)
       if (is_custom_pass && dlss_sr && cloned_pipeline_count != 0) {
-          //TODOFT (TODO LUMA): make sure DLSS lets scRGB colors pass through, or move this before tonemap/blur (after exposure)...
+          //TODOFT (TODO LUMA): make sure DLSS lets scRGB colors pass through...
           //TODOFT: add sharpening if we did DLSS? It's already natively in! Do RCAS instead?
           //TODOFT: skip SMAA edge detection and edge AA passes, or just disable SMAA in menu settings (make sure the game defaults to TAA from config)
           //TODOFT: skip the texture copy into ps_shader_resources[1] after TAA if DLSS is running? (it's a separate pass triggered by the game) It's not really necessary AFAIK (though it might be used by other things in the game, it's not clear, but likely not...)
@@ -2601,7 +2599,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                           // Generate "fake" exposure texture
                           bool exposure_changed = false;
 #if DEVELOPMENT
-                          static float previous_dlss_custom_exposure = dlss_custom_exposure; //TODOFT: set this to 203/80 or 1/(203/80)?
+                          static float previous_dlss_custom_exposure = dlss_custom_exposure;
                           exposure_changed = dlss_custom_exposure != previous_dlss_custom_exposure;
                           previous_dlss_custom_exposure = dlss_custom_exposure;
 #endif // DEVELOPMENT
@@ -2632,6 +2630,8 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                           }
 
                           // Generate motion vectors from the objects velocity buffer and the camera movement.
+                          // For the most past, these look great, especially with rotational camera movement. When there's location camera movement, thin lines do break a bit,
+                          // and that might be a precision issue with high resolution and jittered matrices not having high enough precision.
                           // We take advantage of the state the game had set DX to, and simply swap the render target.
                           {
                               D3D11_TEXTURE2D_DESC object_velocity_texture_desc;

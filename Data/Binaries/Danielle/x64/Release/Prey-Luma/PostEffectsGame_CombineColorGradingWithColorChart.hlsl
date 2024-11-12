@@ -64,7 +64,7 @@ float4 RGBtoCMYK( float3 rgb )
   float4 cmyk = 0.0;
   cmyk.xyz = 1.0 - rgb;
 
-#if ENABLE_HDR_COLOR_GRADING_LUT //TODOFT0: test this, if we ever met it ("selectiveColorAdjustment" is always off now). The code seems fine.
+#if ENABLE_HDR_COLOR_GRADING_LUT //TODOFT0: test this, if we ever met it (we haven't, "selectiveColorAdjustment" is always off now). The code seems fine anyway.
   cmyk.w = min3(cmyk.xyz);
   cmyk.xyz = safeDivision(cmyk.xyz - cmyk.w, 1.0 - cmyk.w, 0);
 #else
@@ -156,7 +156,7 @@ float3 CombineColorGradingWithColorChartPS(float3 Color, bool adjustLevels, bool
 	col.xyz = SampleLUTWithExtrapolation(mergedChartTex, ssMergedChart, extrapolationData, extrapolationSettings); // LUMA FT: replaced from "TexColorChart2D()"
   // LUMA FT: we allow values beyond 0-1 even if "ENABLE_LINEAR_COLOR_GRADING_LUT" is false, see "ENABLE_HDR_COLOR_GRADING_LUT".
 
-  //TODOFT3: ... Why does this happen!? Could we store the last clipped texel in the alpha channel, to re-use it later in sampling?
+  //TODOFT3: ... Why does this happen!? Could we store the last clipped texel in the alpha channel, to re-use it later in sampling? Could we cache the last non clipped texel index and re-use it later in extrapolation?
   //TODO LUMA: Prey LUTs are occasionally clipped, as in, for example, the last two or three texels on the red axis are all 255, so this will both make the HDR look clipped in general, and particularly break the LUT extrapolation logic.
   //Fortunately it only really happens in one or two LUTs, so it's not a massive problem (they could also be fixed by modifying the assets).
 #if TEST_LUT && 0

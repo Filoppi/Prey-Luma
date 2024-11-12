@@ -25,7 +25,6 @@ SamplerState ssMaterialAnisoHigh_s : register(s0);
 Texture2D<float4> diffuseTex : register(t0);
 Texture2D<float4> sceneMaskDeviceTex : register(t26);
 
-// 3Dmigoto declarations
 #define cmp -
 
 void main(

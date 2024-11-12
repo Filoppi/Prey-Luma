@@ -138,10 +138,8 @@
 #define DEVELOPMENT 0
 #endif
 
-//TODOFT2: fix GTAO
-//TODOFT0: fix all shader compilation warnings
 //TODOFT2: try to boost the chrominance on highlights? Or desaturate, the opposite.
-//TODOFT0: disable all dev/debug settings below
+//TODOFT0: disable all dev/debug settings below, even for dev mode
 
 /////////////////////////////////////////
 // Rendering features toggles (development)

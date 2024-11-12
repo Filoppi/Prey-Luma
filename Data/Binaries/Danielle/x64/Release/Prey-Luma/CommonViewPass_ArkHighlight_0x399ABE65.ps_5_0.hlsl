@@ -4,7 +4,6 @@
 
 #include "include/CBuffer_PerViewGlobal.hlsl"
 
-// 3Dmigoto declarations
 #define cmp -
 
 void main(

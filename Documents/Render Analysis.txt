@@ -31,7 +31,7 @@ Update LUT (e.g. apply contrast curves etc)
 Apply Tonemap (HDR->SDR) (this also applied bloom, sun shafts, ...) (from here on, or soon after, we'll be writing on the swapchain texture directly)
 Draw SDR screen space post process effects
 AA edge detection stuff
-Apply AA (FXAA, SMAA, SMAA temporal, SMAA temporal x2)
+Apply AA (FXAA, SMAA, SMAA temporal, SMAA temporal x2 (TAA), Luma DLSS)
 Draw Lens Optics effects on the side
 Apply Post AA (film grain, vignette, lens optics, ...)
 Upscale if using dynamic resolution scaling (basically all the passes until now have been rendering to a partial resolution (on the top left) if DRS was on)

@@ -294,7 +294,7 @@ void ApplyDithering(inout float3 color, float2 uv, bool gammaSpace = true, float
 // Note that sharpening can always generated invalid luminances (I think), so that should be accounted for.
 float3 FixUpSharpeningOrBlurring(float3 postSharpeningColor, float3 preSharpeningColor)
 {
-#if ENABLE_SHARPENING //TODOFT: skip this in SDR mode?
+#if ENABLE_SHARPENING //TODOFT: skip this in SDR mode? It wouldn't change much
     // Either set it to 0.5, 0.75 or 1 to make results closer to SDR (this makes more sense when done in gamma space, but also works in linear space).
     // Lower values slightly diminish the effect of sharpening, but further avoid halos issues.
     static const float sharpeningMaxColorDifference = 0.5;

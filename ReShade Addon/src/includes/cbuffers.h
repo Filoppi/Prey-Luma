@@ -41,6 +41,7 @@ namespace
         }
     };
 
+    // See shaders for comments on these
     struct CBPerViewGlobal
     {
         Matrix44A  CV_ViewProjZeroMatr;

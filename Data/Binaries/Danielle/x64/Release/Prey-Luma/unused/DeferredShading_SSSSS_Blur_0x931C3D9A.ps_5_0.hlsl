@@ -1,5 +1,3 @@
-// ---- Created with 3Dmigoto v1.3.16 on Thu Jun 27 00:11:49 2024
-
 cbuffer PER_BATCH : register(b0)
 {
   float4 SSSBlurDir : packoffset(c0);
@@ -15,10 +13,10 @@ Texture2D<float4> _tex0 : register(t0);
 Texture2D<float4> _tex1 : register(t1);
 Texture2D<float4> _tex3 : register(t3);
 
-// 3Dmigoto declarations
 #define cmp -
 
-//TODOFT: find name and make sure this looks identical on all resolutions
+// Screen Space Subsurface Scattering (SSSSS)
+//TODOFT: make sure this looks identical on all resolutions
 void main(
   float4 v0 : SV_Position0,
   float4 v1 : TEXCOORD0,

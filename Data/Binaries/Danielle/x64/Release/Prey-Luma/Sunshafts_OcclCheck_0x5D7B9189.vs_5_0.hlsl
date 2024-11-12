@@ -1,8 +1,7 @@
 // LUMA: Unchanged.
 // OcclCheckVS
 // If draws at least a pixel, then the sun is deemed visible
-//TODOFT4: test if we can help make the sun render more often if we increase the vertices size of the occlusion check? Can we even do that from shaders? should we increase the viewport size?
-
+//TODOFT4: test if we can help make the sun render more often if we increase the vertices size of the occlusion check (SV_Position0)? Can we even do that from shaders? should we increase the viewport size?
 void main(
   float4 Position : POSITION0,
   float2 baseTC : TEXCOORD0,

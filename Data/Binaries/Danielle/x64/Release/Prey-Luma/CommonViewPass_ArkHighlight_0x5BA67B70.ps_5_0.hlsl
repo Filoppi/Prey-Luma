@@ -13,7 +13,6 @@ cbuffer PER_INSTANCE : register(b1)
 
 Texture2D<float4> sceneMaskDeviceTex : register(t26);
 
-// 3Dmigoto declarations
 #define cmp -
 
 void main(

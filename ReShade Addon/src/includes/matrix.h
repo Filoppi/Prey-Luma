@@ -458,7 +458,7 @@ inline void mathMatrixLookAtInverse(Matrix44_tpl<T_out>& pResult, const Matrix44
 template<class T>
 inline bool mathMatrixIsProjection(const Matrix44_tpl<T>& m)
 {
-	// (0, 0) and (1, 1) ar relative to FOV and theoretically could be zero if FOV was zero (probably never used by the game)
+	// (0, 0) and (1, 1) are relative to FOV and theoretically could be zero if FOV was zero (probably never used by the game)
 	// (2, 0) and (2, 1) are jitters so they can either be 0 or ~0.00001 (tiny values as they are in UV space)
 	return m(0, 1) == 0
 		&& m(0, 2) == 0

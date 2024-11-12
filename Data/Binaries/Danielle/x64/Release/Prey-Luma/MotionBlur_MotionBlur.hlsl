@@ -75,9 +75,9 @@ float4 MotionBlurPS(float4 WPos, float4 inBaseTC)
 #if 1
 	// Crytek/Arkane: Early out when no motion (disabled to have more predictable costs)
 	// LUMA FT: anything higher than this threshold will cause motion blur to blur stuff that isn't actually moving, because they forgot to take out the jitters from the MB calculations (there might also be some some floating point math errors)
-	if (length(maxVel.xy) < 0.001f) //TODOFT: normalize this with delta time
+	if (length(maxVel.xy) < 0.001f) //TODOFT: normalize this with delta time? It doesn't seem to be needed, it's somehow independent from FPS.
 	{
-#if 1 // LUMA FT: modified to actually simply return zero, so this ends up not influencing the back buffer (it might change its alpha, but that is ignored)
+#if 1 // LUMA FT: modified to actually simply return zero, so it's faster to execute and ends up not influencing the back buffer (it might change its alpha, but that is ignored)
 		return 0;
 #else
 		const float4 sampleCenter = _tex0.SampleLevel(_tex0_s, baseTC, 0);

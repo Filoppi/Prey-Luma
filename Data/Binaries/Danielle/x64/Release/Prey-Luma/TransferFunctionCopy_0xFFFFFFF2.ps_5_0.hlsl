@@ -98,8 +98,8 @@ float4 main(float4 pos : SV_Position0) : SV_Target0
 #endif
 	}
 
-	// TODO LUMA: add "FixColorGradingLUTNegativeLuminance()" call here? It's not really needed until proven otherwise (we should never have negative luminances, no code can generate them (?)).
-	// Either way this shader doesn't always run and there's stuff that optionally runs before this, like sharpening (which can randomly affect luminance as it's by channel).
+	//TODO LUMA: add "FixColorGradingLUTNegativeLuminance()" call here? It's not really needed until proven otherwise (we should never have negative luminances, no code can generate them (?)).
+	//Either way this shader doesn't always run and there's stuff that optionally runs before this, like sharpening (which can randomly affect luminance as it's by channel).
 
 #if 0 // Test
 	color.rgb = float3(1, 0, 0);

@@ -21,13 +21,13 @@ float luminanceCompress(
   float InValue,
   float OutMaxValue,
   float ShoulderStart = 0.f,
-  bool considerMaxValue = false,
+  bool ConsiderMaxValue = false,
   float InMaxValue = FLT_MAX)
 {
   const float compressableValue = InValue - ShoulderStart;
   const float compressableRange = InMaxValue - ShoulderStart;
   const float compressedRange = OutMaxValue - ShoulderStart;
-  const float possibleOutValue = ShoulderStart + compressedRange * rangeCompress(compressableValue / compressedRange, considerMaxValue ? (compressableRange / compressedRange) : FLT_MAX);
+  const float possibleOutValue = ShoulderStart + compressedRange * rangeCompress(compressableValue / compressedRange, ConsiderMaxValue ? (compressableRange / compressedRange) : FLT_MAX);
 #if 1
   return possibleOutValue;
 #else // Enable this branch if "InValue" can be smaller than "ShoulderStart"
@@ -68,7 +68,7 @@ DICESettings DefaultDICESettings()
 {
   DICESettings Settings;
   Settings.Type = DICE_TYPE_BY_CHANNEL_PQ;
-  Settings.ShoulderStart = (Settings.Type >= DICE_TYPE_BY_LUMINANCE_RGB) ? (1.f / 3.f) : 0.f; //TODOFT3: increase value!!! (did I already?)
+  Settings.ShoulderStart = (Settings.Type > DICE_TYPE_BY_LUMINANCE_RGB) ? (1.f / 3.f) : 0.f; //TODOFT3: increase value!!! (did I already?)
   Settings.DesaturationAmount = 1.0 / 3.0;
   Settings.DarkeningAmount = 1.0 / 3.0;
   return Settings;
@@ -88,6 +88,8 @@ float3 DICETonemap(
   {
     static const float HDR10_MaxWhite = HDR10_MaxWhiteNits / sRGB_WhiteLevelNits;
 
+    // We could first convert the peak white to PQ and then apply the "shoulder start" alpha to it (in PQ),
+    // but tests showed scaling it in linear actually produces a better curve and more consistently follows the peak across different values
     const float shoulderStartPQ = Linear_to_PQ((Settings.ShoulderStart * PeakWhite) / HDR10_MaxWhite).x;
     if (Settings.Type == DICE_TYPE_BY_LUMINANCE_PQ || Settings.Type == DICE_TYPE_BY_LUMINANCE_PQ_CORRECT_CHANNELS_BEYOND_PEAK_WHITE)
     {
@@ -141,9 +143,10 @@ float3 DICETonemap(
   }
   else // DICE_TYPE_BY_LUMINANCE_RGB
   {
-    if (sourceLuminance > Settings.ShoulderStart) // Luminance below the shoulder (or below zero) don't need to be adjusted
+    const float shoulderStart = PeakWhite * Settings.ShoulderStart; // From alpha to linear range
+    if (sourceLuminance > shoulderStart) // Luminances below the shoulder (or below zero) don't need to be adjusted
     {
-      const float compressedLuminance = luminanceCompress(sourceLuminance, PeakWhite, PeakWhite * Settings.ShoulderStart);
+      const float compressedLuminance = luminanceCompress(sourceLuminance, PeakWhite, shoulderStart);
       Color *= compressedLuminance / sourceLuminance;
     }
   }

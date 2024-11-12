@@ -1,5 +1,3 @@
-// ---- Created with 3Dmigoto v1.3.16 on Thu Jun 27 00:11:50 2024
-
 cbuffer PER_BATCH : register(b0)
 {
   row_major float2x4 cBitmapColorTransform : packoffset(c0);
@@ -14,11 +12,9 @@ SamplerState texMap1_s : register(s1);
 Texture2D<float4> texMap0 : register(t0);
 Texture2D<float4> texMap1 : register(t1);
 
-
-// 3Dmigoto declarations
 #define cmp -
 
-//TODOFT4: do the blur shaders need "ConditionalLinearizeUI()"? They probably write on separate textures?
+//TODOFT4: do the blur shaders need "ConditionalLinearizeUI()" (probably!)? They probably write on separate textures? Do they read and write from the same texture (or a copy of it)?
 void main(
   float4 v0 : SV_Position0,
   float2 v1 : TEXCOORD0,
@@ -26,8 +22,6 @@ void main(
   out float4 o0 : SV_Target0)
 {
   float4 r0,r1,r2;
-  uint4 bitmask, uiDest;
-  float4 fDest;
 
   r0.x = 0;
   r0.y = -cBlurFilterSize.x;

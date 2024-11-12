@@ -12,9 +12,7 @@ cbuffer PER_BATCH : register(b0)
 SamplerState PNoiseSampler_s : register(s1);
 Texture2D<float4> PNoiseSampler : register(t1);
 
-// 3Dmigoto declarations
-#define cmp -
-
+//TODOFT1: test highlight effects (glint is fine)
 // This draws some objects highlights directly on the back buffer, after tonemapping but before AA (the output alpha is ignored, it's adding the color anyway).
 // These look best linearized by channel at the end, even if it's additive and thus the concept of gamma on additive colors is a bit fuzzy "(linear+linear) != toLinear(gamma+gamma)" (there's no way to emulate the SDR gamma space additive blends look).
 void main(
@@ -85,7 +83,6 @@ void main(
   r0.w = 3.1415925 * r0.w;
   r0.w = sin(r0.w);
   r0.w = saturate(1.20000005 * r0.w);
-  //TODOFT1: test ark glint (mostly done) and highlight effects
   o0.xyz = r0.xyz * r0.www; // Pre-multiplied alpha (it doesn't seem to do anything as alpha is 1)
   o0.w = 1;
   // We could call "ConditionalLinearizeUI()", though "LumaUIData.AlphaBlendState" here seems to be 1.

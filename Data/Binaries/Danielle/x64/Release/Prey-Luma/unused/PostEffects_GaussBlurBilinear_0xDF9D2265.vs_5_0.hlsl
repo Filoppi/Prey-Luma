@@ -8,7 +8,7 @@ cbuffer PER_INSTANCE : register(b1)
 #include "include/CBuffer_PerViewGlobal.hlsl"
 
 // LUMA: Unchanged
-//TODOFT: when does this run? Does it need DLSS support (CV_HPosScale/MapViewportToRaster())?
+//TODOFT: when does this run? Does it need DLSS support (CV_HPosScale/MapViewportToRaster())? Probably not
 void main(
   float4 v0 : POSITION0,
   float2 v1 : TEXCOORD0,

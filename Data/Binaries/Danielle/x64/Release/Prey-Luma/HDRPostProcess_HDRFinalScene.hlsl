@@ -100,12 +100,12 @@ void ApplyArkDistanceSat(inout float3 _cImage, int3 _pixelCoord)
 }
 #endif
 
-#if 1 //TODOFT5: For this path we'd need to invert the DICE tonemapper too (do we?) and match mid gray after DICE had run, except that we delay DICE until the end and also we can't match it after because its peak is already set. Nah it's fine, in untonemapped it's good and with DICE it doesn't really touch mid tones so we can't pre match it
-static const float SDRTMMidGrayOut = MidGray;
-static const float SDRTMMidGrayIn = GetLuminance(Tonemap_Hable_Inverse(SDRTMMidGrayOut)); // The "HDRFilmCurve" are not used so we can pre-calculate this offline
-#else
+#if 1
+static const float SDRTMMidGrayOut = MidGray; // We don't strictly need to acknowledge the HDR TM (its inverse) here, because it's pretty much meant to keep colors "linear" and doesn't really shift mid gray (if it did, it only did to conserve visiblity, so we can probably afford not adjusting for that)
+static const float SDRTMMidGrayIn = GetLuminance(Tonemap_Hable_Inverse(SDRTMMidGrayOut)); // The "HDRFilmCurve" are not used (they are fixed in value) so we can pre-calculate this offline
+#else // Worse version, but it avoids the inverse formula case (it makes little sense to find the mid gray TM ratio starting from pre-TM colors)
 static const float SDRTMMidGrayIn = MidGray;
-static const float SDRTMMidGrayOut = GetLuminance(Tonemap_Hable(SDRTMMidGrayIn)); // The "HDRFilmCurve" are not used so we can pre-calculate this offline
+static const float SDRTMMidGrayOut = GetLuminance(Tonemap_Hable(SDRTMMidGrayIn));
 #endif
 static const float SDRTMMidGrayRatio = SDRTMMidGrayOut / SDRTMMidGrayIn;
 
@@ -338,7 +338,7 @@ void HDRFinalScenePS(float4 WPos, float4 baseTC, out float4 outColor)
 	outColor.rgb = cSunShafts.rgb;
 #endif // _RT_SAMPLE3 && ENABLE_SUNSHAFTS && TEST_SUN_SHAFTS
   
-#if ENABLE_COLOR_GRADING_LUT //TODOFT5: text LUT extrapolation one last time
+#if ENABLE_COLOR_GRADING_LUT //TODOFT5: test LUT extrapolation one last time
   
   LUTExtrapolationData extrapolationData = DefaultLUTExtrapolationData();
   extrapolationData.inputColor = outColor.rgb;
