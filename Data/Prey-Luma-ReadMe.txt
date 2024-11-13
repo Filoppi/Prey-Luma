@@ -33,7 +33,7 @@ Set you "game.cfg" to read only to avoid the game clearing most settings from it
 The game's HDR uses the HDR calibration data from Windows 11.
 
 Issues and limitations:
--This is currently only compatible with the Steam version of the game (the game data is across all game releases, so one could theoretically force use the Steam executable even on GOG or other game releases).
+-The Epic Games Store and Microsoft Store versions are not supported (the game data is across all game releases, so one could theoretically force use the Steam or GOG executables).
 -The SDR mode is currently contained in an HDR output, so if looked at from an SDR display, it will have a gamma 2.2/sRGB mismatch.
 -Prey Luma settings aren't saved so they need to be changed on every boot.
 -The UI will look a bit different from Vanilla due to Luma using HDR/linear blending modes by default. Set "POST_PROCESS_SPACE_TYPE" to 0 or 2 in the advanced settings to make it behave like Vanilla.

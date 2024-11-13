@@ -16,7 +16,7 @@ Run "setup.ps1" to add the game installation environment variables.
 Set "VCPKG_ROOT" environment variable to your vcpkg installation folder if it wasn't already (download it from here https://github.com/microsoft/vcpkg, the version integrated with Visual Studio doesn't seem to be as reliable) (note that as of now these packages are not bound to a specific version).
 Open "Prey-Luma.sln" and build it.
 The code hot spots are in the main.cpp files etc etc etc...
-Run "deploy (*).bat" to run the game. The Steam version of the game can't be launched from the exe, so that bat automatically closes the previous instance of the game, copies the new files and launches the game through Steam.
+Run "deploy (*).bat" to run the game. The Steam version of the game can't be launched from the exe (without a modified steam dll), so that bat automatically closes the previous instance of the game, copies the new files and launches the game through Steam.
 The "Data" folder needs to be manually copied into the directory of the game at least once. For development of shaders, it's suggested to make a symbolic link of the "Prey-Luma" folder (to allow git to pick up the changes while also having the latest version in game).
 Note that "Edit and Continue" build settings (\ZI) should not be used as they break the code patches generation.
 To decompile shaders you will need... VSCode is suggested.
@@ -29,7 +29,8 @@ There's a "DEVELOPMENT" and "TEST" flag in main.cpp. They automatically spread t
 The game's original shaders code can be found in the ... pak in the GOG version of the game (extract the zip).
 Luma shaders can be found in ".\Data\Binaries\Danielle\x64\Release\Prey-Luma\".
 
-The steam game won't start if launched directly from the executable, unless u have a cracked steam dll. That's also the only way to hook graphics debuggers to the Steam version (NV and Intel work...?). no reshade
+Running a graphics capture debugger requires ReShade to be off. NV Nsight and Intel "Graphics Frame Analyzer" work. MS Pix and RenderDoc might also do but are untested.
+The GOG version is the easiest to debug graphics with as it can be launched directly from its exe (differently from the Steam version).
 
 To zip CryEngine packages do this ...
 

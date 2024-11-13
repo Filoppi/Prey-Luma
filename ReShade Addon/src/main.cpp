@@ -5255,10 +5255,6 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
       if (GetModuleHandle(TEXT("PreyDll.dll")) == NULL) {
         MessageBoxA(game_window, "You are trying to use \"Prey Luma\" on a game that is not \"Prey (2017)\".\nThe mod will still run but probably crash.", NAME, MB_SETFOREGROUND);
       }
-      // The steam dll seems to be loaded before us all the times
-      else if (GetModuleHandle(TEXT("steam_api64.dll")) == NULL) {
-        MessageBoxA(game_window, "\"Prey Luma\" is only compatible with the Steam version of \"Prey (2017)\".\nThe mod will still run but probably crash.", NAME, MB_SETFOREGROUND);
-      }
 
       wchar_t file_path_char[MAX_PATH] = L"";
       GetModuleFileNameW(h_module, file_path_char, ARRAYSIZE(file_path_char));

@@ -4,6 +4,7 @@
 
 #include <array>
 #include <unordered_map>
+#include <string>
 
 class Offsets
 {
@@ -143,9 +144,13 @@ public:
 		return ntHeaders->FileHeader.TimeDateStamp;
 	}
 
-	static void Init()
+	static bool Init()
 	{
 		auto handle = GetModuleHandle(TEXT("PreyDll.dll"));
+		// Crash is unavoidable, there's no purpose in continuing
+		if (handle == NULL) {
+			return false;
+		}
 		baseAddress = reinterpret_cast<uintptr_t>(handle);
 
 		uint32_t moduleTimestamp = GetModuleTimestamp(handle);
@@ -153,9 +158,31 @@ public:
 		if (search != knownTimestamps.end()) {
 			gameVersion = search->second;
 		} else {
-			// TODO: error out
+			// Default to the latest known built version of the base game
+			gameVersion = Offsets::GameVersion::PreyGOG;
+
+			// Warn user that the native mod is probably not going to work, but let them continue just in case.
+			std::string guessed_version = "Microsoft/Xbox Game Store"; // We don't know if this version has any particular DLLs
+			// The steam dll seems to be loaded before us all the times
+			if (GetModuleHandle(TEXT("steam_api64.dll")) == NULL) {
+				guessed_version = "Steam";
+			}
+			else if (GetModuleHandle(TEXT("Galaxy64.dll")) == NULL) {
+				guessed_version = "GOG";
+			}
+			// This might not work
+			else if (GetModuleHandle(TEXT("eossdk-win64-shipping.dll")) == NULL) {
+				guessed_version = "Epic Game Store";
+			}
+			// TODO: add "guessed_version" to the message
+			if (MessageBoxA(NULL, "\"Prey Luma\" is only compatible with the current Steam and GOG versions of \"Prey (2017)\" and \"Prey: Mooncrash\".\nYou can continue running but it will probably crash.\n\nAbort?", "Incompatible Game Version", MB_OKCANCEL | MB_SETFOREGROUND) == IDOK) {
+				exit(0);
+				return false;
+			}
 		}
 
 		pCD3D9Renderer = reinterpret_cast<RE::CD3D9Renderer*>(GetAddress(CD3D9Renderer));
+
+		return true;
 	}
 };
