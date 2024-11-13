@@ -608,17 +608,34 @@ void AutoDumpShaders();
 void AutoLoadShaders();
 
 #if DEVELOPMENT
-inline void GetD3DName(ID3D11DeviceChild* obj, std::string& name) {
-  if (obj == nullptr) {
-    return;
-  }
+std::optional<std::string> GetD3DName(ID3D11DeviceChild* obj) {
+  if (obj == nullptr) return std::nullopt;
 
-  // NOLINTNEXTLINE(modernize-avoid-c-arrays)
-  char c_name[128] = {};
-  UINT size = sizeof(name);
-  if (obj->GetPrivateData(WKPDID_D3DDebugObjectName, &size, c_name) == S_OK) {
-    name = c_name;
+  byte data[128] = {};
+  UINT size = sizeof(data);
+  if (obj->GetPrivateData(WKPDID_D3DDebugObjectName, &size, data) == S_OK) {
+    if (size > 0) return std::string{data, data + size};
   }
+  return std::nullopt;
+}
+
+std::optional<std::string> GetD3DNameW(ID3D11DeviceChild* obj) {
+  if (obj == nullptr) return std::nullopt;
+
+  byte data[128] = {};
+  UINT size = sizeof(data);
+  if (obj->GetPrivateData(WKPDID_D3DDebugObjectNameW, &size, data) == S_OK) {
+    if (size > 0) {
+      char c_name[128] = {};
+      size_t out_size;
+      // wide-character-string-to-multibyte-string_safe
+      auto ret = wcstombs_s(&out_size, c_name, sizeof(c_name), reinterpret_cast<wchar_t*>(data), size);
+      if (ret == 0 && out_size > 0) {
+        return std::string(c_name, c_name + out_size);
+      }
+    }
+  }
+  return GetD3DName(obj);
 }
 
 uint64_t GetResourceByViewHandle(DeviceData& data, uint64_t handle) {
@@ -636,13 +653,12 @@ std::string GetResourceNameByViewHandle(DeviceData& data, uint64_t handle) {
   if (auto pair = data.resource_names.find(resource_handle); pair != data.resource_names.end())
     return pair->second;
 
-  std::string name;
   auto* native_resource = reinterpret_cast<ID3D11DeviceChild*>(resource_handle);
-  GetD3DName(native_resource, name);
-  if (!name.empty()) {
-    data.resource_names[resource_handle] = name;
+  std::optional<std::string> name = GetD3DNameW(native_resource);
+  if (name.has_value()) {
+    data.resource_names[resource_handle] = name.value();
   }
-  return name;
+  return "";
 }
 #endif
 
