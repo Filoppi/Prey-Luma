@@ -18,7 +18,7 @@
 
 // Our rendering presets are pretty much the default ones mentioned in the DLSS 3.7 SDK, do we want to force them, or do we want to allow NV to change them through updates?
 // If we don't force them, DLSS seems to bug out and keep the old ones after changing between DLSS and DRS the first time.
-//TODOFT4: investigate why preset gets stuck?
+// NOTE: as of DLSS 3.8 presets are forced to E and F so none of this matters anymore. We can assume that C and D have no worthy advantages over E and F.
 #define DLSS_FORCE_RENDER_PRESET 1
 // Theoretically better than F.
 // Better sharpness, less ghosting and more image stability (less shimmering and noise).

@@ -2487,7 +2487,6 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
 
           //TODO LUMA: add DLSS transparency mask (e.g. glass, decals, emissive) by caching the g-buffers before and after transparent stuff draws near the end?
           //TODO LUMA: add DLSS bias mask (to ignore animated textures) by marking up some shaders(materials)/textures hashes with it?
-          //TODO LUMA: force preset E even with DLAA? Nah, F looks better it seems? Right now preset F is used for DRS (or is it?)!! We could try C instead of F in that case though! Or simply expose it to users, or at least try it for dev settings.
           //TODO LUMA: move DLSS before tonemapping, depth of field, bloom and blur. It wouldn't be easy because exposure is calculated after blur in CryEngine,
           //but we could simply fall back on using DLSS Auto Exposure (even if that wouldn't match the actual value used by post processing...).
           //To achieve that, we need to add both DRS+DLSS scaling support to all shaders that run after DLSS, as DLSS would upscale the image before the final upscale pass (and native TAA would be skipped).
