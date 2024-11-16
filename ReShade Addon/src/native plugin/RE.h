@@ -5,7 +5,6 @@
 
 namespace RE
 {
-	class CTexture;
 	class CShader;
 	class CConstantBuffer;
 
@@ -131,6 +130,21 @@ namespace RE
 		FT_NO_COLOR_COMPRESSION = 0x40000000,
 		FT_USAGE_UAV_RWTEXTURE = 0x80000000,
 	};
+	inline ETextureFlags operator|(ETextureFlags a, ETextureFlags b) { return static_cast<ETextureFlags>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b)); }
+	inline ETextureFlags operator&(ETextureFlags a, ETextureFlags b) { return static_cast<ETextureFlags>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b)); }
+	inline ETextureFlags operator^(ETextureFlags a, ETextureFlags b) { return static_cast<ETextureFlags>(static_cast<uint32_t>(a) ^ static_cast<uint32_t>(b)); }
+	inline ETextureFlags operator~(ETextureFlags a) { return static_cast<ETextureFlags>(~static_cast<uint32_t>(a)); }
+	inline ETextureFlags& operator|=(ETextureFlags& a, ETextureFlags b) { return a = a | b; }
+	inline ETextureFlags& operator&=(ETextureFlags& a, ETextureFlags b) { return a = a & b; }
+	inline ETextureFlags& operator^=(ETextureFlags& a, ETextureFlags b) { return a = a ^ b; }
+
+	class CTexture
+	{
+	public:
+		uint8_t unk00[0x54];
+		ETextureFlags m_nFlags;
+	};
+	static_assert(offsetof(CTexture, m_nFlags) == 0x54);
 
 	struct Vec2
 	{

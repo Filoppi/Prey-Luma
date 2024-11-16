@@ -127,12 +127,20 @@ namespace Hooks
 		// Replicate how the game treats render targets
 		{
 			// Hook SD3DPostEffectsUtils::CreateRenderTarget for $SceneDiffuse in CDeferredShading::CreateDeferredMaps
-			_Hook_CreateRenderTarget = dku::Hook::write_call(Offsets::GetAddress(Offsets::CreateRenderTarget), Hook_CreateRenderTarget);
+			_Hook_CreateRenderTarget_SceneDiffuse = dku::Hook::write_call(Offsets::GetAddress(Offsets::CreateRenderTarget_SceneDiffuse), Hook_CreateRenderTarget_SceneDiffuse);
 
 			// Hook CTexture::CreateTextureObject for $SceneDiffuse
-			_Hook_CreateTextureObject = dku::Hook::write_call(Offsets::GetAddress(Offsets::CreateTextureObject), Hook_CreateTextureObject);
+			_Hook_CreateTextureObject_SceneDiffuse = dku::Hook::write_call(Offsets::GetAddress(Offsets::CreateTextureObject_SceneDiffuse), Hook_CreateTextureObject_SceneDiffuse);
 		}
 #endif
+
+		// Hook PrevBackBuffer0/1 creation to set UAV flags
+		{
+			_Hook_CreateRenderTarget_PrevBackBuffer0A = dku::Hook::write_call(Offsets::GetAddress(Offsets::CreateRenderTarget_PrevBackBuffer0A), Hook_CreateRenderTarget_PrevBackBuffer0A);
+			_Hook_CreateRenderTarget_PrevBackBuffer1A = dku::Hook::write_call(Offsets::GetAddress(Offsets::CreateRenderTarget_PrevBackBuffer1A), Hook_CreateRenderTarget_PrevBackBuffer1A);
+			_Hook_CreateRenderTarget_PrevBackBuffer0B = dku::Hook::write_call(Offsets::GetAddress(Offsets::CreateRenderTarget_PrevBackBuffer0B), Hook_CreateRenderTarget_PrevBackBuffer0B);
+			_Hook_CreateRenderTarget_PrevBackBuffer1B = dku::Hook::write_call(Offsets::GetAddress(Offsets::CreateRenderTarget_PrevBackBuffer1B), Hook_CreateRenderTarget_PrevBackBuffer1B);
+		}
 
 #if ADD_NEW_RENDER_TARGETS
 		// Replace with our new RTs
@@ -422,10 +430,10 @@ namespace Hooks
 		_Hook_OnD3D11PostCreateDevice();
 	}
 
-	// Despite the name, due to our specific hook, this is called just once on startup, and then again when changing resolution
-	bool Hooks::Hook_CreateRenderTarget(const char* a_szTexName, RE::CTexture*& a_pTex, int a_iWidth, int a_iHeight, void* a_cClear, bool a_bUseAlpha, bool a_bMipMaps, RE::ETEX_Format a_eTF, int a_nCustomID, /*RE::ETextureFlags*/ int a_nFlags)
+	// Hook SD3DPostEffectsUtils::CreateRenderTarget for $SceneDiffuse in CDeferredShading::CreateDeferredMaps
+	bool Hooks::Hook_CreateRenderTarget_SceneDiffuse(const char* a_szTexName, RE::CTexture*& a_pTex, int a_iWidth, int a_iHeight, void* a_cClear, bool a_bUseAlpha, bool a_bMipMaps, RE::ETEX_Format a_eTF, int a_nCustomID, RE::ETextureFlags a_nFlags)
 	{
-		bool bReturn = _Hook_CreateRenderTarget(a_szTexName, a_pTex, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, a_eTF, a_nCustomID, a_nFlags);
+		bool bReturn = _Hook_CreateRenderTarget_SceneDiffuse(a_szTexName, a_pTex, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, a_eTF, a_nCustomID, a_nFlags);
 
 #if ADD_NEW_RENDER_TARGETS
 		// These are expected to have the following flags: FT_DONT_RELEASE, FT_DONT_STREAM, FT_USAGE_RENDERTARGET.
@@ -438,18 +446,18 @@ namespace Hooks
 #if FORCE_DLSS_SMAA_UAV
 		nPostAAFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS | RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
 #endif
-		_Hook_CreateRenderTarget("$TonemapTarget", ptexTonemapTarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, a_nFlags);
-		_Hook_CreateRenderTarget("$PostAATarget", ptexPostAATarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, nPostAAFlags);
-		_Hook_CreateRenderTarget("$UpscaleTarget", ptexUpscaleTarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, a_nFlags);
+		_Hook_CreateRenderTarget_SceneDiffuse("$TonemapTarget", ptexTonemapTarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, a_nFlags);
+		_Hook_CreateRenderTarget_SceneDiffuse("$PostAATarget", ptexPostAATarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, nPostAAFlags);
+		_Hook_CreateRenderTarget_SceneDiffuse("$UpscaleTarget", ptexUpscaleTarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, a_nFlags);
 #endif
 
 		return bReturn;
 	}
 
-	// Despite the name, due to our specific hook, this is called just once on startup, and then again when changing resolution
-	RE::CTexture* Hooks::Hook_CreateTextureObject(const char* a_name, uint32_t a_nWidth, uint32_t a_nHeight, int a_nDepth, RE::ETEX_Type a_eTT, /*RE::ETextureFlags*/ uint32_t a_nFlags, RE::ETEX_Format a_eTF, int a_nCustomID, uint8_t a9)
+	// Hook CTexture::CreateTextureObject for $SceneDiffuse
+	RE::CTexture* Hooks::Hook_CreateTextureObject_SceneDiffuse(const char* a_name, uint32_t a_nWidth, uint32_t a_nHeight, int a_nDepth, RE::ETEX_Type a_eTT, RE::ETextureFlags a_nFlags, RE::ETEX_Format a_eTF, int a_nCustomID, uint8_t a9)
 	{
-		RE::CTexture* pTex = _Hook_CreateTextureObject(a_name, a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, a_eTF, a_nCustomID, a9);
+		RE::CTexture* pTex = _Hook_CreateTextureObject_SceneDiffuse(a_name, a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, a_eTF, a_nCustomID, a9);
 
 #if ADD_NEW_RENDER_TARGETS
 #if SUPPORT_MSAA
@@ -459,12 +467,46 @@ namespace Hooks
 #if FORCE_DLSS_SMAA_UAV
 		nPostAAFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS | RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
 #endif
-		ptexTonemapTarget = _Hook_CreateTextureObject("$TonemapTarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, format, -1, a9);
-		ptexPostAATarget = _Hook_CreateTextureObject("$PostAATarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, nPostAAFlags, format, -1, a9);
-		ptexUpscaleTarget = _Hook_CreateTextureObject("$UpscaleTarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, format, -1, a9);
+		ptexTonemapTarget = _Hook_CreateTextureObject_SceneDiffuse("$TonemapTarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, format, -1, a9);
+		ptexPostAATarget = _Hook_CreateTextureObject_SceneDiffuse("$PostAATarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, nPostAAFlags, format, -1, a9);
+		ptexUpscaleTarget = _Hook_CreateTextureObject_SceneDiffuse("$UpscaleTarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, format, -1, a9);
 #endif
 
 		return pTex;
+	}
+
+	// Hook CTexture::CreateRenderTarget for $PrevBackBuffer0 in SPostEffectsUtils::Create - initial
+	RE::CTexture* Hooks::Hook_CreateRenderTarget_PrevBackBuffer0A(const char* a_name, int a_nWidth, int a_nHeight,
+		void* a_cClear, RE::ETEX_Type a_eTT, RE::ETextureFlags a_nFlags, RE::ETEX_Format a_eTF, int a_nCustomID)
+	{
+		a_nFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS;
+		a_nFlags |= RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
+		return _Hook_CreateRenderTarget_PrevBackBuffer0A(a_name, a_nWidth, a_nHeight, a_cClear, a_eTT, a_nFlags, a_eTF, a_nCustomID);
+	}
+
+	// Hook CTexture::CreateRenderTarget for $PrevBackBuffer1 in SPostEffectsUtils::Create - initial
+	RE::CTexture* Hooks::Hook_CreateRenderTarget_PrevBackBuffer1A(const char* a_name, int a_nWidth, int a_nHeight,
+		void* a_cClear, RE::ETEX_Type a_eTT, RE::ETextureFlags a_nFlags, RE::ETEX_Format a_eTF, int a_nCustomID)
+	{
+		a_nFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS;
+		a_nFlags |= RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
+		return _Hook_CreateRenderTarget_PrevBackBuffer1A(a_name, a_nWidth, a_nHeight, a_cClear, a_eTT, a_nFlags, a_eTF, a_nCustomID);
+	}
+
+	// Hook CTexture::CreateRenderTarget for $PrevBackBuffer0 in SPostEffectsUtils::Create - recreation
+	bool Hooks::Hook_CreateRenderTarget_PrevBackBuffer0B(RE::CTexture* a_this, RE::ETEX_Format a_eTF, void* a_cClear)
+	{
+		a_this->m_nFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS;
+		a_this->m_nFlags |= RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
+		return _Hook_CreateRenderTarget_PrevBackBuffer0B(a_this, a_eTF, a_cClear);
+	}
+
+	// Hook CTexture::CreateRenderTarget for $PrevBackBuffer1 in SPostEffectsUtils::Create - recreation
+	bool Hooks::Hook_CreateRenderTarget_PrevBackBuffer1B(RE::CTexture* a_this, RE::ETEX_Format a_eTF, void* a_cClear)
+	{
+		a_this->m_nFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS;
+		a_this->m_nFlags |= RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
+		return _Hook_CreateRenderTarget_PrevBackBuffer1B(a_this, a_eTF, a_cClear);
 	}
 
 #if INJECT_TAA_JITTERS

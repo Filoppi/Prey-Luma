@@ -38,16 +38,25 @@ namespace Hooks
 	private:
 		static void          Hook_FlashRenderInternal(RE::CD3D9Renderer* a_this, void* pPlayer, bool bStereo, bool bDoRealRender);
 		static void          Hook_OnD3D11PostCreateDevice();
-		static bool          Hook_CreateRenderTarget(const char* a_szTexName, RE::CTexture*& a_pTex, int a_iWidth, int a_iHeight, void* a_cClear, bool a_bUseAlpha, bool a_bMipMaps, RE::ETEX_Format a_eTF, int a_nCustomID = -1, /*RE::ETextureFlags*/ int a_nFlags = 0);
-		static RE::CTexture* Hook_CreateTextureObject(const char* a_name, uint32_t a_nWidth, uint32_t a_nHeight, int a_nDepth, RE::ETEX_Type a_eTT, /*RE::ETextureFlags*/ uint32_t a_nFlags, RE::ETEX_Format a_eTF, int a_nCustomID /*= -1*/, uint8_t a9);
+		static bool          Hook_CreateRenderTarget_SceneDiffuse(const char* a_szTexName, RE::CTexture*& a_pTex, int a_iWidth, int a_iHeight, void* a_cClear, bool a_bUseAlpha, bool a_bMipMaps, RE::ETEX_Format a_eTF, int a_nCustomID, RE::ETextureFlags a_nFlags);
+		static RE::CTexture* Hook_CreateTextureObject_SceneDiffuse(const char* a_name, uint32_t a_nWidth, uint32_t a_nHeight, int a_nDepth, RE::ETEX_Type a_eTT, RE::ETextureFlags a_nFlags, RE::ETEX_Format a_eTF, int a_nCustomID, uint8_t a9);
+
+		static RE::CTexture* Hook_CreateRenderTarget_PrevBackBuffer0A(const char* a_name, int a_nWidth, int a_nHeight, void* a_cClear, RE::ETEX_Type a_eTT, RE::ETextureFlags a_nFlags, RE::ETEX_Format a_eTF, int a_nCustomID);
+		static RE::CTexture* Hook_CreateRenderTarget_PrevBackBuffer1A(const char* a_name, int a_nWidth, int a_nHeight, void* a_cClear, RE::ETEX_Type a_eTT, RE::ETextureFlags a_nFlags, RE::ETEX_Format a_eTF, int a_nCustomID);
+		static bool          Hook_CreateRenderTarget_PrevBackBuffer0B(RE::CTexture* a_this, RE::ETEX_Format a_eTF, void* a_cClear);
+		static bool          Hook_CreateRenderTarget_PrevBackBuffer1B(RE::CTexture* a_this, RE::ETEX_Format a_eTF, void* a_cClear);
 #if INJECT_TAA_JITTERS
 		static void          Hook_UpdateBuffer(RE::CConstantBuffer* a_this, void* a_src, size_t a_size, uint32_t a_numDataBlocks);
 #endif
 
 		static inline std::add_pointer_t<decltype(Hook_FlashRenderInternal)> _Hook_FlashRenderInternal;
 		static inline std::add_pointer_t<decltype(Hook_OnD3D11PostCreateDevice)> _Hook_OnD3D11PostCreateDevice;
-		static inline std::add_pointer_t<decltype(Hook_CreateRenderTarget)> _Hook_CreateRenderTarget;
-		static inline std::add_pointer_t<decltype(Hook_CreateTextureObject)> _Hook_CreateTextureObject;
+		static inline std::add_pointer_t<decltype(Hook_CreateRenderTarget_SceneDiffuse)> _Hook_CreateRenderTarget_SceneDiffuse;
+		static inline std::add_pointer_t<decltype(Hook_CreateTextureObject_SceneDiffuse)> _Hook_CreateTextureObject_SceneDiffuse;
+		static inline std::add_pointer_t<decltype(Hook_CreateRenderTarget_PrevBackBuffer0A)> _Hook_CreateRenderTarget_PrevBackBuffer0A;
+		static inline std::add_pointer_t<decltype(Hook_CreateRenderTarget_PrevBackBuffer1A)> _Hook_CreateRenderTarget_PrevBackBuffer1A;
+		static inline std::add_pointer_t<decltype(Hook_CreateRenderTarget_PrevBackBuffer0B)> _Hook_CreateRenderTarget_PrevBackBuffer0B;
+		static inline std::add_pointer_t<decltype(Hook_CreateRenderTarget_PrevBackBuffer1B)> _Hook_CreateRenderTarget_PrevBackBuffer1B;
 #if INJECT_TAA_JITTERS
 		static inline std::add_pointer_t<decltype(Hook_UpdateBuffer)>        _Hook_UpdateBuffer;
 #endif

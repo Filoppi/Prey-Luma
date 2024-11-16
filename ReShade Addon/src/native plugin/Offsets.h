@@ -26,92 +26,97 @@ public:
 		{ 0x648266FD, GameVersion::MooncrashGOG }
 	};
 
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CD3D9Renderer = { 0x2B24E80, 0x2C9E480, 0x2937080 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CCryNameR_Func1 = { 0xEAAE00, 0xECE740, 0xE6F3F0 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CCryNameR_Func2 = { 0xF035A0, 0xF26C40, 0xECA220 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CD3D9Renderer = { 0x2B24E80, 0x2C9E480, 0x2937080, 0x2A98680 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CCryNameR_Func1 = { 0xEAAE00, 0xECE740, 0xE6F3F0, 0xE940D0 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CCryNameR_Func2 = { 0xF035A0, 0xF26C40, 0xECA220, 0xEEF050 };
 
 	// Patches
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create = { 0x1071510, 0x1094C40, 0x1037CC0 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create_PrevFrameScaled_1 = { 0x435, 0x435, 0x472 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create_PrevFrameScaled_2 = { 0x47D, 0x47D, 0x4C2 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create_BackBufferScaled_d2_1 = { 0x371, 0x371, 0x35B };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create_BackBufferScaled_d2_2 = { 0x3B9, 0x3B9, 0x3EF };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create_BackBufferScaledTemp_d2_1 = { 0x4F9, 0x4F9, 0x545 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create_BackBufferScaledTemp_d2_2 = { 0x541, 0x541, 0x595 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create_BackBufferScaled_d4_1 = { 0x743, 0x743, 0x7B9 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create_BackBufferScaled_d4_2 = { 0x78D, 0x78D, 0x80B };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create_BackBufferScaledTemp_d4_1 = { 0x80A, 0x80A, 0x892 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create_BackBufferScaledTemp_d4_2 = { 0x852, 0x852, 0x8DA };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create_BackBufferScaled_d8_1 = { 0x8FE, 0x8FE, 0x986 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create_BackBufferScaled_d8_2 = { 0x92D, 0x92D, 0x9B5 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create = { 0x1071510, 0x1094C40, 0x1037CC0, 0x105CB80 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create_PrevFrameScaled_1 = { 0x435, 0x435, 0x472, 0x472 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create_PrevFrameScaled_2 = { 0x47D, 0x47D, 0x4C2, 0x4C2 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create_BackBufferScaled_d2_1 = { 0x371, 0x371, 0x35B, 0x35B };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create_BackBufferScaled_d2_2 = { 0x3B9, 0x3B9, 0x3EF, 0x3EF };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create_BackBufferScaledTemp_d2_1 = { 0x4F9, 0x4F9, 0x545, 0x545 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create_BackBufferScaledTemp_d2_2 = { 0x541, 0x541, 0x595, 0x595 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create_BackBufferScaled_d4_1 = { 0x743, 0x743, 0x7B9, 0x7B9 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create_BackBufferScaled_d4_2 = { 0x78D, 0x78D, 0x80B, 0x80B };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create_BackBufferScaledTemp_d4_1 = { 0x80A, 0x80A, 0x892, 0x892 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create_BackBufferScaledTemp_d4_2 = { 0x852, 0x852, 0x8DA, 0x8DA };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create_BackBufferScaled_d8_1 = { 0x8FE, 0x8FE, 0x986, 0x986 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SPostEffectsUtils_Create_BackBufferScaled_d8_2 = { 0x92D, 0x92D, 0x9B5, 0x9B5 };
 
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CTexture_GenerateSceneMap = { 0xF57090, 0xF7A490, 0xF1EA60 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CTexture_GenerateSceneMap_BackBuffer_1 = { 0xEE, 0xEE, 0x10B };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CTexture_GenerateSceneMap_BackBuffer_2 = { 0x151, 0x151, 0x163 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CTexture_GenerateSceneMap = { 0xF57090, 0xF7A490, 0xF1EA60, 0xF438E0 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CTexture_GenerateSceneMap_BackBuffer_1 = { 0xEE, 0xEE, 0x10B, 0x10B };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CTexture_GenerateSceneMap_BackBuffer_2 = { 0x151, 0x151, 0x163, 0x163 };
 
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CColorGradingControllerD3D_InitResources = { 0xF036D0, 0xF26D70, 0xECA350 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CColorGradingControllerD3D_InitResources_ColorGradingMergeLayer0 = { 0xA3, 0xA3, 0x128 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CColorGradingControllerD3D_InitResources_ColorGradingMergeLayer1 = { 0xFA, 0xFA, 0x185 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CColorGradingControllerD3D_InitResources = { 0xF036D0, 0xF26D70, 0xECA350, 0xEEF180 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CColorGradingControllerD3D_InitResources_ColorGradingMergeLayer0 = { 0xA3, 0xA3, 0x128, 0x128 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CColorGradingControllerD3D_InitResources_ColorGradingMergeLayer1 = { 0xFA, 0xFA, 0x185, 0x185 };
 
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CTexture_GenerateHDRMaps = { 0xF15280, 0xF38920, 0xEDD210 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CTexture_GenerateHDRMaps_BitsPerPixel = { 0x11A, 0x116, 0x1D7 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CTexture_GenerateHDRMaps_HDRTargetPrev = { 0x14B, 0x147, 0x207 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CTexture_GenerateHDRMaps_HDRTempBloom0 = { 0x52A, 0x4B2, 0xA3D };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CTexture_GenerateHDRMaps_HDRTempBloom1 = { 0x5B0, 0x52C, 0xB59 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CTexture_GenerateHDRMaps_HDRFinalBloom = { 0x630, 0x59C, 0xC79 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CTexture_GenerateHDRMaps_SceneTargetR11G11B10F_0 = { 0xAB7, 0x9AC, 0x11E5 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CTexture_GenerateHDRMaps_SceneTargetR11G11B10F_1 = { 0xB52, 0xA2A, 0x1242 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CTexture_GenerateHDRMaps = { 0xF15280, 0xF38920, 0xEDD210, 0xF02040 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CTexture_GenerateHDRMaps_BitsPerPixel = { 0x11A, 0x116, 0x1D7, 0x1D7 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CTexture_GenerateHDRMaps_HDRTargetPrev = { 0x14B, 0x147, 0x207, 0x207 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CTexture_GenerateHDRMaps_HDRTempBloom0 = { 0x52A, 0x4B2, 0xA3D, 0xA3D };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CTexture_GenerateHDRMaps_HDRTempBloom1 = { 0x5B0, 0x52C, 0xB59, 0xB59 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CTexture_GenerateHDRMaps_HDRFinalBloom = { 0x630, 0x59C, 0xC79, 0xC79 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CTexture_GenerateHDRMaps_SceneTargetR11G11B10F_0 = { 0xAB7, 0x9AC, 0x11E5, 0x11E5 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CTexture_GenerateHDRMaps_SceneTargetR11G11B10F_1 = { 0xB52, 0xA2A, 0x1242, 0x1242 };
 
 	// Hooks
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SwapchainDesc_Func = { 0xF50000, 0xF733E0, 0xF17790 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SwapchainDesc_Start = { 0x50E, 0x50E, 0x505 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SwapchainDesc_End = { 0x515, 0x515, 0x50C };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SwapchainDesc_Func = { 0xF50000, 0xF733E0, 0xF17790, 0xF3C5F0 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SwapchainDesc_Start = { 0x50E, 0x50E, 0x505, 0x505 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SwapchainDesc_End = { 0x515, 0x515, 0x50C, 0x50C };
 
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> OnD3D11PostCreateDevice = { 0xF53F66, 0xF77366, 0xF1BA76 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> OnD3D11PostCreateDevice = { 0xF53F66, 0xF77366, 0xF1BA76, 0xF408F6 };
 
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CreateRenderTarget = { 0xF083F0, 0xF2BA90, 0xECF250 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CreateRenderTarget_SceneDiffuse = { 0xF083F0, 0xF2BA90, 0xECF250, 0xEF4080 };
 
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CreateTextureObject = { 0x100F61F, 0x1032A43, 0xFD1EA9 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CreateTextureObject_SceneDiffuse = { 0x100F61F, 0x1032A43, 0xFD1EA9, 0xFF6D9A };
 
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> TonemapTarget1_Func = { 0xFB00C0, 0xFD3450, 0xF73A70 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> TonemapTarget1_Start = { 0x78D, 0x78D, 0x739 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> TonemapTarget1_End = { 0x794, 0x794, 0x740 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CreateRenderTarget_PrevBackBuffer0A = { 0x1071714, 0x1094E44, 0x1037ECF, 0x105CD8F };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CreateRenderTarget_PrevBackBuffer1A = { 0x10717E7, 0x1094F17, 0x1037FAB, 0x105CE6B };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CreateRenderTarget_PrevBackBuffer0B = { 0x10716E2, 0x1094E12, 0x1037E92, 0x105CD52 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CreateRenderTarget_PrevBackBuffer1B = { 0x10717B1, 0x1094EE1, 0x1037F78, 0x105CE38 };
 
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> TonemapTarget2_Func = { 0xF9C790, 0xFBFA40, 0xF5FF10 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> TonemapTarget2_Start = { 0x10, 0x10, 0x10 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> TonemapTarget2_End = { 0x17, 0x17, 0x17 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> TonemapTarget1_Func = { 0xFB00C0, 0xFD3450, 0xF73A70, 0xF98880 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> TonemapTarget1_Start = { 0x78D, 0x78D, 0x739, 0x739 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> TonemapTarget1_End = { 0x794, 0x794, 0x740, 0x740 };
 
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> TonemapTarget3_Func = { 0xF3B860, 0xF5EB00, 0xF03A30 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> TonemapTarget3_Start = { 0x105, 0x105, 0xF7 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> TonemapTarget3_End = { 0x10C, 0x10C, 0xFE };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> TonemapTarget2_Func = { 0xF9C790, 0xFBFA40, 0xF5FF10, 0xF84D20 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> TonemapTarget2_Start = { 0x10, 0x10, 0x10, 0x10 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> TonemapTarget2_End = { 0x17, 0x17, 0x17, 0x17 };
 
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> TonemapTarget4_Func = { 0xFBD100, 0xFE0490, 0xF80AD0 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> TonemapTarget4_Start = { 0x41A, 0x41A, 0x36F };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> TonemapTarget4_End = { 0x421, 0x421, 0x376 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> TonemapTarget3_Func = { 0xF3B860, 0xF5EB00, 0xF03A30, 0xF28860 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> TonemapTarget3_Start = { 0x105, 0x105, 0xF7, 0xF7 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> TonemapTarget3_End = { 0x10C, 0x10C, 0xFE, 0xFE };
 
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> PostAATarget1_Func = { 0xF9C790, 0xFBFA40, 0xF5FF10 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> PostAATarget1_Start = { 0x28, 0x28, 0x28 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> PostAATarget1_End = { 0x2F, 0x2F, 0x2F };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> TonemapTarget4_Func = { 0xFBD100, 0xFE0490, 0xF80AD0, 0xFA58F0 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> TonemapTarget4_Start = { 0x41A, 0x41A, 0x36F, 0x36F };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> TonemapTarget4_End = { 0x421, 0x421, 0x376, 0x376 };
 
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> PostAATarget2_Func = { 0xF99500, 0xFBC840, 0xF5D2D0 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> PostAATarget2_Start = { 0x1A, 0x1A, 0x16 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> PostAATarget2_End = { 0x21, 0x21, 0x1D };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> PostAATarget1_Func = { 0xF9C790, 0xFBFA40, 0xF5FF10, 0xF84D20 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> PostAATarget1_Start = { 0x28, 0x28, 0x28, 0x28 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> PostAATarget1_End = { 0x2F, 0x2F, 0x2F, 0x2F };
 
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> PostAATarget3_Func = { 0xF9BBB0, 0xFBEEF0, 0xF5F4C0 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> PostAATarget3_Start = { 0x9B, 0xA0, 0x9B };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> PostAATarget3_End = { 0xA3, 0xA8, 0xA3 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> PostAATarget2_Func = { 0xF99500, 0xFBC840, 0xF5D2D0, 0xF82170 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> PostAATarget2_Start = { 0x1A, 0x1A, 0x16, 0x16 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> PostAATarget2_End = { 0x21, 0x21, 0x1D, 0x1D };
 
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> UpscaleTarget1_Func = { 0xF9BBB0, 0xFBEEF0, 0xF5F4C0 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> UpscaleTarget1_Start = { 0x3B, 0x40, 0x3B };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> UpscaleTarget1_End = { 0x42, 0x47, 0x42 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> PostAATarget3_Func = { 0xF9BBB0, 0xFBEEF0, 0xF5F4C0, 0xF84360 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> PostAATarget3_Start = { 0x9B, 0xA0, 0x9B, 0xA0 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> PostAATarget3_End = { 0xA3, 0xA8, 0xA3, 0xA8 };
 
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> UpscaleTarget2_Func = { 0xF7EB20, 0xFA1CF0, 0xF42740 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> UpscaleTarget2_Start = { 0x47, 0x47, 0x4C };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> UpscaleTarget2_End = { 0x4E, 0x4E, 0x53 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> UpscaleTarget1_Func = { 0xF9BBB0, 0xFBEEF0, 0xF5F4C0, 0xF84360 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> UpscaleTarget1_Start = { 0x3B, 0x40, 0x3B, 0x40 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> UpscaleTarget1_End = { 0x42, 0x47, 0x42, 0x47 };
 
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> UpscaleTarget3_Func = { 0xF7EB20, 0xFA1CF0, 0xF42740 };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> UpscaleTarget3_Start = { 0x10E, 0x10E, 0x11A };
-	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> UpscaleTarget3_End = { 0x115, 0x115, 0x121 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> UpscaleTarget2_Func = { 0xF7EB20, 0xFA1CF0, 0xF42740, 0xF675F0 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> UpscaleTarget2_Start = { 0x47, 0x47, 0x4C, 0x4C };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> UpscaleTarget2_End = { 0x4E, 0x4E, 0x53, 0x53 };
+
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> UpscaleTarget3_Func = { 0xF7EB20, 0xFA1CF0, 0xF42740, 0xF675F0 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> UpscaleTarget3_Start = { 0x10E, 0x10E, 0x11A, 0x11A };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> UpscaleTarget3_End = { 0x115, 0x115, 0x121, 0x121 };
 
 
 	static inline uintptr_t baseAddress;
