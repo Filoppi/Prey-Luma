@@ -1,8 +1,7 @@
-Prey (2017) Luma is mod that is internally made of a ReShade addon (from Pumbo), and a "native" plugin (dll/asi) (from Ersh).
-It's rewriting the whole post processing phase (and potentially rendering...) of CryEngine/Prey.
-The native plugin has the purpose of hooking into the engine code and swapping texture formats (e.g. from 8bit to 16bit etc), changing the swapchain to be scRGB HDR and making it use a more modern and responsive flip model. It also makes some modifications to TAA to change the rendering jitters for improved DLSS compatibility. Doing this stuff exclusively through DirectX hooks would probably be possible but exponentially more complicated (mostly because CryEngine re-uses textures for different purposes, and we'd only want to upgrade some of them while not other).
-The ReShade addon has the purpose of adding behaviour by hooking to their DirectX functions, these include: replacing shaders (with versions that add HDR post processing support), change the resolution and quality of effects, add new passes (e.g. DLSS/GTAO), improve anisotropic filtering, ...
-ReShade per se isn't necessarily needed by Luma, we could hook to the DirectX functions ourselves, but it makes things easier and natively adds ImGUI and serialization features (plus it's widely compatible).
+Prey (2017) Luma is mod that rewrites the whole late rendering phase of CryEngine/Prey.
+The first, by Ersh, has the purpose of hooking into the game's native code and (e.g.) swapping texture formats (e.g. from 8bit to 16bit etc).
+The second, by Pumbo, leverages the ReShade Addon system to add or modify rendering passes (and replace post processing shaders) through DirectX hooks.
+It'd be possible to achieve this mod without ReShade and game specific code hooks, by only using native DirectX hooks, but it'd be exponentially more complicated (CryEngine re-uses render target textures for different purposes, so we couldn't tell which ones to upgrade, and ReShade offers settings serialization and a bunch of other features).
 Sorry for the quality of the code not being great (the code itself should be good, but it's almost all dumped in a single file), the focus has been on getting things to work.
 There's some warnings in the DKUtil code, we haven't fixed them as they seem harmless.
 
