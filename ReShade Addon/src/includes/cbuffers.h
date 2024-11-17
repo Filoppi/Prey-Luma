@@ -89,6 +89,24 @@ namespace
     constexpr UINT CBPerViewGlobal_buffer_size = 1024; // This is how much CryEngine allocates for buffers that hold this
     static_assert(CBPerViewGlobal_buffer_size > sizeof(CBPerViewGlobal));
 
+    struct LumaFrameDevSettings {
+        LumaFrameDevSettings(float Value = 0.f)
+        {
+            Setting01 = Setting02 = Setting03 = Setting04 = Setting05 = Setting06 = Setting07 = Value;
+        }
+        float& operator[](const size_t i)
+        {
+            return (&Setting01)[i];
+        }
+        float Setting01;
+        float Setting02;
+        float Setting03;
+        float Setting04;
+        float Setting05;
+        float Setting06;
+        float Setting07;
+    };
+
     struct LumaFrameSettings {
         uint32_t DisplayMode;
         float ScenePeakWhite;
@@ -96,13 +114,7 @@ namespace
         float UIPaperWhite;
         uint32_t DLSS;
 #if DEVELOPMENT // In case we disabled the "DEVELOPMENT" shader define while the code is compiled in "DEVELOPMENT" mode, we'll simply push values that aren't read by shaders
-        float DevSetting1;
-        float DevSetting2;
-        float DevSetting3;
-        float DevSetting4;
-        float DevSetting5;
-        float DevSetting6;
-        float DevSetting7;
+        LumaFrameDevSettings DevSettings;
 #endif
     };
     static_assert(sizeof(LumaFrameSettings) % sizeof(uint32_t) == 0);

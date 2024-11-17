@@ -30,7 +30,7 @@ uint32_t defines_count = 0;
 bool defines_need_recompilation = false;
 
 struct ShaderDefineData {
-    ShaderDefineData(const char* name = "", char value = '\0', bool _fixed_name = false, bool _fixed_value = false, const char* _tooltip = "") :
+    ShaderDefineData(const char* name = "", char value = '\0', bool _fixed_name = false, bool _fixed_value = false, const char* _tooltip = nullptr) :
         name_hint("Define " + std::to_string(defines_count) + " Name"),
         value_hint("Define " + std::to_string(defines_count) + " Value"),
         fixed_name(_fixed_name),
