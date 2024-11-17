@@ -64,7 +64,7 @@ namespace Hooks
 			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_SceneTargetR11G11B10F_1), format16f);  // $SceneTargetR11G11B10F_1
 		}
 
-#if !ADD_NEW_RENDER_TARGETS && 0 // Force upgrade all the texture we'd replace later too (this leads to issues, like some objects having purple reflections etc)
+#if !ADD_NEW_RENDER_TARGETS && 0 // Force upgrade all the texture we'd replace later too (this leads to issues, like some objects having purple reflections etc) (only compatible with the Steam base game)
 		{
 			// CDeferredShading::CreateDeferredMaps
 			const auto address = Offsets::baseAddress + 0xF08200;
@@ -87,15 +87,17 @@ namespace Hooks
 
 	void Hooks::Hook()
 	{
-		//// Hook CD3D9Renderer::FlashRenderInternal because DXGI_SWAP_EFFECT_FLIP_DISCARD unbinds backbuffer during Present. So we need to call OMSetRenderTargets to bind it again every frame.
-		//{
-		//	uintptr_t vtable = Offsets::baseAddress + 0x1DD2E08;
-		//	auto      Hook = dku::Hook::AddVMTHook(&vtable, 0x13B, FUNC_INFO(Hook_FlashRenderInternal));
+		// Hook CD3D9Renderer::FlashRenderInternal because DXGI_SWAP_EFFECT_FLIP_DISCARD unbinds backbuffer during Present. So we need to call OMSetRenderTargets to bind it again every frame.
+#if 0 // Only needed by Kingdom Come Deliverance
+		{
+			uintptr_t vtable = Offsets::baseAddress + 0x1DD2E08;
+			auto      Hook = dku::Hook::AddVMTHook(&vtable, 0x13B, FUNC_INFO(Hook_FlashRenderInternal));
 
-		//	using FlashRenderInternal_t = std::add_pointer_t<void(RE::CD3D9Renderer*, void*, bool, bool)>;
-		//	_Hook_FlashRenderInternal = Hook->GetOldFunction<FlashRenderInternal_t>();
-		//	Hook->Enable();
-		//}
+			using FlashRenderInternal_t = std::add_pointer_t<void(RE::CD3D9Renderer*, void*, bool, bool)>;
+			_Hook_FlashRenderInternal = Hook->GetOldFunction<FlashRenderInternal_t>();
+			Hook->Enable();
+		}
+#endif
 
 		// Patch swapchain desc to change DXGI_FORMAT from RGBA8 and DXGI_SWAP_EFFECT to DXGI_SWAP_EFFECT_FLIP_DISCARD
 		{
@@ -383,7 +385,7 @@ namespace Hooks
 
 #if INJECT_TAA_JITTERS
 		// TAA jitter
-		{
+		if (Offsets::gameVersion == Offsets::GameVersion::PreySteam) {
 			// Hook CConstantBuffer::UpdateBuffer to push jitter offset instead of the unused fxaa params
 			const auto address = Offsets::baseAddress + 0xF99FE0;
 			_Hook_UpdateBuffer = dku::Hook::write_call(address + 0x1AAA, Hook_UpdateBuffer);
@@ -443,7 +445,7 @@ namespace Hooks
 		a_nFlags |= RE::ETextureFlags::FT_USAGE_MSAA;
 #endif
 		auto nPostAAFlags = a_nFlags;
-#if FORCE_DLSS_SMAA_UAV
+#if FORCE_DLSS_SMAA_UAV && 0
 		nPostAAFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS | RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
 #endif
 		_Hook_CreateRenderTarget_SceneDiffuse("$TonemapTarget", ptexTonemapTarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, a_nFlags);
@@ -464,7 +466,7 @@ namespace Hooks
 		a_nFlags |= RE::ETextureFlags::FT_USAGE_MSAA;
 #endif
 		auto nPostAAFlags = a_nFlags;
-#if FORCE_DLSS_SMAA_UAV
+#if FORCE_DLSS_SMAA_UAV && 0
 		nPostAAFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS | RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
 #endif
 		ptexTonemapTarget = _Hook_CreateTextureObject_SceneDiffuse("$TonemapTarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, format, -1, a9);
@@ -475,37 +477,68 @@ namespace Hooks
 		return pTex;
 	}
 
+	static RE::CTexture* ptexPrevBackBuffer = nullptr;
+
 	// Hook CTexture::CreateRenderTarget for $PrevBackBuffer0 in SPostEffectsUtils::Create - initial
+	// For some reason, the previous back buffers copies (only used by TAA?) are always FP16 textures even in the vanilla game, despite that seemengly not being needed (as the source textures were UNORM8).
+	// These textures were used as flip flop history for TAA, one being used as output for this frame's TAA, and the other(s) as history from the previous frame(s).
+	// With DLSS we could probably skip all these copies and re-use some other post processing textures (as the history is kept within DLSS), but there's no need to bother.
 	RE::CTexture* Hooks::Hook_CreateRenderTarget_PrevBackBuffer0A(const char* a_name, int a_nWidth, int a_nHeight,
 		void* a_cClear, RE::ETEX_Type a_eTT, RE::ETextureFlags a_nFlags, RE::ETEX_Format a_eTF, int a_nCustomID)
 	{
-		a_nFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS;
-		a_nFlags |= RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
-		return _Hook_CreateRenderTarget_PrevBackBuffer0A(a_name, a_nWidth, a_nHeight, a_cClear, a_eTT, a_nFlags, a_eTF, a_nCustomID);
+		// Avoid creating more than one history texture as an extra DLSS optimization.
+		// It's all single threaded so this is fine.
+		if (ptexPrevBackBuffer) {
+			auto ptexPrevBackBufferCopy = ptexPrevBackBuffer;
+			ptexPrevBackBuffer = nullptr;
+			return ptexPrevBackBufferCopy;
+		}
+
+#if FORCE_DLSS_SMAA_UAV
+		a_nFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS | RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
+#endif
+		auto _ptexPrevBackBuffer = _Hook_CreateRenderTarget_PrevBackBuffer0A(a_name, a_nWidth, a_nHeight, a_cClear, a_eTT, a_nFlags, a_eTF, a_nCustomID);
+#if FORCE_DLSS_SMAA_SLIMMED_DOWN_HISTORY
+		ptexPrevBackBuffer = _ptexPrevBackBuffer;
+#endif
+		return _ptexPrevBackBuffer;
 	}
 
 	// Hook CTexture::CreateRenderTarget for $PrevBackBuffer1 in SPostEffectsUtils::Create - initial
 	RE::CTexture* Hooks::Hook_CreateRenderTarget_PrevBackBuffer1A(const char* a_name, int a_nWidth, int a_nHeight,
 		void* a_cClear, RE::ETEX_Type a_eTT, RE::ETextureFlags a_nFlags, RE::ETEX_Format a_eTF, int a_nCustomID)
 	{
-		a_nFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS;
-		a_nFlags |= RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
-		return _Hook_CreateRenderTarget_PrevBackBuffer1A(a_name, a_nWidth, a_nHeight, a_cClear, a_eTT, a_nFlags, a_eTF, a_nCustomID);
+		if (ptexPrevBackBuffer) {
+			auto ptexPrevBackBufferCopy = ptexPrevBackBuffer;
+			ptexPrevBackBuffer = nullptr;
+			return ptexPrevBackBufferCopy;
+		}
+
+#if FORCE_DLSS_SMAA_UAV
+		a_nFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS | RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
+#endif
+		auto _ptexPrevBackBuffer = _Hook_CreateRenderTarget_PrevBackBuffer1A(a_name, a_nWidth, a_nHeight, a_cClear, a_eTT, a_nFlags, a_eTF, a_nCustomID);
+#if FORCE_DLSS_SMAA_SLIMMED_DOWN_HISTORY
+		ptexPrevBackBuffer = _ptexPrevBackBuffer;
+#endif
+		return _ptexPrevBackBuffer;
 	}
 
 	// Hook CTexture::CreateRenderTarget for $PrevBackBuffer0 in SPostEffectsUtils::Create - recreation
 	bool Hooks::Hook_CreateRenderTarget_PrevBackBuffer0B(RE::CTexture* a_this, RE::ETEX_Format a_eTF, void* a_cClear)
 	{
-		a_this->m_nFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS;
-		a_this->m_nFlags |= RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
+#if FORCE_DLSS_SMAA_UAV
+		a_this->m_nFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS | RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
+#endif
 		return _Hook_CreateRenderTarget_PrevBackBuffer0B(a_this, a_eTF, a_cClear);
 	}
 
 	// Hook CTexture::CreateRenderTarget for $PrevBackBuffer1 in SPostEffectsUtils::Create - recreation
 	bool Hooks::Hook_CreateRenderTarget_PrevBackBuffer1B(RE::CTexture* a_this, RE::ETEX_Format a_eTF, void* a_cClear)
 	{
-		a_this->m_nFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS;
-		a_this->m_nFlags |= RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
+#if FORCE_DLSS_SMAA_UAV
+		a_this->m_nFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS | RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
+#endif
 		return _Hook_CreateRenderTarget_PrevBackBuffer1B(a_this, a_eTF, a_cClear);
 	}
 

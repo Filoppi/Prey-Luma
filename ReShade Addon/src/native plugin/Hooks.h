@@ -15,9 +15,13 @@
 
 // DLSS usually replaces the TAA pass ("PostAA") and writes to its render target, so that's what we are aiming to allow as UAV (which benefits performance by avoid two texture copies),
 // but if we ever wanted DLSS to replace SMAA instead, we could also force its RT to be a UAV.
-#define FORCE_DLSS_SMAA_UAV 0
+#define FORCE_DLSS_SMAA_UAV 1
+// Extra optimization for DLSS (breaks the game's native TAA if DLSS is not engaged).
+// This also probably results in DirectX debug layer warnings due to possibly the same texture being bound as render target and (pixel) shader resource at the same time (though we wouldn't be using it as shader resource).
+#define FORCE_DLSS_SMAA_SLIMMED_DOWN_HISTORY 1
 
-// Not necessary anymore, we directly intercept them through cbuffer writes
+// Injects the TAA jitter values in the TAA cbuffers.
+// Not necessary anymore, we directly intercept them through cbuffer writes. Only compatible with the Steam version of the base game.
 #define INJECT_TAA_JITTERS 0
 
 namespace Hooks

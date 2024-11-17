@@ -353,6 +353,7 @@ constexpr float texture_mip_lod_bias_offset = -1.0f; // Value tweaked for DLSS (
 #endif
 float dlss_custom_exposure = 1.0;
 float dlss_custom_pre_exposure = 1.0;
+bool dlss_use_native_uav = true;
 
 #if DEVELOPMENT
 bool disable_taa_jitters = false;
@@ -418,7 +419,7 @@ std::unordered_map<std::string, uint8_t> code_shaders_defines;
 // TODO: add grey out conditions (another define, by name, whether its value is > 0), and also add min/max values range (to limit the user insertable values)
 std::vector<ShaderDefineData> shader_defines_data = {
   {"DEVELOPMENT", DEVELOPMENT ? '1' : '0', true, DEVELOPMENT ? false : true, "Enables some development/debug features that are otherwise not allowed"}, // development_define_index
-  {"POST_PROCESS_SPACE_TYPE", '1', true, false, "0 - Gamma space\n1 - Linear space\n2 - Linear space until UI (then gamma space)\n\nSelect \"2\" if you want the UI to look exactly like it did in Vanilla\nSelect \"1\" for the highest possible quality"}, // post_process_space_define_index
+  {"POST_PROCESS_SPACE_TYPE", '1', true, false, "0 - Gamma space\n1 - Linear space\n2 - Linear space until UI (then gamma space)\n\nSelect \"2\" if you want the UI to look exactly like it did in Vanilla\nSelect \"1\" for the highest possible quality (e.g. color accuracy, banding, DLSS)"}, // post_process_space_define_index
   {"GAMMA_CORRECTION_TYPE", '1', true, false, "(HDR only) Emulates a specific SDR gamma\nThis is best left to \"1\" (Gamma 2.2) unless you have crushed blacks or overly saturated colors\n0 - sRGB\n1 - Gamma 2.2\n2 - sRGB (color hues) with gamma 2.2 luminance"}, // gamma_correction_define_index
   {"TONEMAP_TYPE", '1', false, false, "0 - Vanilla SDR\n1 - Luma HDR (Vanilla+)\n2 - Raw HDR (Untonemapped)"},
   {"SUNSHAFTS_LOOK_TYPE", '2', false, false, "0 - Raw Vanilla\n1 - Vanilla+\n2 - Luma HDR"},
@@ -2282,7 +2283,6 @@ void OnPresent(
 }
 
 //TODOFT5: expose DLSS res range multipliers here or to game config (???)
-//TODOFT5: DLSS pre-exposure "dlss_custom_exposure". set it to 203/80 or 1/(203/80)? it seems fine as it is.
 //TODOFT5: "_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR"?
 //TODOFT5: fix cpp file formatting in general (and make sure it's all thread safe, but it should be) (remove clang.tidy files?)
 //TODOFT5: Add "UpdateSubresource" to check whether they map buffers with that? Also make sure that our CopyTexture() func works!
@@ -2527,7 +2527,6 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
           //TODOFT (TODO LUMA): make sure DLSS lets scRGB colors pass through...
           //TODOFT: add sharpening if we did DLSS? It's already natively in! Do RCAS instead?
           //TODOFT: skip SMAA edge detection and edge AA passes, or just disable SMAA in menu settings (make sure the game defaults to TAA from config)
-          //TODOFT: skip the texture copy into ps_shader_resources[1] after TAA if DLSS is running? (it's a separate pass triggered by the game) It's not really necessary AFAIK (though it might be used by other things in the game, it's not clear, but likely not...)
           //TODOFT: reset history when we toggle DLSS? Or at least make sure we clean up unused DLSS texture resources.
 
           //TODO LUMA: add DLSS transparency mask (e.g. glass, decals, emissive) by caching the g-buffers before and after transparent stuff draws near the end?
@@ -2579,7 +2578,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                       
                       ASSERT_ONCE(std::lrintf(output_resolution.x) == output_texture_desc.Width && std::lrintf(output_resolution.y) == output_texture_desc.Height);
                       std::array<uint32_t, 2> dlss_render_resolution = FindClosestIntegerResolutionForAspectRatio((double)output_texture_desc.Width * (double)dlss_sr_render_resolution, (double)output_texture_desc.Height * (double)dlss_sr_render_resolution, (double)output_texture_desc.Width / (double)output_texture_desc.Height);
-                      // The "HDR" flag in DLSS SR actually means whether the color is in linear space or "sRGB gamma" (SDR) space, colors beyond 0-1 don't seem to be clipped either way
+                      // The "HDR" flag in DLSS SR actually means whether the color is in linear space or "sRGB gamma" (apparently not 2.2) (SDR) space, colors beyond 0-1 don't seem to be clipped either way
                       bool dlss_hdr = shader_defines_data[post_process_space_define_index].GetNumericalCompiledValue() >= 1; // "POST_PROCESS_SPACE_TYPE" (we are assuming the value was always a number and not empty)
 
 #if (DEVELOPMENT || TEST) && TEST_DLSS
@@ -2622,8 +2621,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
 
                       bool skip_dlss = output_texture_desc.Width < 32 || output_texture_desc.Height < 32; // DLSS doesn't support output below 32x32
                       bool dlss_output_changed = false;
-                      constexpr bool force_dlss_output_copy = false;
-                      bool dlss_output_supports_uav = !force_dlss_output_copy && (output_texture_desc.BindFlags & D3D11_BIND_UNORDERED_ACCESS) != 0;
+                      bool dlss_output_supports_uav = dlss_use_native_uav && (output_texture_desc.BindFlags & D3D11_BIND_UNORDERED_ACCESS) != 0;
                       if (!dlss_output_supports_uav) {
                           output_texture_desc.BindFlags |= D3D11_BIND_UNORDERED_ACCESS;
 
@@ -2745,7 +2743,20 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                           uint32_t render_width_dlss = std::lrintf(render_resolution.x);
                           uint32_t render_height_dlss = std::lrintf(render_resolution.y);
 
-                          const float dlss_pre_exposure = dlss_custom_pre_exposure != 1.f ? dlss_custom_pre_exposure : 0.f;
+                          // These configurations store the image already multiplied by paper white from the beginning of tonemapping, including at the time DLSS runs.
+                          // The other configurations run DLSS in "SDR" Gamma Space so we couldn't safely change the exposure.
+                          const bool dlss_use_paper_white_pre_exposure = shader_defines_data[post_process_space_define_index].GetNumericalCompiledValue() >= 1;
+
+                          float dlss_pre_exposure = 0.f;
+                          if (dlss_use_paper_white_pre_exposure) {
+#if 1 // Alternative that considers a value of 1 in the DLSS color textures to match the SDR output nits range (whatever that is)
+                              dlss_pre_exposure = cb_luma_frame_settings.ScenePaperWhite / default_paper_white;
+#else // Alternative that considers a value of 1 in the DLSS color textures to match 203 nits
+                              dlss_pre_exposure = cb_luma_frame_settings.ScenePaperWhite / srgb_white_level;
+#endif
+                          }
+                          if (dlss_custom_pre_exposure != 1.f)
+                            dlss_pre_exposure = dlss_custom_pre_exposure;
 
                           // There doesn't seem to be a need to restore the DX state to whatever we had before (e.g. render targets, cbuffers, samplers, UAVs, texture shader resources, viewport, scissor rect, ...), CryEngine always sets everything it needs again for every pass.
                           // DLSS internally keeps its own frames history, we don't seem to need to do that ourselves (by feeding in an output buffer that was the previous frame's output, though we do have that if needed, it should be in ps_shader_resources[1]).
@@ -4762,6 +4773,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         ImGui::NewLine();
         ImGui::SliderFloat("DLSS Custom Exposure", &dlss_custom_exposure, 0.01, 10.0);
         ImGui::SliderFloat("DLSS Custom Pre-Exposure", &dlss_custom_pre_exposure, 0.01, 10.0);
+        ImGui::Checkbox("DLSS Allow Use Native UAV Texture", &dlss_use_native_uav);
         
         ImGui::NewLine();
         ImGui::SliderInt("DLSS Motion Vectors Jittered", &dlss_mode, 0, 1);
@@ -5185,7 +5197,9 @@ void Init(bool async) {
   shader_hashes_HDRPostProcessHDRFinalScene.emplace(std::stoul("37ACE8EF", nullptr, 16));
   shader_hashes_HDRPostProcessHDRFinalScene.emplace(std::stoul("66FD11D0", nullptr, 16));
   // PostAA PostAA
-#if 0 // These passes don't have any projection jitters (unless maybe "SMAA 1TX" could have them if we forced them through config), so we can't replace them with DLSS SR
+// These passes don't have any projection jitters (unless maybe "SMAA 1TX" could have them if we forced them through config), so we can't replace them with DLSS SR.
+// SMAA (without TX) is completely missing from here as it doesn't have a composition pass we could replace (well, maybe NeighborhoodBlendingSMAA).
+#if 0
   shader_hashes_PostAA.emplace(std::stoul("D8072D98", nullptr, 16)); // FXAA
   shader_hashes_PostAA.emplace(std::stoul("E9D92B11", nullptr, 16)); // SMAA 1TX
 #endif

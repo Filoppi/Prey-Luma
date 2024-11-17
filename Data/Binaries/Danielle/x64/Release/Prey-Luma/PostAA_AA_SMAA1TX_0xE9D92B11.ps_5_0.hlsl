@@ -11,6 +11,26 @@ void main(
   nointerpolation float2 inBaseTCScale : TEXCOORD1,
   out float4 outColor : SV_Target0)
 {
+#if 0 // We don't need this here as neither SMAA 1TX nor FXAA use camera jitters in their rendering path, so there's no point in replacing them with DLSS really, it wouldn't look better than the current native AA
+	if (LumaSettings.DLSS)
+	{
+		uint3 pixelCoord = int3(inWPos.xy, 0);
+		const float depth = GetLinearDepth( PostAA_DeviceDepthTex.Load(pixelCoord).r );
+		const float2 currTC = inBaseTC.xy;
+		float2 prevTC = CalcPreviousTC(currTC, depth);
+		float2 velocity = prevTC - currTC;
+		float2 vObj = PostAA_VelocityObjectsTex.Load(pixelCoord);
+		if (vObj.x != 0 || vObj.y != 0)
+		{
+			velocity = ReadVelocityObjects(vObj);
+			velocity /= LumaData.RenderResolutionScale;
+		}
+		outColor.xy = velocity;
+		outColor.zw = 0;
+		return;
+	}
+#endif
+
 #if !ENABLE_AA || !ENABLE_TAA
 	outColor	= SampleCurrentScene(inBaseTC.xy * CV_HPosScale.xy);
 	return;
