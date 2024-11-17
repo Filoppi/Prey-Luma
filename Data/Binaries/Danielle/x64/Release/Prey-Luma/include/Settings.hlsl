@@ -261,14 +261,15 @@ cbuffer LumaSettings : register(b2)
     float GamePaperWhiteNits; // Access this through the global variables below
     float UIPaperWhiteNits; // Access this through the global variables below
     uint DLSS; // Is DLSS enabled (implies it engaged and it's compatible) (this is on even in fullscreen UI menus that don't use upscaling)
-#if DEVELOPMENT
-    float DevSetting01;
-    float DevSetting02;
-    float DevSetting03;
-    float DevSetting04;
-    float DevSetting05;
-    float DevSetting06;
-    float DevSetting07;
+#if DEVELOPMENT || 1
+    // These are mirrored in c++. You can add up to 3 numbers as comment to their right to define the UI settings sliders default, min and max values.
+    float DevSetting01; // 0, 0, 1
+    float DevSetting02; // 0, 0, 1
+    float DevSetting03; // 0, 0, 1
+    float DevSetting04; // 0, 0, 1
+    float DevSetting05; // 0, 0, 1
+    float DevSetting06; // 0, 0, 1
+    float DevSetting07; // 0, 0, 1
 #endif
   } LumaSettings : packoffset(c0);
 }
