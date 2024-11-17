@@ -225,6 +225,7 @@ void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
 
 // It's better to do tonemapping here than in "HDRPostProces.cfx" "HDRFinalScenePS", as this is after AA and after some other additive post process effects are drawn.
 // Ideally we'd do tonemapping and dithering even later, in "PostEffectsGame.cfx" "UberGamePostProcess" but that's not always run.
+// Note that this is more like a simple "display mapping" pass, it doesn't really change shadows and mid tones.
 #if DELAY_HDR_TONEMAP
 
 #if POST_PROCESS_SPACE_TYPE >= 1 && HIGH_QUALITY_POST_PROCESS_SPACE_CONVERSIONS

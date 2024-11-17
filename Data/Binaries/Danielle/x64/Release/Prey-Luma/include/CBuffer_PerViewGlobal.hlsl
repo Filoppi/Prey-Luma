@@ -6,10 +6,10 @@ cbuffer CBPerViewGlobal : register(b13)
   row_major float4x4 CV_ViewProjZeroMatr : packoffset(c0);
   float4 CV_AnimGenParams : packoffset(c4);
   // View/camera projection matrix.
-  // This includes jitters until the anti aliasing passes start, at that point, jitters are removed from the matrix (not exactly sure why, but it worked for what they were doing with TAA, and it might have been to avoid jittering lens effects and sun shafts).
+  // This includes jitters (they are baked in the result) until the anti aliasing passes start, at that point, jitters are removed from the matrix (not exactly sure why, but it worked for what they were doing with TAA, and it might have been to avoid jittering lens effects and sun shafts).
   // If you have a world space position (relative to the camera), you can reproject it to where it used to be on screen in the last frame, like "float3 screenPosition = mul(CV_ViewProjMatr, float4(worldPosition, 1))".
   row_major float4x4 CV_ViewProjMatr : packoffset(c5);
-  // Like "CV_ViewProjZeroMatr", but based on the nearest projection matrix (not sure how that compares with the "normal" (non nearest) projection matrix). Also includes jitters.
+  // Like "CV_ViewProjZeroMatr", but based on the nearest projection matrix, which is used to draw first person objects (e.g. player weapons). Also includes jitters.
   row_major float4x4 CV_ViewProjNearestMatr : packoffset(c9);
   row_major float4x4 CV_InvViewProj : packoffset(c13);
   // LUMA FT: in Prey, this matrix is "wrongly named" and it's set equal to the (current) projection matrix (all the times, except for shadow projection maps draw calls).
@@ -17,8 +17,8 @@ cbuffer CBPerViewGlobal : register(b13)
   // meaning that it wouldn't acknowledge the jitters difference, nor any change in FOV.
   // Yet somehow, in Prey, motion vectors (which are based on this), manage to be generated correctly, even if it uses a different matrix from vanilla CryEngine (despite the MVs generation code being ~identical).
   // Supposedly they've also replaced and misnamed other variables in shaders so it all works out even if reading the code makes no sense.
-  // With Luma hooks, we have kept it at it was in vanilla Prey, but included the previous jitters in it (it's actually based on the previous one).
-  // Similar variables are also called "matReprojection", "mReprojection", "mViewProjPrev" and "PrevViewProjMatrix".
+  // With Luma hooks, we have kept it at it was in vanilla Prey, but included the previous jitters in it (it's now actually entirely based on the previous one).
+  // Similar variables are called "matReprojection", "mReprojection", "mViewProjPrev" and "PrevViewProjMatrix".
   row_major float4x4 CV_PrevViewProjMatr : packoffset(c17);
   // Same logic as in "CV_PrevViewProjMatr" (this was also broken in Prey code without Luma).
   row_major float4x4 CV_PrevViewProjNearestMatr : packoffset(c21);

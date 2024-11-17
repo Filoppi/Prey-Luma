@@ -50,6 +50,7 @@ float GetLinearDepth(float fDevDepth, bool bScaled = false)
 	return fDevDepth * (bScaled ? CV_NearFarClipDist.y : 1.0f);
 }
 
+//TODOFT: move?
 float2 GetJitters()
 {
 #if 1 // Equivalent versions
@@ -175,7 +176,8 @@ float4 FilmTonemapping( out float3 cSDRColor, in float4 cScene, in float4 cBloom
 
 #else // HDR
 
-  // Bring back the color to the same range as SDR by matching the mid gray level.
+  // Bring back the HDR color to the same range as SDR by matching the mid gray level.
+  // This guarantees that anything we blend on top of this color later on will also have a matching brightness to SDR (until we scale it by the user HDR brightness at the end).
   cColor.rgb *= SDRTMMidGrayRatio;
 
 #if TONEMAP_TYPE == 1 // HDR TM
