@@ -83,6 +83,32 @@ namespace Hooks
 			dku::Hook::WriteImm(address + 0x1C0F, format16f);  // SceneSpecular
 		}
 #endif
+
+		if (Offsets::gameVersion == Offsets::GameVersion::PreySteam) //TODO: add support for GOG and DLCs
+		{
+			// Fix jitters
+			const auto jittersAddress = Offsets::baseAddress + 0xF41CA0; 
+
+#if 0 // Old code branches to change the jitters scale depending on the rendering resolution (we tried *2, /2, etc), none of this was seemengly needed (Steam base game only)
+			uint8_t nop4[] = { 0x90, 0x90, 0x90, 0x90 };
+			uint8_t nop8[] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
+			uint8_t divss[] = { 0x5E };
+#if 1
+			dku::Hook::WriteData(jittersAddress + 0x5D2, &nop4, sizeof(nop4));  // addss (x * 2)
+			dku::Hook::WriteData(jittersAddress + 0x5DE, &nop4, sizeof(nop4));  // addss
+#elif 1
+			dku::Hook::WriteData(jittersAddress + 0x5E2, &nop8, sizeof(nop8));  // mulss (size * curDownscaleFactor, removes the curDownscaleFactor)
+			dku::Hook::WriteData(jittersAddress + 0x601, &nop8, sizeof(nop8));  // mulss
+#else
+			dku::Hook::WriteData(jittersAddress + 0x5E4, &divss, sizeof(divss));  // mulss into divss
+			dku::Hook::WriteData(jittersAddress + 0x603, &divss, sizeof(divss));  // mulss into divss
+#endif
+#endif
+
+			// Change Halton patterm generation from using a base of 8 to a base 32 (thus 31),
+			// this works a lot better with DLSS
+			dku::Hook::WriteImm(jittersAddress + 0x57A, 0x1F);
+		}
 	}
 
 	void Hooks::Hook()

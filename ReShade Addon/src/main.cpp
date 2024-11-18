@@ -2282,7 +2282,9 @@ void OnPresent(
 }
 
 //TODOFT5: expose DLSS res range multipliers here or to game config (???)
-//TODOFT5: "_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR"?
+//TODOFT5: add DLSS exposure texture based on the inverse of the camera exposure
+//TODOFT5: DLSS: dynamically change Halton sequence base (8 with DLAA and 24 with balanced?, tbh 32 looks better with both?)?
+//TODOFT5: "_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR" as define at the top?
 //TODOFT5: fix cpp file formatting in general (and make sure it's all thread safe, but it should be) (remove clang.tidy files?)
 //TODOFT5: Add "UpdateSubresource" to check whether they map buffers with that? Also make sure that our CopyTexture() func works!
 //TODOFT5: merge all the shader permutations that use the same code (and then move shader binaries to bin folder?)
