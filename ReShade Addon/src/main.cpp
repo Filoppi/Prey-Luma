@@ -353,7 +353,6 @@ constexpr float texture_mip_lod_bias_offset = -1.0f; // Value tweaked for DLSS (
 #endif
 float dlss_custom_exposure = 1.0;
 float dlss_custom_pre_exposure = 1.0;
-bool dlss_use_native_uav = true;
 
 #if DEVELOPMENT
 bool disable_taa_jitters = false;
@@ -2621,6 +2620,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
 
                       bool skip_dlss = output_texture_desc.Width < 32 || output_texture_desc.Height < 32; // DLSS doesn't support output below 32x32
                       bool dlss_output_changed = false;
+                      constexpr bool dlss_use_native_uav = true;
                       bool dlss_output_supports_uav = dlss_use_native_uav && (output_texture_desc.BindFlags & D3D11_BIND_UNORDERED_ACCESS) != 0;
                       if (!dlss_output_supports_uav) {
                           output_texture_desc.BindFlags |= D3D11_BIND_UNORDERED_ACCESS;
@@ -2702,7 +2702,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                                   if (dlss_motion_vectors.get()) {
                                       D3D11_TEXTURE2D_DESC dlss_motion_vectors_desc;
                                       dlss_motion_vectors->GetDesc(&dlss_motion_vectors_desc);
-                                      dlss_output_changed = dlss_motion_vectors_desc.Width != output_texture_desc.Width || dlss_motion_vectors_desc.Height != output_texture_desc.Height || dlss_motion_vectors_desc.Format != output_texture_desc.Format;
+                                      dlss_output_changed = dlss_motion_vectors_desc.Width != output_texture_desc.Width || dlss_motion_vectors_desc.Height != output_texture_desc.Height;
                                   }
                               }
                               // We assume the conditions of this texture (and its render target view) changing are the same as "dlss_output_changed"
@@ -2737,7 +2737,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
 
                           // Reset DLSS history if we did not draw motion blur (and we previously did). Based on CryEngine source code, mb is skipped on the first frame after scene cuts, so we want to re-use that information.
                           // Reset DLSS history if for one frame we had stopped tonemapping. This might include some scene cuts, but also triggers when entering full screen UI menus or videos and then leaving them (it shouldn't be a problem).
-                          // Reset DLSS history if the output resolution changed (just an extra safety mechanism, it might not actually be needed).
+                          // Reset DLSS history if the output resolution or format changed (just an extra safety mechanism, it might not actually be needed).
                           bool reset_dlss = dlss_output_changed || !has_drawn_main_post_processing_previous || (has_drawn_motion_blur_previous && !has_drawn_motion_blur);
 
                           uint32_t render_width_dlss = std::lrintf(render_resolution.x);
@@ -2759,7 +2759,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                             dlss_pre_exposure = dlss_custom_pre_exposure;
 
                           // There doesn't seem to be a need to restore the DX state to whatever we had before (e.g. render targets, cbuffers, samplers, UAVs, texture shader resources, viewport, scissor rect, ...), CryEngine always sets everything it needs again for every pass.
-                          // DLSS internally keeps its own frames history, we don't seem to need to do that ourselves (by feeding in an output buffer that was the previous frame's output, though we do have that if needed, it should be in ps_shader_resources[1]).
+                          // DLSS internally keeps its own frames history, we don't need to do that ourselves (by feeding in an output buffer that was the previous frame's output, though we do have that if needed, it should be in ps_shader_resources[1]).
                           if (NGX::DLSS::Draw(native_device_context, dlss_output_color.get(), source_color.get(), dlss_motion_vectors.get(), depth_buffer.get(), dlss_exposure.get(), dlss_pre_exposure, projection_jitters.x, projection_jitters.y, reset_dlss, render_width_dlss, render_height_dlss)) {
                               if (!dlss_output_supports_uav) {
                                   native_device_context->CopyResource(output_color.get(), dlss_output_color.get()); // DX11 doesn't need barriers
@@ -4773,7 +4773,6 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         ImGui::NewLine();
         ImGui::SliderFloat("DLSS Custom Exposure", &dlss_custom_exposure, 0.01, 10.0);
         ImGui::SliderFloat("DLSS Custom Pre-Exposure", &dlss_custom_pre_exposure, 0.01, 10.0);
-        ImGui::Checkbox("DLSS Allow Use Native UAV Texture", &dlss_use_native_uav);
         
         ImGui::NewLine();
         ImGui::SliderInt("DLSS Motion Vectors Jittered", &dlss_mode, 0, 1);
