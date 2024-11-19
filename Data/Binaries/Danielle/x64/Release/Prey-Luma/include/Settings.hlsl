@@ -98,6 +98,10 @@
 #define AUTO_HDR_VIDEOS 1
 #endif
 #define DELAY_DITHERING 1
+//TODOFT: test more with this off (which theoretically should be better), and possibly disable it
+#ifndef DLSS_RELATIVE_PRE_EXPOSURE
+#define DLSS_RELATIVE_PRE_EXPOSURE 1
+#endif
 // If true, the motion vectors generated for dynamic objects are generated with both the current and previous jitters acknowledged in the calculations (and baked in their velocity, so they wouldn't be zero even if nothing was moving).
 // If false, motion vectors are generated (and then interpreted in Motion Blur and TAA) like in the vanilla code, so they kinda include the jitter of the current frame, but not the one from the previous frame, which isn't really great.
 #ifndef FORCE_MOTION_VECTORS_JITTERED

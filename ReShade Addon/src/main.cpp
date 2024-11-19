@@ -332,6 +332,7 @@ std::unordered_set<uint32_t> shader_hashes_LensOptics;
 const uint32_t shader_hash_copy_vertex = std::stoul("FFFFFFF0", nullptr, 16);
 const uint32_t shader_hash_copy_pixel = std::stoul("FFFFFFF1", nullptr, 16);
 const uint32_t shader_hash_transform_function_copy_pixel = std::stoul("FFFFFFF2", nullptr, 16);
+const uint32_t shader_hash_draw_exposure = std::stoul("FFFFFFF3", nullptr, 16);
 constexpr bool prevent_shader_cache_loading = false;
 bool prevent_shader_cache_saving = false;
 
@@ -348,8 +349,12 @@ bool custom_texture_mip_lod_bias_offset = false; // Live edit //TODOFT: "DEVELOP
 #else
 constexpr float texture_mip_lod_bias_offset = -1.0f; // Value tweaked for DLSS (note that the game's native TAA already biases some samples by -1, so we'd do it twice)
 #endif
-float dlss_custom_exposure = 1.0;
-float dlss_custom_pre_exposure = 1.0;
+#if DEVELOPMENT
+float dlss_custom_exposure = 0.f;
+float dlss_custom_pre_exposure = 0.f; // Ignored at 0
+#endif
+float dlss_scene_exposure = 1.f;
+float dlss_scene_pre_exposure = 1.f;
 
 #if DEVELOPMENT
 bool disable_taa_jitters = false;
@@ -425,6 +430,7 @@ std::vector<ShaderDefineData> shader_defines_data = {
   {"AUTO_HDR_VIDEOS", '1', false, false, "(HDR only) Generates some HDR highlights from SDR videos, for consistency\nThis is pretty lightweight so it won't really affect the artistic intent"}, //TODOFT: disable this config, like "gamma_correction_define_index" when setting SDR mode
   {"ENABLE_LUT_EXTRAPOLATION", '1', false, false, "LUT Extrapolation should be the best looking and most accurate SDR to HDR LUT adaptation mode,\nbut you can always turn it off for the its simpler fallback"},
 #if DEVELOPMENT || TEST
+  {"DLSS_RELATIVE_PRE_EXPOSURE", '1', true, false }, // dlss_relative_pre_exposure_define_index
   {"ENABLE_LINEAR_COLOR_GRADING_LUT", '1', false, false, "Whether (SDR) LUTs are stored in linear or gamma space"},
   {"FORCE_NEUTRAL_COLOR_GRADING_LUT_TYPE", '0', false, false, "Can force a neutral LUT in different ways (color grading is still applied)"},
   {"DRAW_LUT", '0', false, (DEVELOPMENT || TEST) ? false : true},
@@ -449,6 +455,7 @@ std::vector<ShaderDefineData> shader_defines_data = {
 constexpr uint32_t development_define_index = 0;
 constexpr uint32_t post_process_space_define_index = 1;
 constexpr uint32_t gamma_correction_define_index = 2;
+constexpr uint32_t dlss_relative_pre_exposure_define_index = 8;
 
 // Resources:
 #if ENABLE_NGX
@@ -463,6 +470,11 @@ com_ptr<ID3D11ShaderResourceView> transfer_function_copy_shader_resource_view;
 com_ptr<ID3D11VertexShader> copy_vertex_shader;
 com_ptr<ID3D11PixelShader> copy_pixel_shader;
 com_ptr<ID3D11PixelShader> transfer_function_copy_pixel_shader;
+com_ptr<ID3D11PixelShader> draw_exposure_pixel_shader;
+
+com_ptr<ID3D11Buffer> exposure_buffer_gpu;
+com_ptr<ID3D11Buffer> exposure_buffer_cpu;
+com_ptr<ID3D11RenderTargetView> exposure_buffer_rtv;
 
 com_ptr<ID3D11BlendState> default_blend_state;
 
@@ -479,7 +491,7 @@ static_assert(sizeof(Matrix44A) == sizeof(float4) * 4);
 // Caches all the states we might need to modify to draw a simple pixel shader.
 // First call "Cache()" (once) and then call "Restore()" (once).
 struct DrawStateStack {
-    // This is the max according to PSSetShader documentation
+    // This is the max according to PSSetShader() documentation
     static constexpr UINT max_shader_class_instances = 256;
 
     DrawStateStack() {
@@ -1265,6 +1277,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
       CreateShaderObject(shader_hash_copy_vertex, copy_vertex_shader, !(bool)FORCE_KEEP_CUSTOM_SHADERS_LOADED);
       CreateShaderObject(shader_hash_copy_pixel, copy_pixel_shader, !(bool)FORCE_KEEP_CUSTOM_SHADERS_LOADED);
       CreateShaderObject(shader_hash_transform_function_copy_pixel, transfer_function_copy_pixel_shader, !(bool)FORCE_KEEP_CUSTOM_SHADERS_LOADED);
+      CreateShaderObject(shader_hash_draw_exposure, draw_exposure_pixel_shader, !(bool)FORCE_KEEP_CUSTOM_SHADERS_LOADED);
   }
 }
 
@@ -1586,6 +1599,11 @@ void OnInitDevice(reshade::api::device* device) {
       dlss_motion_vectors = nullptr;
       dlss_motion_vectors_rtv = nullptr;
       dlss_sr_render_resolution = 1.f;
+      dlss_scene_exposure = 1.f;
+      dlss_scene_pre_exposure = 1.f;
+      exposure_buffer_gpu = nullptr;
+      exposure_buffer_cpu = nullptr;
+      exposure_buffer_rtv = nullptr;
 
       NGX::DLSS::Deinit(native_device); // No need to keep it initialized if it's not supported
       dlss_sr = false; // No need to serialize this to config really
@@ -1627,6 +1645,9 @@ void OnDestroyDevice(reshade::api::device* device) {
   dlss_exposure = nullptr;
   dlss_motion_vectors = nullptr;
   dlss_motion_vectors_rtv = nullptr;
+  exposure_buffer_gpu = nullptr;
+  exposure_buffer_cpu = nullptr;
+  exposure_buffer_rtv = nullptr;
 #endif // NGX
 
   copy_texture = nullptr;
@@ -1637,6 +1658,7 @@ void OnDestroyDevice(reshade::api::device* device) {
       copy_vertex_shader = nullptr;
       copy_pixel_shader = nullptr;
       transfer_function_copy_pixel_shader = nullptr;
+      draw_exposure_pixel_shader = nullptr;
   }
 
   default_blend_state = nullptr;
@@ -2228,6 +2250,8 @@ void OnPresent(
         dlss_sr_render_resolution = 1.f;
         prey_drs_detected = false;
       }
+      dlss_scene_exposure = 1.f;
+      dlss_scene_pre_exposure = 1.f;
   }
   has_drawn_composed_gbuffers = false;
   has_drawn_motion_blur_previous = has_drawn_motion_blur;
@@ -2275,6 +2299,11 @@ void OnPresent(
           dlss_motion_vectors = nullptr;
           dlss_motion_vectors_rtv = nullptr;
           dlss_sr_render_resolution = 1.f; // Reset this to 0 when DLSS is toggled, even if "prey_drs_detected" is still true, we'll set it back to a low value if DRS is used again.
+          dlss_scene_exposure = 1.f;
+          dlss_scene_pre_exposure = 1.f;
+          exposure_buffer_gpu = nullptr;
+          exposure_buffer_cpu = nullptr;
+          exposure_buffer_rtv = nullptr;
 #if !DLSS_KEEP_DLL_LOADED // This will actually unload the DLSS DLL and all, making the game hitch, so it's better to just keep it in memory
           NGX::DLSS::Deinit(native_device);
 #endif
@@ -2301,10 +2330,9 @@ void OnPresent(
 #endif // NGX
 }
 
-//TODOFT5: add DLSS exposure texture based on the inverse of the camera exposure
 //TODOFT5: "_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR" as define at the top?
 //TODOFT5: fix cpp file formatting in general (and make sure it's all thread safe, but it should be) (remove clang.tidy files?)
-//TODOFT5: Add "UpdateSubresource" to check whether they map buffers with that? Also make sure that our CopyTexture() func works!
+//TODOFT5: Add "UpdateSubresource" to check whether they map buffers with that (it's not optimized so probably it's unused by CryEngine)? Also make sure that our CopyTexture() func works!
 //TODOFT5: merge all the shader permutations that use the same code (and then move shader binaries to bin folder?)
 //TODOFT5: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project?
 //TODOFT: add a new RT to draw UI on top (pre-multiplied alpha everywhere), so we could compose it smartly, possibly in the final linearization pass.
@@ -2432,6 +2460,99 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
           for (auto shader_hash : shader_hashes_HDRPostProcessHDRFinalScene) {
               if (std::find(original_shader_hashes.begin(), original_shader_hashes.end(), shader_hash) != original_shader_hashes.end()) {
                   has_drawn_tonemapping = true;
+
+                  // Update the DLSS pre-exposure to take the opposite value of our exposure (basically our brightness) to avoid DLSS causing additional lag when the exposure changes.
+                  // This way, DLSS will divide the linear buffer by this value, which would have previously been multiplied in given that TAA runs after the scene exposure is factored in (even in HDR, and it shouldn't! But moving it is too hard).
+                  // For this particular case, we don't use the native DLSS exposure texture, but we rely on pre-exposure itself, as it has a different temporal behaviour,
+                  // if we changed the DLSS exposure texture every frame to follow the scene exposure, DLSS would act weird (mostly likely just ignore it, as it uses that as a hint of the exposure the tonemapper would use after TAA),
+                  // while with pre-exposure it works as expected (except it kinda lags behind a bit, because it doesn't store a pre-exposure value attached to every frame, and simply uses the last provided one).
+                  if (dlss_sr && cloned_pipeline_count != 0 && draw_exposure_pixel_shader) {
+                      // Create pre-exposure buffers once
+                      if (!exposure_buffer_gpu.get()) {
+                          D3D11_BUFFER_DESC exposure_buffer_desc;
+                          exposure_buffer_desc.ByteWidth = 4; // 1x float32
+                          exposure_buffer_desc.Usage = D3D11_USAGE_DEFAULT;
+                          exposure_buffer_desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+                          exposure_buffer_desc.CPUAccessFlags = 0;
+                          exposure_buffer_desc.MiscFlags = 0;
+                          exposure_buffer_desc.StructureByteStride = sizeof(float);
+
+                          D3D11_SUBRESOURCE_DATA exposure_buffer_data;
+                          exposure_buffer_data.pSysMem = &dlss_scene_pre_exposure; // This needs to be "static" data in case the texture initialization was somehow delayed and read the data after the stack destroyed it
+                          exposure_buffer_data.SysMemPitch = 0;
+                          exposure_buffer_data.SysMemSlicePitch = 0;
+
+                          exposure_buffer_gpu = nullptr;
+                          HRESULT hr = native_device->CreateBuffer(&exposure_buffer_desc, &exposure_buffer_data, &exposure_buffer_gpu);
+                          ASSERT_ONCE(SUCCEEDED(hr));
+
+                          exposure_buffer_desc.Usage = D3D11_USAGE_STAGING;
+                          exposure_buffer_desc.BindFlags = 0;
+                          exposure_buffer_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+
+                          exposure_buffer_cpu = nullptr;
+                          hr = native_device->CreateBuffer(&exposure_buffer_desc, &exposure_buffer_data, &exposure_buffer_cpu);
+                          ASSERT_ONCE(SUCCEEDED(hr));
+
+                          D3D11_RENDER_TARGET_VIEW_DESC exposure_buffer_rtv_desc;
+                          exposure_buffer_rtv_desc.Format = DXGI_FORMAT::DXGI_FORMAT_R32_FLOAT;
+                          exposure_buffer_rtv_desc.ViewDimension = D3D11_RTV_DIMENSION::D3D11_RTV_DIMENSION_BUFFER;
+                          exposure_buffer_rtv_desc.Buffer.FirstElement = 0;
+                          exposure_buffer_rtv_desc.Buffer.NumElements = 1;
+
+                          exposure_buffer_rtv = nullptr;
+                          hr = native_device->CreateRenderTargetView(exposure_buffer_gpu.get(), &exposure_buffer_rtv_desc, &exposure_buffer_rtv);
+                          ASSERT_ONCE(SUCCEEDED(hr));
+                      }
+
+                      // Cache original state
+                      com_ptr<ID3D11RenderTargetView> rtv;
+                      native_device_context->OMGetRenderTargets(1, &rtv, nullptr);
+                      com_ptr<ID3D11PixelShader> ps;
+                      native_device_context->PSGetShader(&ps, nullptr, 0);
+
+                      // Draw the exposure
+                      native_device_context->PSSetShader(draw_exposure_pixel_shader.get(), nullptr, 0);
+                      ID3D11RenderTargetView* render_target_view_const = exposure_buffer_rtv.get();
+                      native_device_context->OMSetRenderTargets(1, &render_target_view_const, nullptr);
+                      native_device_context->Draw(3, 0);
+
+                      // Copy it back as CPU buffer and read+store it
+                      native_device_context->CopyResource(exposure_buffer_cpu.get(), exposure_buffer_gpu.get());
+                      D3D11_MAPPED_SUBRESOURCE mapped;
+                      // Note: this is possibly some frames behind, but has no performance hit and it's fine as it is for the use we make of it
+                      HRESULT hr = native_device_context->Map(exposure_buffer_cpu.get(), 0, D3D11_MAP_READ, 0, &mapped);
+                      ASSERT_ONCE(SUCCEEDED(hr));
+                      float scene_pre_exposure = 1.f;
+                      if (SUCCEEDED(hr)) {
+                          scene_pre_exposure = *((float*)mapped.pData);
+                          native_device_context->Unmap(exposure_buffer_cpu.get(), 0);
+                          if (std::isinf(scene_pre_exposure) || std::isnan(scene_pre_exposure) || scene_pre_exposure <= 0.f) {
+                              scene_pre_exposure = 1.f;
+                          }
+                      }
+                      dlss_scene_pre_exposure = scene_pre_exposure;
+#if DEVELOPMENT || TEST
+                      bool dlss_relative_pre_exposure = shader_defines_data[dlss_relative_pre_exposure_define_index].GetNumericalCompiledValue() >= 1;
+#else
+                      bool dlss_relative_pre_exposure = code_shaders_defines.contains("DLSS_RELATIVE_PRE_EXPOSURE") && code_shaders_defines["DLSS_RELATIVE_PRE_EXPOSURE"] >= 1;
+#endif
+                      if (dlss_relative_pre_exposure) {
+                          // With this design, the pre-exposure is set to the relative exposure and the exposure texture is set to 1 (see the shader for more).
+                          dlss_scene_exposure = 1.f;
+                      }
+                      else {
+                          // With this design, we set the DLSS pre-exposure and exposure to the same value, so, given that the exposure was already multiplied in despite it shouldn't have it been so,
+                          // DLSS will divide out the exposure through the pre-exposure parameter and then re-acknowledge it through the exposure texture, basically making DLSS act as if it was done before exposure/tonemapping.
+                          dlss_scene_exposure = scene_pre_exposure;
+                      }
+
+                      // Restore original state
+                      native_device_context->PSSetShader(ps.get(), nullptr, 0);
+                      render_target_view_const = rtv.get();
+                      native_device_context->OMSetRenderTargets(1, &render_target_view_const, nullptr);
+                  }
+
                   break;
               }
           }
@@ -2649,14 +2770,19 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                           hr = object_velocity_buffer_temp->QueryInterface(&object_velocity_buffer);
                           ASSERT_ONCE(SUCCEEDED(hr));
 
-                          //TODOFT: compatibility with "DELAY_HDR_TONEMAP" paper white? Try to set it to 0.5 or 0.18?
                           // Generate "fake" exposure texture
                           bool exposure_changed = false;
+                          float dlss_exposure_val = dlss_scene_exposure;
+                          static float previous_dlss_exposure_val = dlss_exposure_val;
 #if DEVELOPMENT
-                          static float previous_dlss_custom_exposure = dlss_custom_exposure;
-                          exposure_changed = dlss_custom_exposure != previous_dlss_custom_exposure;
-                          previous_dlss_custom_exposure = dlss_custom_exposure;
+                          if (dlss_custom_exposure > 0.f) {
+                              dlss_exposure_val = dlss_custom_exposure;
+                          }
 #endif // DEVELOPMENT
+                          exposure_changed = dlss_exposure_val != previous_dlss_exposure_val;
+                          previous_dlss_exposure_val = dlss_exposure_val;
+                          //TODO LUMA: optimize this for the "DLSS_RELATIVE_PRE_EXPOSURE" false case! Avoid re-creating the texture every frame the exposure changes and instead make it dynamic and re-write it from the CPU? Or simply make our exposure calculation shader write to a texture directly
+                          //(though in that case it wouldn't have the same delay as the CPU side pre-exposure buffer readback)
                           if (!dlss_exposure.get() || exposure_changed) {
                               D3D11_TEXTURE2D_DESC exposure_texture_desc; // DLSS fails if we pass in a 1D texture so we have to make a 2D one
                               exposure_texture_desc.Width = 1;
@@ -2674,7 +2800,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                               // It's best to force an exposure of 1 given that DLSS runs after the auto exposure is applied (in tonemapping).
                               // Theoretically knowing the average exposure of the frame would still be beneficial to it (somehow) so maybe we could simply let the auto exposure in,
                               D3D11_SUBRESOURCE_DATA exposure_texture_data;
-                              exposure_texture_data.pSysMem = &dlss_custom_exposure; // This needs to be "static" data in case the texture initialization was somehow delayed and read the data after the stack destroyed it
+                              exposure_texture_data.pSysMem = &dlss_exposure_val; // This needs to be "static" data in case the texture initialization was somehow delayed and read the data after the stack destroyed it
                               exposure_texture_data.SysMemPitch = 32;
                               exposure_texture_data.SysMemSlicePitch = 32;
 
@@ -2743,16 +2869,19 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                           // The other configurations run DLSS in "SDR" Gamma Space so we couldn't safely change the exposure.
                           const bool dlss_use_paper_white_pre_exposure = shader_defines_data[post_process_space_define_index].GetNumericalCompiledValue() >= 1;
 
-                          float dlss_pre_exposure = 0.f;
+                          float dlss_pre_exposure = 0.f; // 0 means it's ignored
                           if (dlss_use_paper_white_pre_exposure) {
 #if 1 // Alternative that considers a value of 1 in the DLSS color textures to match the SDR output nits range (whatever that is)
                               dlss_pre_exposure = cb_luma_frame_settings.ScenePaperWhite / default_paper_white;
 #else // Alternative that considers a value of 1 in the DLSS color textures to match 203 nits
                               dlss_pre_exposure = cb_luma_frame_settings.ScenePaperWhite / srgb_white_level;
 #endif
+                              dlss_pre_exposure *= dlss_scene_pre_exposure;
                           }
-                          if (dlss_custom_pre_exposure != 1.f)
+#if DEVELOPMENT
+                          if (dlss_custom_pre_exposure > 0.f)
                             dlss_pre_exposure = dlss_custom_pre_exposure;
+#endif
 
                           // There doesn't seem to be a need to restore the DX state to whatever we had before (e.g. render targets, cbuffers, samplers, UAVs, texture shader resources, viewport, scissor rect, ...), CryEngine always sets everything it needs again for every pass.
                           // DLSS internally keeps its own frames history, we don't need to do that ourselves (by feeding in an output buffer that was the previous frame's output, though we do have that if needed, it should be in ps_shader_resources[1]).
@@ -3985,6 +4114,7 @@ void OnReshadePresent(reshade::api::effect_runtime* runtime) {
         copy_vertex_shader = nullptr;
         copy_pixel_shader = nullptr;
         transfer_function_copy_pixel_shader = nullptr;
+        draw_exposure_pixel_shader = nullptr;
     }
 #endif
   }
@@ -4728,8 +4858,8 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         ImGui::SliderInt("Tank Performance (Per Frame Sleep MS)", &frame_sleep_ms, 0, 100);
 
         ImGui::NewLine();
-        ImGui::SliderFloat("DLSS Custom Exposure", &dlss_custom_exposure, 0.01, 10.0);
-        ImGui::SliderFloat("DLSS Custom Pre-Exposure", &dlss_custom_pre_exposure, 0.01, 10.0);
+        ImGui::SliderFloat("DLSS Custom Exposure", &dlss_custom_exposure, 0.0, 10.0);
+        ImGui::SliderFloat("DLSS Custom Pre-Exposure", &dlss_custom_pre_exposure, 0.0, 10.0);
         ImGui::SliderInt("DLSS Halton Jitter Phases", &force_taa_jitter_phases, 0, 64);
         
         ImGui::NewLine();
@@ -4972,6 +5102,17 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             ImGui::NewLine();
             ImGui::Text("DLSS Target Resolution Scale: ", "");
             text = std::to_string(dlss_sr_render_resolution);
+            ImGui::Text(text.c_str(), "");
+        }
+
+        if (dlss_sr && cloned_pipeline_count != 0) {
+            ImGui::NewLine();
+            bool dlss_relative_pre_exposure = shader_defines_data[dlss_relative_pre_exposure_define_index].GetNumericalCompiledValue() >= 1;
+            if (dlss_relative_pre_exposure)
+                ImGui::Text("DLSS Relative Scene Exposure: ", "");
+            else
+                ImGui::Text("DLSS Scene Exposure: ", "");
+            text = std::to_string(dlss_scene_pre_exposure);
             ImGui::Text(text.c_str(), "");
         }
 

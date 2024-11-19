@@ -273,7 +273,7 @@ void HDRFinalScenePS(float4 WPos, float4 baseTC, out float4 outColor)
 	float2 vAdaptedLum = adaptedLumTex.Sample(ssHdrLinearClamp, baseTC.xy);
 
 #if _RT_SAMPLE3 && ENABLE_SUNSHAFTS
-	float4 sunShafts = sunshaftsTex.Load(SunShafts_SunCol.w * pixelCoord);
+	float4 sunShafts = sunshaftsTex.Load(SunShafts_SunCol.w * pixelCoord); // "SunShafts_SunCol.w" scales the size of the sun shafts
 
   // Apply the colorization (which also includes brightness scaling) in whatever linear/gamma space sun shafts were, before doing any other operation,
   // so to keep it as close to vanilla as possible. "SunShafts_SunCol" is neither in gamma nor linear space, as it's just a colorization vector, and can't really be linearized (also because it has values beyond the 0-1 range).
