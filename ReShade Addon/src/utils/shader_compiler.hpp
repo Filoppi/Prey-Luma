@@ -269,6 +269,7 @@ void CompileShaderFromFileFXC(std::vector<uint8_t>& output, const CComPtr<ID3DBl
       std::copy(shader_name_w_s.begin(), shader_name_w_s.end(), shader_name_s.begin());
       LPCSTR shader_name = shader_name_s.c_str();
 #pragma warning(pop)
+      // TODO: expose the name of the function to compile ("main") so we could unify more shaders into a single file?
       result = d3d_compile[library](
           optional_uncompiled_code_input->GetBufferPointer(),
           optional_uncompiled_code_input->GetBufferSize(),

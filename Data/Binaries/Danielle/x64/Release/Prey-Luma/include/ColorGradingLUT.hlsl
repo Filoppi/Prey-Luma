@@ -48,7 +48,7 @@ uint3 ConditionalConvert3DTo2DLUTCoordinates(uint3 Coordinates3D, uint lutSize =
 #define HIGH_QUALITY_ENCODING_TYPE 1
 #endif
 
-//TODOFT3: use Log instead of PQ? It's actually not making much difference
+//TODOFT5: use Log instead of PQ? It's actually not making much difference
 float3 Linear_to_PQ2(float3 LinearColor, int clampType = GCT_NONE)
 {
 #if HIGH_QUALITY_ENCODING_TYPE == 0
@@ -296,7 +296,7 @@ float3 AdjustLUTCoordinatesForLinearLUT(const float3 clampedLUTCoordinatesGammaS
   // Low quality version with no linear input correction
   return clampedLUTCoordinatesGammaSpace;
 #else
-//TODOFT4: when this is branch runs, there's some speckles on the shotgun numerical decal in some scenes (e.g. when under a light, in front of the place where I tested AF on a decal a lot) (with DLSS they turn into black dots in the albedo view). Would this happen without "dev" settings enabled!? Probably not!
+//TODOFT4: when this branch runs, there's some speckles on the shotgun numerical decal in some scenes (e.g. when under a light, in front of the place where I tested AF on a decal a lot) (with DLSS they turn into black dots in the albedo view). Would this happen without "dev" settings enabled!? Probably not!
   // Given that we haven't scaled for the LUT half texel size, we floor and ceil with the LUT size as opposed to the LUT max
   float3 previousLUTCoordinatesGammaSpace = floor(clampedLUTCoordinatesGammaSpace * lutSize) / lutSize;
   float3 nextLUTCoordinatesGammaSpace = ceil(clampedLUTCoordinatesGammaSpace * lutSize) / lutSize;

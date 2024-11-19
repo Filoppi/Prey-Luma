@@ -137,6 +137,7 @@ public:
         return compiled_data.value[0] - '0';
     }
 
+    bool HasTooltip() const { return tooltip != nullptr && tooltip[0] != '\0'; }
     const char* GetTooltip() const { return tooltip; }
 
     static void Reset(std::vector<ShaderDefineData>& shader_defines_data) {

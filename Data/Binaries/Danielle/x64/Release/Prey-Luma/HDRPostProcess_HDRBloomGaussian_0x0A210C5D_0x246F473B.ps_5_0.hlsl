@@ -7,8 +7,13 @@ cbuffer PER_BATCH : register(b0)
 
 #include "include/CBuffer_PerViewGlobal.hlsl"
 
+#if _0A210C5D
+#define _RT_SAMPLE0 1
+#endif
+
 SamplerState ssBloom : register(s0);
 Texture2D<float4> bloomSourceTex : register(t0);
+Texture2D<float4> bloomSecondSourceTex : register(t1);
 
 // 3Dmigoto declarations
 #define cmp -
@@ -39,7 +44,7 @@ void main(
 #if !ENABLE_BLOOM
   return;
 #endif
-
+  
   // LUMA FT: adjusted bloom UV offset by aspect ratio, assuming the value was always targeting 16:9 and never adjusted for other aspect ratios.
   // This also fixes bloom visibly changing in intensity when the rendering resolution scale was changed.
   float screenAspectRatio = CV_ScreenSize.w / CV_ScreenSize.z;
@@ -52,9 +57,11 @@ void main(
 	static const float weights[weightsNum] = weightsVanilla;
 	static const float weightSum = 262106.0;
 #else // LUMA FT: added a higher (and dynamic) bloom quality to fix the visible bloom tiling from small light sources (in view space)
+  //TODO LUMA: make the quality multiplier (2) dynamic by writing code that dynamically averages weights (same for the other ~identical bloom shader) 
 	static const uint weightsNum = (weightsNumVanilla * 2) - 1; // It needs to be odd (e.g. 15, 29)
 	float weights[weightsNum];
 	float weightSum = 0;
+  //TODO LUMA: verify this stuff gets compiled into the shader, without being re-executed per pixel
 	[unroll]
   for (uint i = 0; i < weightsNum / 2; i++)
   {
@@ -80,6 +87,13 @@ void main(
     static const float offsetAdjustment = ((float)weightsNumVanilla - 0.5) / (float)weightsNum;
 		coords = ClampScreenTC(coords + (HDRParams0AspectRatioAdjusted.xy * offsetAdjustment));
 	}
+	
+	// Compose sum of Gaussians in final pass
+#if _RT_SAMPLE0
+	float3 bloom0 = bloomSecondSourceTex.Load(pixelCoords).rgb;
+	float3 bloom1 = outColor.rgb;
+	outColor.rgb = (0.0174 * bloom0 + 0.192 * bloom1) / (0.0174 + 0.192);
+#endif
 
   return;
 }

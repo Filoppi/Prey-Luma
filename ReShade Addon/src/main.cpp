@@ -565,20 +565,20 @@ struct DrawStateStack {
             }
         }
 #if 1
-        device_context->VSSetShader(vs.get(), ps_instances, ps_instances_count);
-        device_context->PSSetShader(ps.get(), vs_instances, vs_instances_count);
+        device_context->VSSetShader(vs.get(), vs_instances, ps_instances_count);
+        device_context->PSSetShader(ps.get(), ps_instances, vs_instances_count);
 #else
         device_context->VSSetShader(vs.get(), nullptr, 0);
         device_context->PSSetShader(ps.get(), nullptr, 0);
 #endif
         for (UINT i = 0; i < max_shader_class_instances; i++) {
-            if (ps_instances[i] != nullptr) {
-                ps_instances[i]->Release();
-                ps_instances[i] = nullptr;
-            }
             if (vs_instances[i] != nullptr) {
                 vs_instances[i]->Release();
                 vs_instances[i] = nullptr;
+            }
+            if (ps_instances[i] != nullptr) {
+                ps_instances[i]->Release();
+                ps_instances[i] = nullptr;
             }
         }
     }
@@ -3132,7 +3132,7 @@ com_ptr<ID3D11SamplerState> CreateCustomSampler(reshade::api::device* device, D3
     return sampler;
 }
 
-#if !REPLACE_SAMPLERS_LIVE //TODOFT4: enable "REPLACE_SAMPLERS_LIVE" and clean old branch up (or integrate with CreateCustomSampler())?
+#if !REPLACE_SAMPLERS_LIVE //TODOFT5: enable "REPLACE_SAMPLERS_LIVE" and clean old branch up (or integrate with CreateCustomSampler())?
 bool OnCreateSampler(reshade::api::device* device, reshade::api::sampler_desc& desc) {
     // CryEngine only used:
     // D3D11_FILTER_ANISOTROPIC
@@ -5079,7 +5079,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             ImGui::EndDisabled();
         }
 
-        if (show_tooltip && shader_defines_data[i].IsNameDefault() && shader_defines_data[i].GetTooltip() != nullptr) {
+        if (show_tooltip && shader_defines_data[i].IsNameDefault() && shader_defines_data[i].HasTooltip()) {
             ImGui::SetTooltip(shader_defines_data[i].GetTooltip());
         }
       }
