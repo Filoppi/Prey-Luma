@@ -33,6 +33,9 @@ namespace Hooks
 	{
 	public:
 		static void Patch();
+
+		static void SetHaltonSequencePhases(unsigned int renderResY, unsigned int outputResY, unsigned int basePhases = 8);
+		static void SetHaltonSequencePhases(unsigned int phases = 8);
 	};
 	class Hooks
 	{

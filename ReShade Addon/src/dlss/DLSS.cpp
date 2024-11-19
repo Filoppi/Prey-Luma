@@ -39,8 +39,6 @@ namespace
 		NVSDK_NGX_Parameter* runtimeParams = nullptr;
 	};
 
-	int DLSSMode = 1; //TODOFT4
-
 	struct DLSSData
 	{
 		bool							isSupported = false;
@@ -99,8 +97,11 @@ namespace
 #if 1 // Needed by Prey when feeding in the "default" (g-buffer) depth
 				| NVSDK_NGX_DLSS_Feature_Flags_DepthInverted
 #endif
-#if 1 // We modified Prey to make sure this is the case (previously MVs were half jittered)
-				| (DLSSMode ? NVSDK_NGX_DLSS_Feature_Flags_MVJittered : 0)
+// We modified Prey to make sure this is the case.
+// Previously (dynamic objects) MVs were half jittered (with the current frame's jitters only), because they are rendered with g-buffers, on projection matrices that have jitters.
+// We could't remove these jitters properly when rendering the final motion vectors for DLSS (we tried...), so neither this flag on or off would have been correct.
+#if 1
+				| NVSDK_NGX_DLSS_Feature_Flags_MVJittered
 #endif
 #if 0
 				| NVSDK_NGX_DLSS_Feature_Flags_DoSharpening // Sharpening is currently deprecated (in DLSS 2.5.1 and doesn't do anything), this would re-enable it if it was ever re-allowed by DLSS
@@ -285,7 +286,7 @@ bool NGX::DLSS::IsSupported()
 	return data && data->isSupported;
 }
 
-bool NGX::DLSS::UpdateSettings(ID3D11Device* device, ID3D11DeviceContext* commandList, unsigned int outputWidth, unsigned int outputHeight, unsigned int renderWidth, unsigned int renderHeight, bool hdr, int _DLSSMode)
+bool NGX::DLSS::UpdateSettings(ID3D11Device* device, ID3D11DeviceContext* commandList, unsigned int outputWidth, unsigned int outputHeight, unsigned int renderWidth, unsigned int renderHeight, bool hdr)
 {
 	// Early exit if DLSS is not supported by hardware or driver.
 	if (!device || !commandList || !data || !data->isSupported)
@@ -294,12 +295,10 @@ bool NGX::DLSS::UpdateSettings(ID3D11Device* device, ID3D11DeviceContext* comman
 	// No need to re-instantiate DLSS "features" if all the params are the same
 	if ((int)outputWidth == data->outputWidth && (int)outputHeight == data->outputHeight
 		&& (int)renderWidth == data->renderWidth && (int)renderHeight == data->renderHeight
-		&& hdr == data->hdr && _DLSSMode == DLSSMode)
+		&& hdr == data->hdr)
 	{
 		return true;
 	}
-
-	DLSSMode = _DLSSMode;
 
 	data->sharpness = DLSS_DEFAULT_SHARPNESS; // Reset to default, in case a new one won't be found
 
@@ -425,7 +424,7 @@ bool NGX::DLSS::Draw(ID3D11DeviceContext* commandList, ID3D11Resource* outputCol
 #elif 1 // This is what's needed by vanilla Prey
 	evalParams.InJitterOffsetX = jitterX * static_cast<float>(renderWidth) * -0.5f;
 	evalParams.InJitterOffsetY = jitterY * static_cast<float>(renderHeight) * 0.5f;
-#elif 0 // This is what's needed by vanilla Prey, without the Luma DLL mod fixing up its code //TODOFT4: verify and clean up, it really doesn't seem to be true anymore! (yeah, it's def wrong)
+#elif 0 // This is an alternative version we modified Prey to follow, but it ended up being wrong
 	evalParams.InJitterOffsetX = jitterX * static_cast<float>(data->outputWidth) * -0.5f * (static_cast<float>(data->outputWidth) / static_cast<float>(renderWidth));
 	evalParams.InJitterOffsetY = jitterY * static_cast<float>(data->outputHeight) * 0.5f * (static_cast<float>(data->outputHeight) / static_cast<float>(renderHeight));
 #else

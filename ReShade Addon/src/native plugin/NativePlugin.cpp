@@ -49,6 +49,15 @@ namespace NativePlugin
 		Offsets::Init();
 		Hooks::Install();
 	}
+
+    void SetHaltonSequencePhases(unsigned int renderResY, unsigned int outputResY, unsigned int basePhases)
+    {
+        Hooks::Patches::SetHaltonSequencePhases(renderResY, outputResY, basePhases);
+    }
+    void SetHaltonSequencePhases(unsigned int phases)
+    {
+        Hooks::Patches::SetHaltonSequencePhases(phases);
+    }
 }
 
 #include "includes/SharedEnd.h"

@@ -84,12 +84,11 @@ namespace Hooks
 		}
 #endif
 
-		if (Offsets::gameVersion == Offsets::GameVersion::PreySteam) //TODO: add support for GOG and DLCs
+#if 0 // Old code branches to change the jitters scale depending on the rendering resolution (we tried *2, /2, etc), none of this was seemengly needed (Steam base game only)
+		if (Offsets::gameVersion == Offsets::GameVersion::PreySteam)
 		{
-			// Fix jitters
 			const auto jittersAddress = Offsets::baseAddress + 0xF41CA0; 
 
-#if 0 // Old code branches to change the jitters scale depending on the rendering resolution (we tried *2, /2, etc), none of this was seemengly needed (Steam base game only)
 			uint8_t nop4[] = { 0x90, 0x90, 0x90, 0x90 };
 			uint8_t nop8[] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
 			uint8_t divss[] = { 0x5E };
@@ -103,12 +102,48 @@ namespace Hooks
 			dku::Hook::WriteData(jittersAddress + 0x5E4, &divss, sizeof(divss));  // mulss into divss
 			dku::Hook::WriteData(jittersAddress + 0x603, &divss, sizeof(divss));  // mulss into divss
 #endif
+		}
 #endif
 
-			// Change Halton patterm generation from using a base of 8 to a base 32 (thus 31),
-			// this works a lot better with DLSS
-			dku::Hook::WriteImm(jittersAddress + 0x57A, 0x1F);
+#if 0 // Not needed until we enable DLSS as it can actually damage the native TAA
+		SetHaltonSequencePhases(8); // Default to 8 for now as it's the best looking one for DLAA (suggested by NV)
+#endif
+	}
+
+	void Patches::SetHaltonSequencePhases(unsigned int phases)
+	{
+		static unsigned int lastWrittePhases = 16; // Default game value
+		if (phases != lastWrittePhases && Offsets::gameVersion == Offsets::GameVersion::PreySteam) // TODO: add support for GOG and DLCs
+		{
+			lastWrittePhases = phases;
+
+			const auto jittersAddress = Offsets::baseAddress + 0xF41CA0;
+			constexpr int validValues[] = { 1, 2, 4, 8, 16, 32, 64, 128 }; // 1 works, it disables jitters
+
+			// Note that this needs to be a power of two due to how our hook is implemented (it's a modulo operator, implemented as bitwise filter).
+			// Lazy list search code.
+			auto closestPhases = phases;
+			int minDifference = INT32_MAX;
+			for (const auto validValue : validValues) {
+				const int difference = std::abs((int)validValue - (int)phases);
+				if (difference < minDifference) {
+					closestPhases = validValue;
+					minDifference = difference;
+				}
+			}
+
+			// Our hook takes a value scaled down by 1.
+			closestPhases--;
+
+			// Change Halton pattern generation (r_AntialiasingTAAPattern 10, which is Halton 16 phases) to using a phase of x, this works a lot better with DLSS
+			dku::Hook::WriteImm(jittersAddress + 0x57A, closestPhases);
 		}
+	}
+	void Patches::SetHaltonSequencePhases(unsigned int renderResY, unsigned int outputResY, unsigned int basePhases)
+	{
+		// NV DLSS suggested formula
+		unsigned int phases = std::rintf(float(basePhases) * powf(float(outputResY) / float(renderResY), 2.f));
+		SetHaltonSequencePhases(phases);
 	}
 
 	void Hooks::Hook()

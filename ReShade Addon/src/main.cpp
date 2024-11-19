@@ -81,7 +81,6 @@
 #define FORCE_KEEP_CUSTOM_SHADERS_LOADED 1
 
 #define OLD_GLOBAL_BUFFER_INTERCEPT_METHOD 0
-#define DLSS_UPSCALE_LENS_EFFECTS 1
 #define REPLACE_SAMPLERS_LIVE 1
 
 // NOLINTBEGIN(readability-identifier-naming)
@@ -337,12 +336,10 @@ constexpr bool prevent_shader_cache_loading = false;
 bool prevent_shader_cache_saving = false;
 
 //TODOFT3: clean up
-constexpr bool dlss_mv_jittered = true; //TODOFT4: test this, in case it ever looked better, but the dynamic objects motion vectors are always half jittered and we can't remove these jitters properly (we tried...) so it's better to just run jittered all along (we got it to look perfect across all cases)
 constexpr bool prey_taa_jittered = false; //TODOFT4: test with "FORCE_MOTION_VECTORS_JITTERED" and enable? Right now this looks bad because Prey's native TAA isn't made for it (seemengly)
-int dlss_mode = dlss_mv_jittered ? 1 : 0; // We need jitters in DLSS because dynamic objects motion vectors are inherently calculated with at least the current frame's jitters acknowledged (because they are rendered with g-buffers, on projection matrices that have jitters)
-int fix_prev_matrix_mode = dlss_mv_jittered ? 1 : 0; // NOTE: referenced in shader's code
+int fix_prev_matrix_mode = 1; // NOTE: referenced in shader's code
 int matrix_calculation_mode = 0;
-int matrix_calculation_mode_2 = dlss_mv_jittered ? 1 : 4;
+int matrix_calculation_mode_2 = 1;
 int samplers_upgrade_mode = 5;
 int samplers_upgrade_mode_2 = 0;
 #if REPLACE_SAMPLERS_LIVE
@@ -356,6 +353,7 @@ float dlss_custom_pre_exposure = 1.0;
 
 #if DEVELOPMENT
 bool disable_taa_jitters = false;
+int force_taa_jitter_phases = 0; // Ignored if 0 (automatic mode), set to 1 to basically disable jitters
 int frame_sleep_ms = 0;
 #endif
 
@@ -373,6 +371,7 @@ bool has_drawn_composed_gbuffers = false;
 bool found_per_view_globals = false;
 // Whether the rendering resolution was scaled in this frame (different from the ouput resolution)
 bool prey_drs_active = false;
+bool force_reset_dlss = false;
 // Directly from cbuffer (so these are transposed)
 Matrix44A projection_matrix;
 Matrix44A nearest_projection_matrix;
@@ -1586,7 +1585,7 @@ void OnInitDevice(reshade::api::device* device) {
       dlss_exposure = nullptr;
       dlss_motion_vectors = nullptr;
       dlss_motion_vectors_rtv = nullptr;
-      dlss_sr_render_resolution = 1.0;
+      dlss_sr_render_resolution = 1.f;
 
       NGX::DLSS::Deinit(native_device); // No need to keep it initialized if it's not supported
       dlss_sr = false; // No need to serialize this to config really
@@ -2220,12 +2219,15 @@ void OnPresent(
   else {
       previous_prey_taa_enabled[1] = false;
       previous_prey_taa_enabled[0] = false;
-#if 0 // We leave this flag on as it's just for ImGUI stuff
       prey_taa_detected = false;
-#endif
       // Theoretically we turn this flag off one frame late (or well, at the end of the frame),
       // but then again, if no scene rendered, this flag wouldn't have been used for anything.
       cb_luma_frame_settings.DLSS = 0;
+      // Reset DRS related values if there's a scene cut or loading screen or a menu, we have no way of telling if it's actually still enabled in the user settings
+      if (!prey_drs_active) {
+        dlss_sr_render_resolution = 1.f;
+        prey_drs_detected = false;
+      }
   }
   has_drawn_composed_gbuffers = false;
   has_drawn_motion_blur_previous = has_drawn_motion_blur;
@@ -2272,25 +2274,39 @@ void OnPresent(
           dlss_exposure = nullptr;
           dlss_motion_vectors = nullptr;
           dlss_motion_vectors_rtv = nullptr;
-          dlss_sr_render_resolution = 1.0; // Reset this to 0 when DLSS is toggled, even if "prey_drs_detected" is still true, we'll set it back to a low value if DRS is used again.
+          dlss_sr_render_resolution = 1.f; // Reset this to 0 when DLSS is toggled, even if "prey_drs_detected" is still true, we'll set it back to a low value if DRS is used again.
 #if !DLSS_KEEP_DLL_LOADED // This will actually unload the DLSS DLL and all, making the game hitch, so it's better to just keep it in memory
           NGX::DLSS::Deinit(native_device);
 #endif
       }
   }
+
+  // Update halton sequence with the latest rendering resolution.
+  // Theoretically we should do that at the beginning of the rendering pass, after picking the current frame resolution (in DRS, res can change almost every frame),
+  // but in reality there's probably little difference. Also, our implementation rounds it to the closest power of 2.
+  if (dlss_sr && cloned_pipeline_count != 0) {
+#if DEVELOPMENT
+      if (force_taa_jitter_phases > 0) {
+          NativePlugin::SetHaltonSequencePhases(force_taa_jitter_phases);
+      } else
+#endif
+      {
+          NativePlugin::SetHaltonSequencePhases(render_resolution.y, output_resolution.y);
+      }
+  }
+  // Restore the default value for the game's native TAA
+  else if (!prey_taa_detected && cloned_pipeline_count == 0) {
+      NativePlugin::SetHaltonSequencePhases(16); // r_AntialiasingTAAPattern 10
+  }
 #endif // NGX
 }
 
-//TODOFT5: expose DLSS res range multipliers here or to game config (???)
 //TODOFT5: add DLSS exposure texture based on the inverse of the camera exposure
-//TODOFT5: DLSS: dynamically change Halton sequence base (8 with DLAA and 24 with balanced?, tbh 32 looks better with both?)?
 //TODOFT5: "_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR" as define at the top?
 //TODOFT5: fix cpp file formatting in general (and make sure it's all thread safe, but it should be) (remove clang.tidy files?)
 //TODOFT5: Add "UpdateSubresource" to check whether they map buffers with that? Also make sure that our CopyTexture() func works!
 //TODOFT5: merge all the shader permutations that use the same code (and then move shader binaries to bin folder?)
 //TODOFT5: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project?
-//TODOFT5: add UAV flag to DLSS output texture for faster performance!!!
-//TODOFT5: keep SDR at 203 nits and then scale it back to 80 nits at the end? So that TM runs consistently
 //TODOFT: add a new RT to draw UI on top (pre-multiplied alpha everywhere), so we could compose it smartly, possibly in the final linearization pass.
 
 // Return false to prevent the original draw call from running (e.g. if you replaced it or just want to skip it)
@@ -2385,28 +2401,12 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
   }
 #endif
 
-  bool is_drawing_lens_optics = false;
-//TODOFT4: disable DLSS output scaling on lens effects passes that run in (arbitrary?) lower resolutions? Or fix them (is their render target large enough?)!
-//If we can't manage to get that fixed, we can always start upscaling once we detect the "post AA composite" is about to run, and then replace the cbuffers (not really needed) and call it a day.
-//lens effects would be lower quality but who cares? Actually currently the only problem with viewport is in "LensOptics_ImageSpaceShafts_shaftsOcc_0x4435D741.ps_5_0.hlsl",
-//all other lens optics are problably fine! We seem to be able to detect that one just fine!
-//The solution is probably to simply check the render target and set the viewport to the same resolution as it!?
-//UPDATE: we did it, so nuke all DLSS_UPSCALE_LENS_EFFECTS code...
-#if DLSS_UPSCALE_LENS_EFFECTS && 0 // We aren't doing anything with this atm
-  for (auto shader_hash : shader_hashes_LensOptics) {
-      if (std::find(original_shader_hashes.begin(), original_shader_hashes.end(), shader_hash) != original_shader_hashes.end()) {
-          is_drawing_lens_optics = true;
-          break;
-      }
-  }
-#endif
-
 //TODOFT4: it seems like this assert (or something like this) can happen when DRS changes res to quick or is toggled between frames.
 //Somehow the wrong rend res can persist in our data from a global cbuffer 13 set that wasn't meant for the main scene rendering but some side rendering with a separate res.
 //Could it be that we get a swapchain resize event too late and thus our output resolution isn't updated quick enough? (not it can't be because the output res is ... unchanged with DRS).
 //We should probably find a moment where we absolutely stop taking in new cbuffer 13 values, one fixed point in the pipeline (e.g. blur?, AO?, scene composion? ...).
 #if DEVELOPMENT && 0 // We are setting the viewport below now, no need to verify it was already right
-  if (has_drawn_dlss_sr && !has_drawn_upscaling /*&& !is_drawing_lens_optics*/) {
+  if (has_drawn_dlss_sr && !has_drawn_upscaling) {
       D3D11_VIEWPORT viewports[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
       UINT viewports_num = 1;
       native_device_context->RSGetViewports(&viewports_num, nullptr);
@@ -2466,7 +2466,6 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                assert(has_drawn_main_post_processing && prey_drs_active);
            }
 
-           //TODOFT: new (unified) implementation of "DLSS_UPSCALE_LENS_EFFECTS"
            // Between DLSS SR and upscaling, force the viewport to the full render target resolution at all times, because we upscaled early.
            // Usually this matches the swapchain output resolution, but some lens optics passes actually draw on textures with a different resolution (independently of the game render/output res).
            if (has_drawn_dlss_sr && !has_drawn_upscaling && prey_drs_active) {
@@ -2528,7 +2527,6 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
           //TODOFT (TODO LUMA): make sure DLSS lets scRGB colors pass through...
           //TODOFT: add sharpening if we did DLSS? It's already natively in! Do RCAS instead?
           //TODOFT: skip SMAA edge detection and edge AA passes, or just disable SMAA in menu settings (make sure the game defaults to TAA from config)
-          //TODOFT: reset history when we toggle DLSS? Or at least make sure we clean up unused DLSS texture resources.
 
           //TODO LUMA: add DLSS transparency mask (e.g. glass, decals, emissive) by caching the g-buffers before and after transparent stuff draws near the end?
           //TODO LUMA: add DLSS bias mask (to ignore animated textures) by marking up some shaders(materials)/textures hashes with it?
@@ -2537,6 +2535,8 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
           //To achieve that, we need to add both DRS+DLSS scaling support to all shaders that run after DLSS, as DLSS would upscale the image before the final upscale pass (and native TAA would be skipped).
           //Sun shafts and lens optics effects would (actually, could) draw in native resolution after upscaling then.
           //Overall that solution has no downsides other than the difficulty of running multiple passes at a different resolution (which really isn't hard as we already have a set up for it).
+          //TODO LUMA: increase the number of Halton sequence phases when there's no camera rotation happening, in movement it can benefit from being lower, but when steady (or rotating the camera only, which conserves most of the TAA history),
+          //a higher phase count can drastically improve the quality.
           
           // We do DLSS after some post processing (e.g. exposure, tonemap, color grading, bloom, blur, objects highlight, sun shafts, other possible AA forms, etc) because running it before post processing
           // would be harder (we'd need to collect more textures manually and manually skip all later AA steps), most importantly, that wouldn't work with the native dynamic resolution the game supports (without changing every single
@@ -2569,14 +2569,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
 
                       D3D11_TEXTURE2D_DESC output_texture_desc;
                       output_color->GetDesc(&output_texture_desc);
-
-#if DLSS_UPSCALE_LENS_EFFECTS && 0
-                      D3D11_VIEWPORT dlss_viewports[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
-                      UINT dlss_viewports_num = 1;
-                      native_device_context->RSGetViewports(&dlss_viewports_num, nullptr);
-                      native_device_context->RSGetViewports(&dlss_viewports_num, &dlss_viewports[0]);
-#endif
-                      
+                                            
                       ASSERT_ONCE(std::lrintf(output_resolution.x) == output_texture_desc.Width && std::lrintf(output_resolution.y) == output_texture_desc.Height);
                       std::array<uint32_t, 2> dlss_render_resolution = FindClosestIntegerResolutionForAspectRatio((double)output_texture_desc.Width * (double)dlss_sr_render_resolution, (double)output_texture_desc.Height * (double)dlss_sr_render_resolution, (double)output_texture_desc.Width / (double)output_texture_desc.Height);
                       // The "HDR" flag in DLSS SR actually means whether the color is in linear space or "sRGB gamma" (apparently not 2.2) (SDR) space, colors beyond 0-1 don't seem to be clipped either way
@@ -2594,7 +2587,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                       // At lower quality modes (non DLAA), DLSS actually seems to allow for a wider input resolution range that it actually claims when queried for it, but if we declare a resolution scale below 50% here, we can get an assert,
                       // still, DLSS will keep working at any input resolution (or at least with a pretty big tolerance range).
                       // This function doesn't alter the pipeline state (e.g. shaders, cbuffers, RTs, ...), if not, we need to move it to the "Present()" function
-                      NGX::DLSS::UpdateSettings(native_device, native_device_context, output_texture_desc.Width, output_texture_desc.Height, dlss_render_resolution[0], dlss_render_resolution[1], dlss_hdr, dlss_mode);
+                      NGX::DLSS::UpdateSettings(native_device, native_device_context, output_texture_desc.Width, output_texture_desc.Height, dlss_render_resolution[0], dlss_render_resolution[1], dlss_hdr);
 
 #if (DEVELOPMENT || TEST) && TEST_DLSS // Verify that DLSS never alters the pipeline state
                       com_ptr<ID3D11ShaderResourceView> ps_shader_resources_post[ARRAYSIZE(ps_shader_resources)];
@@ -2740,7 +2733,8 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                           // Reset DLSS history if we did not draw motion blur (and we previously did). Based on CryEngine source code, mb is skipped on the first frame after scene cuts, so we want to re-use that information.
                           // Reset DLSS history if for one frame we had stopped tonemapping. This might include some scene cuts, but also triggers when entering full screen UI menus or videos and then leaving them (it shouldn't be a problem).
                           // Reset DLSS history if the output resolution or format changed (just an extra safety mechanism, it might not actually be needed).
-                          bool reset_dlss = dlss_output_changed || !has_drawn_main_post_processing_previous || (has_drawn_motion_blur_previous && !has_drawn_motion_blur);
+                          bool reset_dlss = force_reset_dlss || dlss_output_changed || !has_drawn_main_post_processing_previous || (has_drawn_motion_blur_previous && !has_drawn_motion_blur);
+                          force_reset_dlss = false;
 
                           uint32_t render_width_dlss = std::lrintf(render_resolution.x);
                           uint32_t render_height_dlss = std::lrintf(render_resolution.y);
@@ -2766,17 +2760,6 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                               if (!dlss_output_supports_uav) {
                                   native_device_context->CopyResource(output_color.get(), dlss_output_color.get()); // DX11 doesn't need barriers
                               }
-
-#if DLSS_UPSCALE_LENS_EFFECTS && 0 // We already do this above now
-                              // Immediately force the viewport to the output resolution in case CryEngine didn't set it again before the next call
-                              // (this is because we've already upscaled earlier than the game expects, so from now on we work on the full resolution viewport, not the render res one).
-                              for (uint32_t i = 0; i < dlss_viewports_num; i++)
-                              {
-                                  dlss_viewports[i].Width = output_resolution.x;
-                                  dlss_viewports[i].Height = output_resolution.y;
-                              }
-                              native_device_context->RSSetViewports(dlss_viewports_num, &dlss_viewports[0]);
-#endif // DLSS_UPSCALE_LENS_EFFECTS
 
                               has_drawn_dlss_sr = true;
                               return true; // "Cancel" the previously set draw call, DLSS will take care of it
@@ -3282,7 +3265,7 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
         cb_per_view_global.CV_PrevViewProjNearestMatr.m12 *= cb_per_view_global.CV_HPosScale.y;
     }
 
-    // Just for test. This doesn't fully disable jitters, it just zeroes our copy of it, but rendering will still be jittered.
+    // Just for test.
     if (disable_taa_jitters) {
         current_projection_matrix.m02 = 0;
         current_projection_matrix.m12 = 0;
@@ -3348,7 +3331,7 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
                 // but this will make DLSS not use DLAA and instead fall back on a quality mode that allows for a dynamic range of resolutions.
                 // This isn't the exact rend resolution DLSS will be forced to use, but the center of a range it's gonna expect.
                 // See CryEngine "osm_fbMinScale" cvar, it should ideally be set to the same value.
-                dlss_sr_render_resolution = 1.0 / 1.5f;
+                dlss_sr_render_resolution = 1.f / 1.5f;
             }
 
             // NOTE: we could just save the first one we found, it should always be jittered and "correct".
@@ -3382,10 +3365,17 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
                 bool middle_value_different = (prey_taa_enabled == previous_prey_taa_enabled[0]) != (prey_taa_enabled == previous_prey_taa_enabled[1]);
                 ASSERT_ONCE(!middle_value_different);
             }
+            bool drew_dlss = cb_luma_frame_settings.DLSS;
             prey_taa_detected = prey_taa_enabled || previous_prey_taa_enabled[0]; // This one has a two frames tolerance. We let it persist even if the game stopped drawing the 3D scene.
-            cb_luma_frame_settings.DLSS = (dlss_sr && prey_taa_detected) ? 1 : 0; // Have a two frames tolerance
+            cb_luma_frame_settings.DLSS = (dlss_sr && prey_taa_detected) ? 1 : 0;
+            if (cb_luma_frame_settings.DLSS && !drew_dlss) {
+                // Reset DLSS history when we toggle DLSS on and off manually, or when the user in the game changes the AA mode,
+                // otherwise the history from the last time DLSS was active will be kept (DLSS doesn't know time passes since it was last used).
+                // We could also clear DLSS resources here when we know it's unused for a while, but it would possibly lead to stutters.
+                force_reset_dlss = true;
+            }
 
-#if REPLACE_SAMPLERS_LIVE //TODOFT4: re-create samplers (preferrably cache them in a map by rendering resolutions...), though to make sure, we'd need to make we only catch cbuffer13 calls when the rend res is right (the actual rendering one!)
+#if REPLACE_SAMPLERS_LIVE //TODOFT5: re-create samplers (preferrably cache them in a map by rendering resolutions...), though to make sure, we'd need to make we only catch cbuffer13 calls when the rend res is right (the actual rendering one!)
             //TODOFT: note that by default the game has a lod bias of 0 on most samplers (it seems),
             //but when enabling TAA (the hidden setting), some samplers go to -1, but while using SMAA 2TX, even if it includes TAA, that's not set (at least not the first time it's used, maybe they persist after first ever using TAA),
             //so should we bias by -1 again by default when the game uses TAA? It remains to be seen how many samplers they change when enabling TAA, if it's most of them, then we should avoid re-biasing by -1
@@ -3845,7 +3835,7 @@ bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource
                     // Create the persisting texture copy if necessary (if anything changed from the last copy).
                     // Theoretically all these textures have the same resolution as the screen so having one persisten texture should be ok.
                     // TODO: create more than one texture (one per format and one per resolution?) if ever needed
-                    //TODOFT5: verify the above assumption, testing whether this texture is actually constantly re-created
+                    //TODOFT3: verify the above assumption, testing whether this texture is actually constantly re-created
                     D3D11_TEXTURE2D_DESC proxy_target_desc;
                     if (copy_texture.get() != nullptr) {
                         copy_texture->GetDesc(&proxy_target_desc);
@@ -3919,41 +3909,6 @@ bool OnCopyTextureRegion(reshade::api::command_list* cmd_list, reshade::api::res
         return OnCopyResource(cmd_list, source, dest);
     }
     return false;
-}
-
-void OnBindViewports(reshade::api::command_list* cmd_list, uint32_t first, uint32_t count, const reshade::api::viewport* viewports) {
-    if (count <= 0) return;
-
-#if DLSS_UPSCALE_LENS_EFFECTS // We moved the code below directly in the "before draw call" function
-    return;
-#endif
-
-    // Only do this between DLSS SR (early upscaling) and the native upscaling, which runs later.
-    // We need to force all passes after DLSS to run at full resolution in the viewport, otherwise we won't be able to run to the full area of their textures.
-    if (!has_drawn_dlss_sr || has_drawn_upscaling || !prey_drs_active) return;
-
-    assert(count <= D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE);
-
-    const auto* device = cmd_list->get_device();
-    ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
-    ID3D11DeviceContext* native_device_context = (ID3D11DeviceContext*)(cmd_list->get_native());
-    const D3D11_VIEWPORT* native_viewports = reinterpret_cast<const D3D11_VIEWPORT*>(viewports);
-
-    // Only the first viewport is used for post processing stuff in Prey, though viewports are set atomically in DX11,
-    // thus we need to replace either all or none (and thus we are forced to copy them over).
-    // DX11 just reads their value on the spot, it doesn't keep a reference to the pointer we pass in.
-
-    D3D11_VIEWPORT native_viewports_copy[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE]; // Equal to "D3D11_VIEWPORT_AND_SCISSORRECT_MAX_INDEX + 1"
-    std::memcpy(&native_viewports_copy, native_viewports, count * sizeof(D3D11_VIEWPORT));
-
-    bool matches_output_resolution = native_viewports_copy[0].Width == output_resolution.x && native_viewports_copy[0].Height == output_resolution.y;
-    ASSERT_ONCE((native_viewports_copy[0].Width == render_resolution.x || native_viewports_copy[0].Height == render_resolution.y) || matches_output_resolution); // Theoretically they should always match the render res with the conditions above, even for lens optics
-    if (!matches_output_resolution) return;
-
-    native_viewports_copy[0].Width = output_resolution.x;
-    native_viewports_copy[0].Height = output_resolution.y;
-
-    native_device_context->RSSetViewports(count, &native_viewports_copy[0]);
 }
 
 void OnReshadePresent(reshade::api::effect_runtime* runtime) {
@@ -4550,7 +4505,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             if (dlss_sr && prey_taa_detected && cloned_pipeline_count != 0) {
                 ImGui::PushID("DLSS Super Resolution Active");
                 ImGui::BeginDisabled();
-                ImGui::SmallButton(ICON_FK_OK); // Show that DLSS is engaged
+                ImGui::SmallButton(ICON_FK_OK); // Show that DLSS is engaged (this will reset if we open a menu etc)
                 ImGui::EndDisabled();
                 ImGui::PopID();
             }
@@ -4775,13 +4730,16 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         ImGui::NewLine();
         ImGui::SliderFloat("DLSS Custom Exposure", &dlss_custom_exposure, 0.01, 10.0);
         ImGui::SliderFloat("DLSS Custom Pre-Exposure", &dlss_custom_pre_exposure, 0.01, 10.0);
+        ImGui::SliderInt("DLSS Halton Jitter Phases", &force_taa_jitter_phases, 0, 64);
         
         ImGui::NewLine();
-        ImGui::SliderInt("DLSS Motion Vectors Jittered", &dlss_mode, 0, 1);
         ImGui::SliderInt("Fix Motion Vectors Generation Projection Matrix", &fix_prev_matrix_mode, 0, 8);
         //ImGui::SliderInt("matrix_calculation_mode", &matrix_calculation_mode, 0, 3); // Disabled
         ImGui::SliderInt("matrix_calculation_mode_2", &matrix_calculation_mode_2, 0, 4);
         ImGui::Checkbox("Disable Camera Jitters", &disable_taa_jitters);
+        if (disable_taa_jitters) {
+            force_taa_jitter_phases = 1; // Having 1 phase means there's no jitters (or well, they might not be centered in the pixel, but they are fixed over time)
+        }
 
 #if REPLACE_SAMPLERS_LIVE
         ImGui::NewLine();
@@ -5012,7 +4970,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 
         if (dlss_sr) {
             ImGui::NewLine();
-            ImGui::Text("DLSS Resolution Scale: ", "");
+            ImGui::Text("DLSS Target Resolution Scale: ", "");
             text = std::to_string(dlss_sr_render_resolution);
             ImGui::Text(text.c_str(), "");
         }
@@ -5434,8 +5392,6 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
       reshade::register_event<reshade::addon_event::destroy_sampler>(OnDestroySampler);
 #endif
 
-      reshade::register_event<reshade::addon_event::bind_viewports>(OnBindViewports);
-
       reshade::register_event<reshade::addon_event::present>(OnPresent);
 
       reshade::register_event<reshade::addon_event::reshade_present>(OnReshadePresent);
@@ -5485,8 +5441,6 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
       reshade::unregister_event<reshade::addon_event::init_sampler>(OnInitSampler);
       reshade::unregister_event<reshade::addon_event::destroy_sampler>(OnDestroySampler);
 #endif
-
-      reshade::unregister_event<reshade::addon_event::bind_viewports>(OnBindViewports);
 
       reshade::unregister_event<reshade::addon_event::present>(OnPresent);
 
