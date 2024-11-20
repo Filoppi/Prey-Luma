@@ -1,4 +1,4 @@
-#include "include/UI.hlsl"
+#include "include/Common.hlsl"
 
 #define _RT_SAMPLE1 1
 #define _RT_SCENE_SELECTION 1
@@ -75,6 +75,14 @@ void main(
   o0.w = 1;
   // We could call "ConditionalLinearizeUI()", though "LumaUIData.AlphaBlendState" here seems to be 1.
   o0 = SDRToHDR(o0);
+#if POST_PROCESS_SPACE_TYPE >= 1
+#if 1
+  o0.rgb *= 1.5f; // Empirically found multiplier to align the HDR (linear blend) color to the SDR (gamma blend) one
+#else // Doesn't look good
+  static const float BackgroundMidGray = 0.333; // In gamma space. Anything between 0.125 and 0.5 could work.
+  o0.rgb *= (BackgroundMidGray + BackgroundMidGray) / pow(pow(BackgroundMidGray, DefaultGamma) * pow(BackgroundMidGray, DefaultGamma), 1.f / DefaultGamma);
+#endif
+#endif // POST_PROCESS_SPACE_TYPE >= 1
 #if !ENABLE_ARK_CUSTOM_POST_PROCESS
   o0 = 0;
 #endif

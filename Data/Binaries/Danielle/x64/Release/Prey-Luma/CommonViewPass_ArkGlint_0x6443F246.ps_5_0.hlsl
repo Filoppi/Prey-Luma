@@ -12,7 +12,7 @@ cbuffer PER_BATCH : register(b0)
 SamplerState PNoiseSampler_s : register(s1);
 Texture2D<float4> PNoiseSampler : register(t1);
 
-//TODOFT4: test highlight effects (it might not be looking so great) (glint is fine)
+//TODOFT4: test highlight effects (glint is fine, actually when it's white it doesn't look as intense, we tried pre-accounting for gamma blends against mid grey, but it doesn't work. The best solution would be to convert it to a compute shader or changing the blend mode (and maybe reading the backbuffer in the shader). For now we went with a 1.5 multiplier)
 // This draws some objects highlights directly on the back buffer, after tonemapping but before AA (the output alpha is ignored, it's adding the color anyway).
 // These look best linearized by channel at the end, even if it's additive and thus the concept of gamma on additive colors is a bit fuzzy "(linear+linear) != toLinear(gamma+gamma)";
 // we could say that originally they would have added in in perceptual space, but there's no way to emulate the SDR gamma space additive blends look without a compute shader (as the back buffer could be linear),
@@ -89,6 +89,14 @@ void main(
   o0.w = 1;
   // We could call "ConditionalLinearizeUI()", though "LumaUIData.AlphaBlendState" here seems to be 1.
   o0 = SDRToHDR(o0);
+#if POST_PROCESS_SPACE_TYPE >= 1
+#if 1
+  o0.rgb *= 1.5f; // Empirically found multiplier to align the HDR (linear blend) color to the SDR (gamma blend) one
+#else // Doesn't look good
+  static const float BackgroundMidGray = 0.333; // In gamma space. Anything between 0.125 and 0.5 could work.
+  o0.rgb *= (BackgroundMidGray + BackgroundMidGray) / pow(pow(BackgroundMidGray, DefaultGamma) * pow(BackgroundMidGray, DefaultGamma), 1.f / DefaultGamma);
+#endif
+#endif // POST_PROCESS_SPACE_TYPE >= 1
 #if !ENABLE_ARK_CUSTOM_POST_PROCESS
   o0 = 0;
 #endif
