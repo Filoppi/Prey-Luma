@@ -10,6 +10,7 @@ cbuffer PER_BATCH : register(b0)
 
 Texture2D<float2> adaptedLumTex : register(t1);
 
+//TODOFT: rename file
 // Custom Luma shader to draw the final exposure value from textures+cbuffers (copied from HDRPostProcesss HDRFinalScene shader)
 float main() : SV_Target0
 {

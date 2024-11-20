@@ -201,7 +201,7 @@ void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
 #endif
 
   sharpenAmount -= 1.0; // Scale to the expected range
-  //TODOFT: expose extra post TAA/DLSS sharpening multiplier
+  //TODOFT: expose extra post TAA/DLSS sharpening multiplier (and hide the newly exposed sharpening setting?, replace other sharpening implementations with RCAS?)
   if (LumaSettings.DLSS) { // Heuristically found scaler to match the native game's TAA sharpness with DLAA
     sharpenAmount *= 2.0;
   }
