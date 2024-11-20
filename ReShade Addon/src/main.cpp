@@ -1153,7 +1153,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
               renodx::utils::shader::compiler::CompileShaderFromFile(
                   custom_shader->code,
                   uncompiled_code_blob,
-                  entry_path.c_str(),
+                  trimmed_file_path_cso.c_str(),
                   shader_target.c_str(),
                   local_shader_defines,
                   !prevent_shader_cache_saving,
@@ -2326,7 +2326,7 @@ void OnPresent(
 //TODOFT5: fix cpp file formatting in general (and make sure it's all thread safe, but it should be) (remove clang.tidy files?)
 //TODOFT5: Add "UpdateSubresource" to check whether they map buffers with that (it's not optimized so probably it's unused by CryEngine)? Also make sure that our CopyTexture() func works!
 //TODOFT5: merge all the shader permutations that use the same code (and then move shader binaries to bin folder?)
-//TODOFT5: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project?
+//TODOFT5: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project? And move all external includes to the "external" folder?
 //TODOFT: add a new RT to draw UI on top (pre-multiplied alpha everywhere), so we could compose it smartly, possibly in the final linearization pass.
 
 // Return false to prevent the original draw call from running (e.g. if you replaced it or just want to skip it)
@@ -3523,7 +3523,7 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
                 if ((dlss_sr || prey_drs_active) && prey_taa_detected) {
                     texture_mip_lod_bias_offset = std::log2(render_resolution.y / output_resolution.y) - 1.f; // This results in -1 at output res
                 }
-                else { //TODOFT: does this actually look better if TAA/DRS as disabled?
+                else { //TODOFT: does this actually look better if TAA/DRS as disabled? Also why does the check above checks for DRS? Only TAA should matter for mip lod biases?
                     texture_mip_lod_bias_offset = -1.f; // Reset to default value
                 }
 
