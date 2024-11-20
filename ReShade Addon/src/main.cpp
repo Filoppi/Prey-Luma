@@ -5042,12 +5042,12 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 #if DEVELOPMENT || TEST
     if (ImGui::BeginTabItem("Info")) {
         ImGui::Text("Render Resolution: ", "");
-        std::string text = std::to_string(render_resolution.x) + " " + std::to_string(render_resolution.y);
+        std::string text = std::to_string((int)render_resolution.x) + " " + std::to_string((int)render_resolution.y);
         ImGui::Text(text.c_str(), "");
 
         ImGui::NewLine();
         ImGui::Text("Output Resolution: ", "");
-        text = std::to_string(output_resolution.x) + " " + std::to_string(output_resolution.y);
+        text = std::to_string((int)output_resolution.x) + " " + std::to_string((int)output_resolution.y);
         ImGui::Text(text.c_str(), "");
 
         if (dlss_sr) {
