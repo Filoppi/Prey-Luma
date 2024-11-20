@@ -80,7 +80,6 @@
 
 #define FORCE_KEEP_CUSTOM_SHADERS_LOADED 1
 
-#define OLD_GLOBAL_BUFFER_INTERCEPT_METHOD 0
 #define REPLACE_SAMPLERS_LIVE 1
 
 // NOLINTBEGIN(readability-identifier-naming)
@@ -389,11 +388,6 @@ float2 previous_render_resolution = { 1, 1 };
 float2 output_resolution = { 1, 1 };
 // Pointer to the current DX buffer for the "global per view" cbuffer.
 com_ptr<ID3D11Buffer> cb_per_view_global_buffer;
-#if OLD_GLOBAL_BUFFER_INTERCEPT_METHOD
-// Copy of the "cb_per_view_global_buffer" we occasionally use to read it from the CPU.
-// We need to keep it alive over time to avoid crashes.
-com_ptr<ID3D11Buffer> cb_per_view_global_buffer_copy;
-#endif
 void* cb_per_view_global_buffer_map_data = nullptr;
 CBPerViewGlobal cb_per_view_global = { };
 CBPerViewGlobal cb_per_view_global_previous = cb_per_view_global;
@@ -403,7 +397,6 @@ std::vector<ID3D11Buffer*> cb_per_view_global_buffer_pending_verification;
 std::vector<CBPerViewGlobal> cb_per_view_globals;
 std::vector<std::string> cb_per_view_globals_last_drawn_shader;
 std::vector<CBPerViewGlobal> cb_per_view_globals_previous;
-std::vector<ID3D11Buffer*> cb_per_view_global_buffers;
 #endif // DEVELOPMENT
 LumaFrameSettings cb_luma_frame_settings = { };
 #if DEVELOPMENT
@@ -1635,9 +1628,6 @@ void OnDestroyDevice(reshade::api::device* device) {
 
   assert(cb_per_view_global_buffer_map_data == nullptr);
   cb_per_view_global_buffer = nullptr;
-#if OLD_GLOBAL_BUFFER_INTERCEPT_METHOD
-  cb_per_view_global_buffer_copy = nullptr;
-#endif
 
 #if REPLACE_SAMPLERS_LIVE
   {
@@ -3753,72 +3743,6 @@ void OnPushDescriptors(
                 //cb_per_view_global_buffer_pending_verification.erase(it);
             }
 #endif // DEVELOPMENT
-#if OLD_GLOBAL_BUFFER_INTERCEPT_METHOD //TODOFT: nuke?
-            // There's between 1 and ~100 "copies" (instances) of this buffer in the game
-            bool global_buffer_changed = cb_per_view_global_buffer != buffer;
-            ASSERT_ONCE(!cb_per_view_global_buffer || !global_buffer_changed); // Test, just to know whether this is ever re-allocated (it is!)
-
-            if (std::find(cb_per_view_global_buffers.begin(), cb_per_view_global_buffers.end(), buffer) == cb_per_view_global_buffers.end()) {
-                cb_per_view_global_buffers.emplace_back(buffer); //TODOFT
-            }
-
-            if (!global_buffer_changed)
-                continue;
-
-            bool is_shadow_map_buffer = false; // NOTE: this is outdated by now, it's not that simple (there's multiple global cbuffer instances)
-            D3D11_VIEWPORT viewports[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
-            UINT viewports_num = 1;
-            //native_device_context->RSGetViewports(&viewports_num, nullptr);
-            native_device_context->RSGetViewports(&viewports_num, &viewports[0]);
-            // Shadow projections use squared textures (and thus viewports).
-            // The viewport always seems to be set before cbuffers are sent, so we can reliably check for this.
-            is_shadow_map_buffer = viewports[0].Width == viewports[0].Height;
-            //is_shadow_map_buffer = cb_per_view_global_buffer_shadow_map == nullptr; // cb_per_view_global.CV_ProjRatio.w
-
-            // This is seemengly allocated once by the game (at startup) and never re-allocated again.
-            // To "certify" the buffer being created before we are able to intercept its map/unmap calls,
-            // we need to wait for it to be pushed to cbuffer 13 at least once.
-            // That's not really a problem because it's already used in the menu (without really doing anything there).
-            //cb_per_view_global_buffer.release();
-            cb_per_view_global_buffer = nullptr;
-            cb_per_view_global_buffer = buffer;
-
-            D3D11_BUFFER_DESC buffer_desc;
-            buffer->GetDesc(&buffer_desc);
-            assert(buffer_range.size >= CBPerViewGlobal_buffer_size);
-            assert(buffer_range.offset == 0); // Not sure what this would entail
-            assert(buffer_desc.ByteWidth == CBPerViewGlobal_buffer_size);
-
-            // For the very first frame, manually copy the cbuffer by creating a buffer and copying the resource (slow!).
-            // In this rare case, we don't fix up the buffer's data because we'd need to re-upload it, which is unnecessary (this should only ever happen on menus, and potentially when restarting levels).
-            {
-                D3D11_BUFFER_DESC buffer_copy_desc = buffer_desc;
-                buffer_copy_desc.Usage = D3D11_USAGE_STAGING; // Prey's buffers (at least n13) are "D3D11_USAGE_DEFAULT", so they are push only from the CPU
-                buffer_copy_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-                buffer_copy_desc.BindFlags = 0;
-                buffer_copy_desc.MiscFlags = 0;
-
-                HRESULT hr;
-                if (!cb_per_view_global_buffer_copy.get())
-                {
-                    hr = native_device->CreateBuffer(&buffer_copy_desc, NULL, &cb_per_view_global_buffer_copy);
-                    ASSERT_ONCE(SUCCEEDED(hr));
-                }
-
-                native_device_context->CopyResource(cb_per_view_global_buffer_copy.get(), buffer);
-
-                D3D11_MAPPED_SUBRESOURCE mapped;
-                hr = native_device_context->Map(cb_per_view_global_buffer_copy.get(), 0, D3D11_MAP_READ, 0, &mapped);
-                ASSERT_ONCE(SUCCEEDED(hr));
-
-                if (SUCCEEDED(hr)) {
-                    std::memcpy(&cb_per_view_global, mapped.pData, sizeof(CBPerViewGlobal));
-                    native_device_context->Unmap(cb_per_view_global_buffer_copy.get(), 0);
-
-                    UpdateGlobalCBuffer();
-                }
-            }
-#endif
 
             break; // There can't be anything after this in DX11
             }
