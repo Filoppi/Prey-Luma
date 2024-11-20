@@ -494,9 +494,14 @@ struct DrawStateStack {
     // This is the max according to PSSetShader() documentation
     static constexpr UINT max_shader_class_instances = 256;
 
+    // Not used by Prey's CryEngine
+    #define ENABLE_SHADER_CLASS_INSTANCES 0
+
     DrawStateStack() {
-        std::memset(&ps_instances, 0, sizeof(void*) * max_shader_class_instances);
+#if ENABLE_SHADER_CLASS_INSTANCES
         std::memset(&vs_instances, 0, sizeof(void*) * max_shader_class_instances);
+        std::memset(&ps_instances, 0, sizeof(void*) * max_shader_class_instances);
+#endif
         std::memset(&render_target_views, 0, sizeof(void*) * D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT);
         std::memset(&depth_stencil_views, 0, sizeof(void*) * D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT);
     }
@@ -512,10 +517,10 @@ struct DrawStateStack {
         device_context->PSGetShaderResources(0, 1, &shader_resource_view); // Only cache the first one
         device_context->PSGetConstantBuffers(shader_cbuffers_index, 1, &constant_buffer); // Hardcoded to our "shader_cbuffers_index"
         device_context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &render_target_views[0], &depth_stencil_views[0]);
-#if 1
-        device_context->VSGetShader(&vs, ps_instances, &ps_instances_count); // Prey doesn't seem to use the optional shader instances (classes) but we do it anyway for extra safety
-        device_context->PSGetShader(&ps, vs_instances, &vs_instances_count);
-        ASSERT_ONCE(ps_instances_count == 0 && vs_instances_count == 0); //TODOFT5: disable these branches if this never happens
+#if ENABLE_SHADER_CLASS_INSTANCES
+        device_context->VSGetShader(&vs, vs_instances, &vs_instances_count);
+        device_context->PSGetShader(&ps, ps_instances, &ps_instances_count);
+        ASSERT_ONCE(vs_instances_count == 0 && ps_instances_count == 0);
 #else
         device_context->VSGetShader(&vs, nullptr, 0);
         device_context->PSGetShader(&ps, nullptr, 0);
@@ -564,13 +569,9 @@ struct DrawStateStack {
                 depth_stencil_views[i] = nullptr;
             }
         }
-#if 1
-        device_context->VSSetShader(vs.get(), vs_instances, ps_instances_count);
-        device_context->PSSetShader(ps.get(), ps_instances, vs_instances_count);
-#else
-        device_context->VSSetShader(vs.get(), nullptr, 0);
-        device_context->PSSetShader(ps.get(), nullptr, 0);
-#endif
+#if ENABLE_SHADER_CLASS_INSTANCES
+        device_context->VSSetShader(vs.get(), vs_instances, vs_instances_count);
+        device_context->PSSetShader(ps.get(), ps_instances, ps_instances_count);
         for (UINT i = 0; i < max_shader_class_instances; i++) {
             if (vs_instances[i] != nullptr) {
                 vs_instances[i]->Release();
@@ -581,6 +582,10 @@ struct DrawStateStack {
                 ps_instances[i] = nullptr;
             }
         }
+#else
+        device_context->VSSetShader(vs.get(), nullptr, 0);
+        device_context->PSSetShader(ps.get(), nullptr, 0);
+#endif
     }
 
     com_ptr<ID3D11BlendState> blend_state;
@@ -588,10 +593,12 @@ struct DrawStateStack {
     UINT blend_sample_mask;
     com_ptr<ID3D11VertexShader> vs;
     com_ptr<ID3D11PixelShader> ps;
-    UINT ps_instances_count = max_shader_class_instances;
+#if ENABLE_SHADER_CLASS_INSTANCES
     UINT vs_instances_count = max_shader_class_instances;
-    ID3D11ClassInstance* ps_instances[max_shader_class_instances];
+    UINT ps_instances_count = max_shader_class_instances;
     ID3D11ClassInstance* vs_instances[max_shader_class_instances];
+    ID3D11ClassInstance* ps_instances[max_shader_class_instances];
+#endif
     D3D11_PRIMITIVE_TOPOLOGY primitive_topology;
     ID3D11RenderTargetView* render_target_views[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
     ID3D11DepthStencilView* depth_stencil_views[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
@@ -601,6 +608,8 @@ struct DrawStateStack {
     UINT scissor_rects_num = 1;
     D3D11_VIEWPORT viewports[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
     UINT viewports_num = 1;
+
+    #undef ENABLE_SHADER_CLASS_INSTANCES
 };
 
 bool last_pressed_unload = false;
