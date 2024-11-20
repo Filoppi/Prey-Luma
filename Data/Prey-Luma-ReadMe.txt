@@ -12,6 +12,7 @@ List of features:
 -Improved the quality of dynamic shadow, especially from up close (they had broken filtering that causes them to be blocky)
 -Improved SSAO quality
 -Added DLSS Super Resolution (on Nvidia GPUs) (OptiScaler can be used to inject FSR 3)
+-Added RCAS after TAA (replacing the original basic sharpening implementation)
 -Improved all of the native Anti Aliasing implementations
 -Improved Motion Blur quality
 -Improved Bloom quality

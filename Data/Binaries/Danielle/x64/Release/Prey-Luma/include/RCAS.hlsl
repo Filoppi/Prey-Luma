@@ -34,7 +34,7 @@ float4 RCAS(uint3 pixelCoord, float sharpness, Texture2D<float4> linearColorText
 {
     float originalSharpness = sharpness;
 
-    if (dynamicSharpening)
+    if (dynamicSharpening) //TODO: finish this stuff and the debug view below
     {
         static const float MotionSharpness = 1;
         static const float Threshold = 1;
@@ -86,7 +86,7 @@ float4 RCAS(uint3 pixelCoord, float sharpness, Texture2D<float4> linearColorText
     float3 minRGB = min(min(b, d), min(f, h));
     float3 maxRGB = max(max(b, d), max(f, h));
 
-#if 0 //TODOFT4: make sure it's ok if the textures aren't in the 0-1 range, clamp some stuff otherwise
+#if 0 //TODOFT4: make sure it's ok if the textures aren't in the 0-1 range, clamp some stuff otherwise. Is the "paperWhite" range useless? It's all relative to the min and max of the local pixels
     minRGB = saturate(minRGB);
     maxRGB = saturate(maxRGB);
 #endif
