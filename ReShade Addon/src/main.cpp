@@ -1635,7 +1635,7 @@ void OnDestroyDevice(reshade::api::device* device) {
   dlss_motion_vectors = nullptr;
   dlss_motion_vectors_rtv = nullptr;
   exposure_buffer_gpu = nullptr;
-  exposure_buffer_cpu = nullptr;
+  exposure_buffer_cpu = nullptr; // Hopefully it's fine to let go of this buffer com ptr and destroy the device without unmapping the resource first
   exposure_buffer_rtv = nullptr;
 #endif // NGX
 
@@ -2291,7 +2291,10 @@ void OnPresent(
           dlss_scene_exposure = 1.f;
           dlss_scene_pre_exposure = 1.f;
           exposure_buffer_gpu = nullptr;
-          exposure_buffer_cpu = nullptr;
+          if (exposure_buffer_cpu.get()) {
+              native_device_context->Unmap(exposure_buffer_cpu.get(), 0);
+              exposure_buffer_cpu = nullptr;
+          }
           exposure_buffer_rtv = nullptr;
 #if !DLSS_KEEP_DLL_LOADED // This will actually unload the DLSS DLL and all, making the game hitch, so it's better to just keep it in memory
           NGX::DLSS::Deinit(native_device);
@@ -2456,6 +2459,8 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                   // if we changed the DLSS exposure texture every frame to follow the scene exposure, DLSS would act weird (mostly likely just ignore it, as it uses that as a hint of the exposure the tonemapper would use after TAA),
                   // while with pre-exposure it works as expected (except it kinda lags behind a bit, because it doesn't store a pre-exposure value attached to every frame, and simply uses the last provided one).
                   if (dlss_sr && cloned_pipeline_count != 0 && draw_exposure_pixel_shader) {
+                      static D3D11_MAPPED_SUBRESOURCE mapped_exposure;
+
                       // Create pre-exposure buffers once
                       if (!exposure_buffer_gpu.get()) {
                           D3D11_BUFFER_DESC exposure_buffer_desc;
@@ -2479,8 +2484,16 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                           exposure_buffer_desc.BindFlags = 0;
                           exposure_buffer_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
 
-                          exposure_buffer_cpu = nullptr;
+                          if (exposure_buffer_cpu.get()) {
+                              native_device_context->Unmap(exposure_buffer_cpu.get(), 0);
+                              exposure_buffer_cpu = nullptr;
+                          }
                           hr = native_device->CreateBuffer(&exposure_buffer_desc, &exposure_buffer_data, &exposure_buffer_cpu);
+                          ASSERT_ONCE(SUCCEEDED(hr));
+
+                          // Keep this mapped permanently to avoid butchering the frame rate (shader memory writes will directly go into our mapped data)
+                          mapped_exposure.pData = nullptr;
+                          hr = native_device_context->Map(exposure_buffer_cpu.get(), 0, D3D11_MAP_READ, 0, &mapped_exposure);
                           ASSERT_ONCE(SUCCEEDED(hr));
 
                           D3D11_RENDER_TARGET_VIEW_DESC exposure_buffer_rtv_desc;
@@ -2508,14 +2521,10 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
 
                       // Copy it back as CPU buffer and read+store it
                       native_device_context->CopyResource(exposure_buffer_cpu.get(), exposure_buffer_gpu.get());
-                      D3D11_MAPPED_SUBRESOURCE mapped;
-                      // Note: this is possibly some frames behind, but has no performance hit and it's fine as it is for the use we make of it
-                      HRESULT hr = native_device_context->Map(exposure_buffer_cpu.get(), 0, D3D11_MAP_READ, 0, &mapped);
-                      ASSERT_ONCE(SUCCEEDED(hr));
                       float scene_pre_exposure = 1.f;
-                      if (SUCCEEDED(hr)) {
-                          scene_pre_exposure = *((float*)mapped.pData);
-                          native_device_context->Unmap(exposure_buffer_cpu.get(), 0);
+                      // Note: this is possibly some frames behind, but has no performance hit and it's fine as it is for the use we make of it
+                      if (mapped_exposure.pData != nullptr) {
+                          scene_pre_exposure = *((float*)mapped_exposure.pData);
                           if (std::isinf(scene_pre_exposure) || std::isnan(scene_pre_exposure) || scene_pre_exposure <= 0.f) {
                               scene_pre_exposure = 1.f;
                           }
