@@ -11,7 +11,7 @@ namespace Hooks
 {
 	void Patches::Patch()
 	{
-		// Patch internal CryEngine RGBA8 to RGBA16F
+		// Patch internal CryEngine RGBA8 to RGBA16F (or whatever format)
 		{
 			// SPostEffectsUtils::Create
 			const auto address = Offsets::GetAddress(Offsets::SPostEffectsUtils_Create);
@@ -113,7 +113,7 @@ namespace Hooks
 	void Patches::SetHaltonSequencePhases(unsigned int phases)
 	{
 		static unsigned int lastWrittePhases = 16; // Default game value
-		if (phases != lastWrittePhases && Offsets::gameVersion == Offsets::GameVersion::PreySteam) // TODO: add support for GOG and DLCs
+		if (phases != lastWrittePhases && Offsets::gameVersion == Offsets::GameVersion::PreySteam) // TODO: add support for GOG and DLCs (and remove mention to lack of support from game.cfg, around "r_AntialiasingTAAPattern")
 		{
 			lastWrittePhases = phases;
 

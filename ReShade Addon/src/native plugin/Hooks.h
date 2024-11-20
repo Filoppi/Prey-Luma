@@ -8,6 +8,9 @@
 // Replacing (splitting up) some RTs is necessary otherwise:
 // - If we upgraded all UNORM8 textures to FP16 (like RenoDX does), some texture copies done through the ID3D11DeviceContext::CopyResource() function would fail as they have mismatching formats, plus there's a multitude of other unknown visual issues
 // - If we only upgraded the necessary textures (the ones we can without the issue mentioned above), then the tonemapper would be clipped to SDR because it re-uses (e.g.) the normal map texture that is UNORM8, which wouldn't be upgraded (if it is, that also causes issues)
+// Note that this, like upgrading textures in general, could theoretically be handled from ReShade DX hooks with "heuristics", for example, we could check what Render Target of Shader Resource a certain shader is using (by hash) and replace the textures we know need replacing.
+// For textures upgrades, we could check all the properties that textures have on creation, and based on their order, guess which is which and which needs upgrading
+// (e.g. (made up) after the exposure texture is created, which has a particular desc flag, the backbuffer texture might be created, or the "HDRTarget" texture is created with the UAV flag).
 #define ADD_NEW_RENDER_TARGETS 1
 
 // Attempted code to keep the native support for MSAA. CryEngine had it but it's unclear how stable it was in Prey (it's not officially exposed to the user, it can just be forced on through configs)
@@ -26,8 +29,10 @@
 
 namespace Hooks
 {
-	constexpr RE::ETEX_Format format = RE::ETEX_Format::eTF_R16G16B16A16F; // Generic upgrade format (we could also opt for HDR10 format here)
-	constexpr RE::ETEX_Format format16f = RE::ETEX_Format::eTF_R16G16B16A16F;
+	// Note: if we wanted, we could replace this format and re-live patch all the functions. After the user changes the game resolution once, all textures would be re-generated with the new format.
+	// For example, we could opt in for HDR10 textures (R10G10B10A2UNORM) (which also implies changing the swapchain color space) (the alpha channel might be necessary in some textures though), or classic SDR R8G8B8A8UNORM.
+	constexpr RE::ETEX_Format format = RE::ETEX_Format::eTF_R16G16B16A16F; // Generic upgrade format
+	constexpr RE::ETEX_Format format16f = RE::ETEX_Format::eTF_R16G16B16A16F; // Specific FP16 format
 
 	class Patches
 	{
