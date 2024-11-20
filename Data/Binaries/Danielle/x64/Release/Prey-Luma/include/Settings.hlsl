@@ -189,6 +189,7 @@
 #undef ENABLE_FILM_GRAIN
 #define ENABLE_FILM_GRAIN (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
 #endif
+#define ENABLE_EXPOSURE_CLAMPING (!DEVELOPMENT || 1)
 // This might also disable decals interfaces (like computer screens) in the 3D scene
 #define ENABLE_UI (!DEVELOPMENT || 1)
 

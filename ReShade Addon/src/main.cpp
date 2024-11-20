@@ -2406,7 +2406,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
           }
       }
   }
-#else
+#else // Alternative (old?) unfinished method
   const auto pipeline_pair;
   if (is_dispatch) {
     com_ptr<ID3D11ComputeShader> cs;
@@ -2772,12 +2772,12 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                           // Generate "fake" exposure texture
                           bool exposure_changed = false;
                           float dlss_exposure_val = dlss_scene_exposure;
-                          static float previous_dlss_exposure_val = dlss_exposure_val;
 #if DEVELOPMENT
                           if (dlss_custom_exposure > 0.f) {
                               dlss_exposure_val = dlss_custom_exposure;
                           }
 #endif // DEVELOPMENT
+                          static float previous_dlss_exposure_val = dlss_exposure_val;
                           exposure_changed = dlss_exposure_val != previous_dlss_exposure_val;
                           previous_dlss_exposure_val = dlss_exposure_val;
                           //TODO LUMA: optimize this for the "DLSS_RELATIVE_PRE_EXPOSURE" false case! Avoid re-creating the texture every frame the exposure changes and instead make it dynamic and re-write it from the CPU? Or simply make our exposure calculation shader write to a texture directly

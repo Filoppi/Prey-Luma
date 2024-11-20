@@ -38,7 +38,10 @@ float GetExposure(float2 scaledTC)
 {
 	const float fSceneLum = SceneLumTex.Sample(ssSceneLum, scaledTC).x; // This is a 1x1 texture, so any UV will return the same value
 	const float fSceneKey = 1.03 - 2.0 / (2.0 + log2(fSceneLum + 1.0));
-	const float fExposure = clamp(fSceneKey / fSceneLum, cbComposites.MinExposure, cbComposites.MaxExposure);
+	float fExposure = fSceneKey / fSceneLum;
+#if ENABLE_EXPOSURE_CLAMPING
+	fExposure = clamp(fExposure, cbComposites.MinExposure, cbComposites.MaxExposure);
+#endif
   return fExposure;
 }
 

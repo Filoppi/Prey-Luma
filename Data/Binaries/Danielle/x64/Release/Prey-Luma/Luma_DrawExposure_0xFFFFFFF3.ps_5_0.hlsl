@@ -32,7 +32,10 @@ float main() : SV_Target0
 
     // Legacy exposure mode (always used in Prey) (HDREyeAdaptation.x isn't used and is always 0.18)
 	const float fSceneKey = 1.03 - 2.0 / (2.0 + log2(vAdaptedLum.x + 1.0));
-	float fExposure = clamp(fSceneKey / vAdaptedLum.x, HDREyeAdaptation.y /*MinExposure*/, HDREyeAdaptation.z /*MaxExposure*/);
+	float fExposure = fSceneKey / vAdaptedLum.x;
+#if ENABLE_EXPOSURE_CLAMPING
+	fExposure = clamp(fExposure, HDREyeAdaptation.y /*MinExposure*/, HDREyeAdaptation.z /*MaxExposure*/);
+#endif
 #if DLSS_RELATIVE_PRE_EXPOSURE >= 1
 	float fExposureMidPoint = lerp(HDREyeAdaptation.y, HDREyeAdaptation.z, 0.5);
 	// What's important for DLSS is the relative exposure value (how much it changes from the "baseline", most commonly used value in a level, or the average anyway),

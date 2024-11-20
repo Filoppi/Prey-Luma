@@ -72,8 +72,10 @@ float ComputeExposure(float fIlluminance, float4 HDREyeAdaptation)
 	// Apply automatic exposure compensation based on scene key
 	EV100 -= ((clamp(log10(fIlluminance * LIGHT_UNIT_SCALE + 1.0), 0.1, 5.2) - 3.0) / 2.0) * HDREyeAdaptation.z;
 	
+#if ENABLE_EXPOSURE_CLAMPING
 	// Clamp EV
 	EV100 = clamp(EV100, HDREyeAdaptation.x, HDREyeAdaptation.y);
+#endif
 	
 	// Compute maximum luminance based on Saturation Based Film Sensitivity (ISO 100, lens factor q=0.65)
 	float maxLum = 1.2 * exp2(EV100) / LIGHT_UNIT_SCALE;
@@ -122,7 +124,10 @@ float4 FilmTonemapping( out float3 cSDRColor, in float4 cScene, in float4 cBloom
     // Legacy exposure mode
 	  // Krawczyk scene key estimation adjusted to better fit our range - low (0.05) to high key (0.8) interpolation based on avg scene luminance
 	  const float fSceneKey = 1.03 - 2.0 / (2.0 + log2(vAdaptedLum.x + 1.0));
-	  fExposure = clamp(fSceneKey / vAdaptedLum.x, HDREyeAdaptation.y, HDREyeAdaptation.z);
+	  fExposure = fSceneKey / vAdaptedLum.x;
+#if ENABLE_EXPOSURE_CLAMPING
+	  fExposure = clamp(fExposure, HDREyeAdaptation.y, HDREyeAdaptation.z);
+#endif
   }
   else // LUMA FT: moved to else branch for optimization as this isn't used by Prey
 #endif // _RT_SAMPLE4
