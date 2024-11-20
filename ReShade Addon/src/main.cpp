@@ -80,8 +80,6 @@
 
 #define FORCE_KEEP_CUSTOM_SHADERS_LOADED 1
 
-#define REPLACE_SAMPLERS_LIVE 1
-
 // NOLINTBEGIN(readability-identifier-naming)
 
 // These are needed by ReShade
@@ -267,11 +265,9 @@ reshade::api::pipeline pipeline_state_original_compute_shader = reshade::api::pi
 reshade::api::pipeline pipeline_state_original_vertex_shader = reshade::api::pipeline(0);
 reshade::api::pipeline pipeline_state_original_pixel_shader = reshade::api::pipeline(0);
 
-#if REPLACE_SAMPLERS_LIVE
 // Custom samplers mapped to original ones by texture LOD bias
 std::recursive_mutex s_mutex_samplers;
 std::unordered_map<uint64_t, std::unordered_map<float, com_ptr<ID3D11SamplerState>>> custom_sampler_by_original_sampler;
-#endif
 
 std::unordered_set<uint64_t> pipelines_to_reload;
 static_assert(sizeof(reshade::api::pipeline::handle) == sizeof(uint64_t));
@@ -340,15 +336,11 @@ constexpr bool prey_taa_jittered = false; //TODOFT4: test with "FORCE_MOTION_VEC
 int fix_prev_matrix_mode = 1; // NOTE: referenced in shader's code
 int matrix_calculation_mode = 0;
 int matrix_calculation_mode_2 = 1;
+float texture_mip_lod_bias_offset = -1.0f;
+#if DEVELOPMENT
 int samplers_upgrade_mode = 5;
 int samplers_upgrade_mode_2 = 0;
-#if REPLACE_SAMPLERS_LIVE
-float texture_mip_lod_bias_offset = -1.0f;
-bool custom_texture_mip_lod_bias_offset = false; // Live edit //TODOFT: "DEVELOPMENT" only
-#else
-constexpr float texture_mip_lod_bias_offset = -1.0f; // Value tweaked for DLSS (note that the game's native TAA already biases some samples by -1, so we'd do it twice)
-#endif
-#if DEVELOPMENT
+bool custom_texture_mip_lod_bias_offset = false; // Live edit
 float dlss_custom_exposure = 0.f;
 float dlss_custom_pre_exposure = 0.f; // Ignored at 0
 #endif
@@ -1629,13 +1621,11 @@ void OnDestroyDevice(reshade::api::device* device) {
   assert(cb_per_view_global_buffer_map_data == nullptr);
   cb_per_view_global_buffer = nullptr;
 
-#if REPLACE_SAMPLERS_LIVE
   {
       const std::lock_guard<std::recursive_mutex> lock_samplers(s_mutex_samplers);
       ASSERT_ONCE(custom_sampler_by_original_sampler.empty()); // Is this guaranteed in DX? Maybe not, but probably is!
       custom_sampler_by_original_sampler.clear();
   }
-#endif
 
 #if ENABLE_NGX
   ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
@@ -3053,12 +3043,7 @@ bool OnDrawOrDispatchIndirect(
 }
 
 // TODO: use the native ReShade sampler desc instead? It's not really necessary
-com_ptr<ID3D11SamplerState> CreateCustomSampler(reshade::api::device* device, D3D11_SAMPLER_DESC desc) {
-    if (samplers_upgrade_mode <= 0)
-        return nullptr;
-
-    ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
-
+com_ptr<ID3D11SamplerState> CreateCustomSampler(ID3D11Device* device, D3D11_SAMPLER_DESC desc) {
 #if !DEVELOPMENT
     if (desc.Filter == D3D11_FILTER_ANISOTROPIC || desc.Filter == D3D11_FILTER_COMPARISON_ANISOTROPIC) {
         desc.MaxAnisotropy = D3D11_REQ_MAXANISOTROPY;
@@ -3068,6 +3053,19 @@ com_ptr<ID3D11SamplerState> CreateCustomSampler(reshade::api::device* device, D3
         return nullptr;
     }
 #else
+    if (samplers_upgrade_mode <= 0)
+        return nullptr;
+
+    // Prey's CryEngine only uses:
+    // D3D11_FILTER_ANISOTROPIC
+    // D3D11_FILTER_COMPARISON_ANISOTROPIC
+    // D3D11_FILTER_MIN_MAG_MIP_POINT
+    // D3D11_FILTER_COMPARISON_MIN_MAG_MIP_POINT
+    // D3D11_FILTER_MIN_MAG_LINEAR_MIP_POINT
+    // D3D11_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT
+    // D3D11_FILTER_MIN_MAG_MIP_LINEAR
+    // D3D11_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR
+    
     // This could theoretically make some textures that have moire patters, or were purposely blurry, "worse", but the positives of upgrading still outweight the negatives.
     // Note that this might not fix all cases because there's still "ID3D11DeviceContext::SetResourceMinLOD()" and textures that are blurry for other reasons
     // because they use other types of samplers (unfortunately it seems like some decals use "D3D11_FILTER_MIN_MAG_MIP_LINEAR").
@@ -3126,25 +3124,16 @@ com_ptr<ID3D11SamplerState> CreateCustomSampler(reshade::api::device* device, D3
 #endif // !DEVELOPMENT
 
     com_ptr<ID3D11SamplerState> sampler;
-    native_device->CreateSamplerState(&desc, &sampler);
+    device->CreateSamplerState(&desc, &sampler);
     ASSERT_ONCE(sampler != nullptr);
     return sampler;
 }
 
-#if !REPLACE_SAMPLERS_LIVE //TODOFT5: enable "REPLACE_SAMPLERS_LIVE" and clean old branch up (or integrate with CreateCustomSampler())?
-bool OnCreateSampler(reshade::api::device* device, reshade::api::sampler_desc& desc) {
-    // CryEngine only used:
-    // D3D11_FILTER_ANISOTROPIC
-    // D3D11_FILTER_COMPARISON_ANISOTROPIC
-    // D3D11_FILTER_MIN_MAG_MIP_POINT
-    // D3D11_FILTER_COMPARISON_MIN_MAG_MIP_POINT
-    // D3D11_FILTER_MIN_MAG_LINEAR_MIP_POINT
-    // D3D11_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT
-    // D3D11_FILTER_MIN_MAG_MIP_LINEAR
-    // D3D11_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR
-    bool modified = false;
-        
-#if DEVELOPMENT && 0
+void OnInitSampler(reshade::api::device* device, const reshade::api::sampler_desc& desc, reshade::api::sampler sampler) {
+    if (sampler == 0)
+        return;
+
+#if DEVELOPMENT && 0 // Assert in case we got unexpected samplers
     if (desc.filter == reshade::api::filter_mode::anisotropic || desc.filter == reshade::api::filter_mode::compare_anisotropic)
     {
         assert(desc.max_anisotropy >= 2); // Doesn't seem to happen
@@ -3158,42 +3147,49 @@ bool OnCreateSampler(reshade::api::device* device, reshade::api::sampler_desc& d
     assert(desc.filter != reshade::api::filter_mode::min_mag_anisotropic_mip_point && desc.filter != reshade::api::filter_mode::compare_min_mag_anisotropic_mip_point); // Doesn't seem to happen
 
     ASSERT_ONCE(desc.filter == reshade::api::filter_mode::anisotropic
-    || desc.filter == reshade::api::filter_mode::compare_anisotropic
-    || desc.filter == reshade::api::filter_mode::min_mag_mip_linear
-    || desc.filter == reshade::api::filter_mode::compare_min_mag_mip_linear
-    || desc.filter == reshade::api::filter_mode::min_mag_linear_mip_point
-    || desc.filter == reshade::api::filter_mode::compare_min_mag_linear_mip_point); // Doesn't seem to happen
+        || desc.filter == reshade::api::filter_mode::compare_anisotropic
+        || desc.filter == reshade::api::filter_mode::min_mag_mip_linear
+        || desc.filter == reshade::api::filter_mode::compare_min_mag_mip_linear
+        || desc.filter == reshade::api::filter_mode::min_mag_linear_mip_point
+        || desc.filter == reshade::api::filter_mode::compare_min_mag_linear_mip_point); // Doesn't seem to happen
 #endif // DEVELOPMENT
 
-    if (desc.filter == reshade::api::filter_mode::anisotropic || desc.filter == reshade::api::filter_mode::compare_anisotropic)
-    {
-        desc.max_anisotropy = D3D11_REQ_MAXANISOTROPY;
-        desc.mip_lod_bias = std::clamp(desc.mip_lod_bias + texture_mip_lod_bias_offset, D3D11_MIP_LOD_BIAS_MIN, D3D11_MIP_LOD_BIAS_MAX);
-        modified = true;
-    }
-    return modified;
-}
-#endif
-
-#if REPLACE_SAMPLERS_LIVE
-void OnInitSampler(reshade::api::device* device, const reshade::api::sampler_desc& desc, reshade::api::sampler sampler) {
-    if (sampler == 0)
-        return;
-
     ID3D11SamplerState* native_sampler = reinterpret_cast<ID3D11SamplerState*>(sampler.handle);
+
+    // Custom samplers lifetime should never be tracked by ReShade, otherwise we'd recursively create custom samplers out of custom samplers
+    // (it's unclear if CryEngine somehow does anything with these samplers or if ReShade captures our own samplers creation events (it probably does as we create them directly through the DX native funcs))
+    for (const auto& samplers_handle : custom_sampler_by_original_sampler) {
+        for (const auto& custom_sampler_handle : samplers_handle.second) {
+            ID3D11SamplerState* native_sampler = reinterpret_cast<ID3D11SamplerState*>(sampler.handle);
+            if (custom_sampler_handle.second.get() == native_sampler) {
+                return;
+            }
+        }
+    }
+
     D3D11_SAMPLER_DESC native_desc;
     native_sampler->GetDesc(&native_desc);
     const std::lock_guard<std::recursive_mutex> lock_samplers(s_mutex_samplers);
-    custom_sampler_by_original_sampler[sampler.handle][texture_mip_lod_bias_offset] = CreateCustomSampler(device, native_desc);
+    custom_sampler_by_original_sampler[sampler.handle][texture_mip_lod_bias_offset] = CreateCustomSampler((ID3D11Device*)device->get_native(), native_desc);
 }
 
 void OnDestroySampler(reshade::api::device* device, reshade::api::sampler sampler) {
     //TODOFT: can this actually be called by a separate thread? probably
     // This only seems to happen when the game shuts down in Prey
     const std::lock_guard<std::recursive_mutex> lock_samplers(s_mutex_samplers);
+
+#if DEVELOPMENT //TODOFT: delete, already in "OnInitSampler()", so this shouldn't be able to ever happen
+    ID3D11SamplerState* native_sampler = reinterpret_cast<ID3D11SamplerState*>(sampler.handle);
+    // Custom samplers lifetime should never be tracked by ReShade (is this innoucuous? remove it from the list in case it happened)
+    for (const auto& samplers_handle : custom_sampler_by_original_sampler) {
+        for (const auto& custom_sampler_handle : samplers_handle.second) {
+            ASSERT_ONCE(custom_sampler_handle.second.get() != native_sampler);
+        }
+    }
+#endif
+
     custom_sampler_by_original_sampler.erase(sampler.handle);
 }
-#endif // REPLACE_SAMPLERS_LIVE
 
 #if DEVELOPMENT
 void OnInitResource(
@@ -3503,22 +3499,40 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
                 force_reset_dlss = true;
             }
 
-#if REPLACE_SAMPLERS_LIVE //TODOFT5: re-create samplers (preferrably cache them in a map by rendering resolutions...), though to make sure, we'd need to make we only catch cbuffer13 calls when the rend res is right (the actual rendering one!)
             //TODOFT: note that by default the game has a lod bias of 0 on most samplers (it seems),
-            //but when enabling TAA (the hidden setting), some samplers go to -1, but while using SMAA 2TX, even if it includes TAA, that's not set (at least not the first time it's used, maybe they persist after first ever using TAA),
+            //but when enabling TAA (the "hidden" setting), some samplers go to -1, but while using SMAA 2TX, even if it includes TAA, that's not set (at least not the first time it's used, maybe they persist after first ever using TAA),
             //so should we bias by -1 again by default when the game uses TAA? It remains to be seen how many samplers they change when enabling TAA, if it's most of them, then we should avoid re-biasing by -1
             //by checking whether any SMAA edge AA shaders are running (the ones before TAA).
-            // We do this even when DLSS is not on, in case 
-            if (!custom_texture_mip_lod_bias_offset) {
+#if DEVELOPMENT
+            if (!custom_texture_mip_lod_bias_offset)
+#endif
+            {
+                const std::lock_guard<std::recursive_mutex> lock_samplers(s_mutex_samplers);
+
+                const auto prev_texture_mip_lod_bias_offset = texture_mip_lod_bias_offset;
+                // We do this even when DLSS is not on, to help with the game's native TAA and DRS implementations
                 if ((dlss_sr || prey_drs_active) && prey_taa_detected) {
                     texture_mip_lod_bias_offset = std::log2(render_resolution.y / output_resolution.y) - 1.f; // This results in -1 at output res
                 }
-                else {
+                else { //TODOFT: does this actually look better if TAA/DRS as disabled?
                     texture_mip_lod_bias_offset = -1.f; // Reset to default value
                 }
+
+                bool texture_mip_lod_bias_offset_changed = prev_texture_mip_lod_bias_offset != texture_mip_lod_bias_offset;
+                //TODOFT: verify that this doesn't happen a billion times per frame with random resolutions that might be set by non primary render paths (e.g. shadow maps), if so, safely move this to compute once at the end of the frame (tested, it seems fine?)
+                // Re-create all samplers immediately here instead of doing it at the end of the frame.
+                // This allows us to avoid possible (but very unlikely) hitches that could happen if we re-created a new sampler for a new resolution later on when samplers descriptors are set.
+                // It also allows us to use the right samplers for this frame's resolution.
+                if (texture_mip_lod_bias_offset_changed) {
+                    for (auto& samplers_handle : custom_sampler_by_original_sampler) {
+                        if (samplers_handle.second.contains(texture_mip_lod_bias_offset)) continue; // Skip "resolutions" that already got their custom samplers created
+                        ID3D11SamplerState* native_sampler = reinterpret_cast<ID3D11SamplerState*>(samplers_handle.first);
+                        D3D11_SAMPLER_DESC native_desc;
+                        native_sampler->GetDesc(&native_desc);
+                        samplers_handle.second[texture_mip_lod_bias_offset] = CreateCustomSampler(global_native_device, native_desc);
+                    }
+                }
             }
-            //TODOFT: re-create all samplers here once to avoid constant hitches when they are first used later on in the pipeline? It's probably fine
-#endif
 
             if (!has_drawn_main_post_processing_previous) {
                 previous_render_resolution = render_resolution;
@@ -3658,21 +3672,21 @@ void OnPushDescriptors(
     case reshade::api::descriptor_type::buffer_unordered_access_view:
     case reshade::api::descriptor_type::unordered_access_view:
         break;
-#if REPLACE_SAMPLERS_LIVE
     case reshade::api::descriptor_type::sampler: {
         reshade::api::descriptor_table_update custom_update = update;
         bool any_modified = false;
         const std::lock_guard<std::recursive_mutex> lock_samplers(s_mutex_samplers);
         for (uint32_t i = 0; i < update.count; i++) {
             const reshade::api::sampler& sampler = static_cast<const reshade::api::sampler*>(update.descriptors)[i];
-            if (custom_sampler_by_original_sampler.contains(sampler.handle))
-            {
+            if (custom_sampler_by_original_sampler.contains(sampler.handle)) {
+                ID3D11SamplerState* native_sampler = reinterpret_cast<ID3D11SamplerState*>(sampler.handle);
+                // Create the version of this sampler to match the current mip lod bias
                 if (!custom_sampler_by_original_sampler[sampler.handle].contains(texture_mip_lod_bias_offset)) {
-                    ID3D11SamplerState* native_sampler = reinterpret_cast<ID3D11SamplerState*>(sampler.handle);
                     D3D11_SAMPLER_DESC native_desc;
                     native_sampler->GetDesc(&native_desc);
-                    custom_sampler_by_original_sampler[sampler.handle][texture_mip_lod_bias_offset] = CreateCustomSampler(device, native_desc);
+                    custom_sampler_by_original_sampler[sampler.handle][texture_mip_lod_bias_offset] = CreateCustomSampler((ID3D11Device*)device->get_native(), native_desc);
                 }
+                // Update the customized descriptor data
                 uint64_t custom_sampler_handle = (uint64_t)(custom_sampler_by_original_sampler[sampler.handle][texture_mip_lod_bias_offset].get());
                 if (custom_sampler_handle != 0) {
                     reshade::api::sampler& custom_sampler = ((reshade::api::sampler*)(custom_update.descriptors))[i];
@@ -3680,25 +3694,24 @@ void OnPushDescriptors(
                     any_modified |= true;
                 }
             }
-            else
-            {
+            else {
 #if DEVELOPMENT
-                //TODOFT4: why does this happen!? Is it one of our "cloned" samples recursively setting itself (indeed it seems to only trigger when we change the imGui settings for samplers)? (we seemengly confirmed it is, hopefully ReShade won't try to handle the lifetime of the native samplers we created locally!)
+                // If recursive (already cloned) sampler ptrs are set, it's because the game somehow got the pointers and is re-using them (?),
+                // this seems to happen when we change the ImGui settings for samplers a lot and quickly.
                 bool recursive_or_null = sampler.handle == 0;
-                for (const auto& a : custom_sampler_by_original_sampler) {
-                    for (const auto& b : a.second) {
-                        ID3D11SamplerState* native_sampler = reinterpret_cast<ID3D11SamplerState*>(sampler.handle);
-                        recursive_or_null |= b.second.get() == native_sampler;
+                ID3D11SamplerState* native_sampler = reinterpret_cast<ID3D11SamplerState*>(sampler.handle);
+                for (const auto& samplers_handle : custom_sampler_by_original_sampler) {
+                    for (const auto& custom_sampler_handle : samplers_handle.second) {
+                        recursive_or_null |= custom_sampler_handle.second.get() == native_sampler;
                     }
                 }
                 ASSERT_ONCE(recursive_or_null); // Shouldn't happen! (if we know the sampler set is "recursive", then we are good and don't need to replace this sampler again)
-#if 0
-                if (sampler.handle != 0)
-                {
+#if 0 //TODOFT: delete or restore in case the "recursive_or_null" assert above ever triggered
+                if (sampler.handle != 0) {
                     ID3D11SamplerState* native_sampler = reinterpret_cast<ID3D11SamplerState*>(sampler.handle);
                     D3D11_SAMPLER_DESC native_desc;
                     native_sampler->GetDesc(&native_desc);
-                    custom_sampler_by_original_sampler[sampler.handle] = CreateCustomSampler(device, native_desc);
+                    custom_sampler_by_original_sampler[sampler.handle] = CreateCustomSampler((ID3D11Device*)device->get_native(), native_desc);
                 }
 #endif
 #endif // DEVELOPMENT
@@ -3708,7 +3721,7 @@ void OnPushDescriptors(
         if (any_modified) {
 #if 1
             cmd_list->push_descriptors(stages, layout, param_index, custom_update);
-#else // Old "REPLACE_SAMPLERS_LIVE" (probably faster but a lot more annoying to write?
+#else // Old implementation to live replace samples (probably faster but a lot more annoying to write?
             // Note: we could call "cmd_list->push_descriptors()" but this is simpler as it doesn't require us to create a pipeline layout
             if ((stages & reshade::api::shader_stage::vertex) == reshade::api::shader_stage::vertex)
                 native_device_context->VSSetSamplers(update.binding, update.count, sampler_ptrs);
@@ -3726,7 +3739,6 @@ void OnPushDescriptors(
         }
         break;
         }
-#endif
     case reshade::api::descriptor_type::constant_buffer: {
         for (uint32_t i = 0; i < update.count; i++) {
             const reshade::api::buffer_range& buffer_range = static_cast<const reshade::api::buffer_range*>(update.descriptors)[i];
@@ -4804,25 +4816,23 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             force_taa_jitter_phases = 1; // Having 1 phase means there's no jitters (or well, they might not be centered in the pixel, but they are fixed over time)
         }
 
-#if REPLACE_SAMPLERS_LIVE
         ImGui::NewLine();
         bool samplers_changed = ImGui::SliderInt("Texture Samplers Upgrade Mode", &samplers_upgrade_mode, 0, 7);
         samplers_changed |= ImGui::SliderInt("Texture Samplers Upgrade Mode - 2", &samplers_upgrade_mode_2, 0, 6);
         ImGui::Checkbox("Custom Texture Samplers Mip LOD Bias", &custom_texture_mip_lod_bias_offset);
         if (samplers_upgrade_mode > 0 && custom_texture_mip_lod_bias_offset) {
+            const std::lock_guard<std::recursive_mutex> lock_samplers(s_mutex_samplers);
             samplers_changed |= ImGui::SliderFloat("Texture Samplers Mip LOD Bias", &texture_mip_lod_bias_offset, -8.f, +8.f);
         }
         if (samplers_changed) {
-            //TODOFT3: move this somewhere "better"? It's probably fine here though :P
             const std::lock_guard<std::recursive_mutex> lock_samplers(s_mutex_samplers);
-            for (auto& original_sampler_handle : custom_sampler_by_original_sampler) {
-                ID3D11SamplerState* native_sampler = reinterpret_cast<ID3D11SamplerState*>(original_sampler_handle.first);
+            for (auto& samplers_handle : custom_sampler_by_original_sampler) {
+                ID3D11SamplerState* native_sampler = reinterpret_cast<ID3D11SamplerState*>(samplers_handle.first);
                 D3D11_SAMPLER_DESC native_desc;
                 native_sampler->GetDesc(&native_desc);
-                original_sampler_handle.second[texture_mip_lod_bias_offset] = CreateCustomSampler(runtime->get_device(), native_desc);
+                samplers_handle.second[texture_mip_lod_bias_offset] = CreateCustomSampler((ID3D11Device*)runtime->get_device()->get_native(), native_desc);
             }
         }
-#endif // REPLACE_SAMPLERS_LIVE
 #endif // DEVELOPMENT
 
         ImGui::EndTabItem();
@@ -5458,13 +5468,8 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
       reshade::register_event<reshade::addon_event::draw_indexed>(OnDrawIndexed);
       reshade::register_event<reshade::addon_event::draw_or_dispatch_indirect>(OnDrawOrDispatchIndirect);
 
-#if !REPLACE_SAMPLERS_LIVE
-      reshade::register_event<reshade::addon_event::create_sampler>(OnCreateSampler);
-#endif
-#if REPLACE_SAMPLERS_LIVE
       reshade::register_event<reshade::addon_event::init_sampler>(OnInitSampler);
       reshade::register_event<reshade::addon_event::destroy_sampler>(OnDestroySampler);
-#endif
 
       reshade::register_event<reshade::addon_event::present>(OnPresent);
 
@@ -5508,13 +5513,8 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
       reshade::unregister_event<reshade::addon_event::draw_indexed>(OnDrawIndexed);
       reshade::unregister_event<reshade::addon_event::draw_or_dispatch_indirect>(OnDrawOrDispatchIndirect);
 
-#if !REPLACE_SAMPLERS_LIVE
-      reshade::unregister_event<reshade::addon_event::create_sampler>(OnCreateSampler);
-#endif
-#if REPLACE_SAMPLERS_LIVE
       reshade::unregister_event<reshade::addon_event::init_sampler>(OnInitSampler);
       reshade::unregister_event<reshade::addon_event::destroy_sampler>(OnDestroySampler);
-#endif
 
       reshade::unregister_event<reshade::addon_event::present>(OnPresent);
 
