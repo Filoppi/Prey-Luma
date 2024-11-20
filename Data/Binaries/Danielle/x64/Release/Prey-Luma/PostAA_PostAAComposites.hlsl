@@ -1,5 +1,6 @@
 #include "include/Common.hlsl"
 #include "include/Tonemap.hlsl"
+#include "include/RCAS.hlsl"
 
 #include "include/CBuffer_PerViewGlobal.hlsl"
 
@@ -28,6 +29,7 @@ Texture2D<float4> compositeSourceTex : register(t0);
 Texture2D<float4> lensOpticsTex : register(t5);
 Texture3D<float4> filmGrainTex : register(t6);
 Texture2D<float4> SceneLumTex : register(t7);
+Texture2D<float2> dummyFloat2Texture : register(t8); // Luma FT
 
 float2 MapViewportToRaster(float2 normalizedViewportPos, float2 HPosScale /*= CV_HPosScale.xy*/)
 {
@@ -180,26 +182,45 @@ void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
 #endif
 
 	if (ShouldSkipPostProcess(WPos.xy / CV_HPosScale.xy)) { return; }
+
+	float paperWhite = GamePaperWhiteNits / sRGB_WhiteLevelNits;
 	
-// LUMA FT: this will seemengly only run when using SMAA 2TXA
+// LUMA FT: this will seemengly only run when using SMAA 2TX and TAA
 #if _RT_SAMPLE2
+
+  float sharpenAmount = cbComposites.Sharpening;
+#if !ENABLE_SHARPENING
+  sharpenAmount = min(sharpenAmount, 1.0);
+#endif // !ENABLE_SHARPENING
+
+#if ENABLE_TAA_RCAS && ENABLE_SHARPENING // LUMA FT: added RCAS instead of basic sharpening
+
+  float normalizationRange = 1.0;
+#if POST_PROCESS_SPACE_TYPE >= 1
+  normalizationRange = paperWhite;
+#endif
+  //TODOFT: pass in motion vectors!?
+  // This is probably fine, this code path is never used for "blurring", it's always exclusively for sharpening
+	outColor.rgb = RCAS(WPos.xyz, sharpenAmount - 1.0, compositeSourceTex, dummyFloat2Texture, normalizationRange, true, outColor, false).rgb; // This should work independently of "POST_PROCESS_SPACE_TYPE".
+
+#else
+
 	// Apply sharpening
 	float3 cTL = DecodeBackBufferToLinearSDRRange(compositeSourceTex.Sample(ssCompositeSource, scaledTC + invRenderingRes * float2(-0.5, -0.5)).rgb);
 	float3 cTR = DecodeBackBufferToLinearSDRRange(compositeSourceTex.Sample(ssCompositeSource, scaledTC + invRenderingRes * float2( 0.5, -0.5)).rgb);
 	float3 cBL = DecodeBackBufferToLinearSDRRange(compositeSourceTex.Sample(ssCompositeSource, scaledTC + invRenderingRes * float2(-0.5,  0.5)).rgb);
 	float3 cBR = DecodeBackBufferToLinearSDRRange(compositeSourceTex.Sample(ssCompositeSource, scaledTC + invRenderingRes * float2( 0.5,  0.5)).rgb);
-  float sharpenAmount = cbComposites.Sharpening;
-#if !ENABLE_SHARPENING
-  sharpenAmount = min(sharpenAmount, 1.0);
-#endif // !ENABLE_SHARPENING
+
 	float3 cFiltered = (cTL + cTR + cBL + cBR) * 0.25;
   float3 preSharpenColor = outColor.rgb;
 	outColor.rgb = EncodeBackBufferFromLinearSDRRange(lerp( cFiltered, DecodeBackBufferToLinearSDRRange(outColor.rgb), sharpenAmount )); // LUMA FT: removed saturate() and fixed gamma functions
   // LUMA FT: correct sharpening to avoid negative luminances (invalid colors) on rapidly changing colors (they create rings artifacts). This should work independently of "POST_PROCESS_SPACE_TYPE".
 	outColor.rgb = FixUpSharpeningOrBlurring(outColor.rgb, preSharpenColor);
+
+#endif // ENABLE_TAA_RCAS
+
 #endif // _RT_SAMPLE2
 
-	float paperWhite = GamePaperWhiteNits / sRGB_WhiteLevelNits;
 #if POST_PROCESS_SPACE_TYPE >= 1 // LUMA FT: added support for linear space input, making sure we blend in vignette and film grain and lens component in "SDR" gamma space
   float3 preEffectsLinearColor = outColor.rgb;
 	outColor.rgb = linear_to_game_gamma(outColor.rgb / paperWhite);
