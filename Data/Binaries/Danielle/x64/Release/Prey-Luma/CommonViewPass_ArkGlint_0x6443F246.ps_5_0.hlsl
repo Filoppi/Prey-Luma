@@ -12,9 +12,11 @@ cbuffer PER_BATCH : register(b0)
 SamplerState PNoiseSampler_s : register(s1);
 Texture2D<float4> PNoiseSampler : register(t1);
 
-//TODOFT1: test highlight effects (glint is fine)
+//TODOFT4: test highlight effects (it might not be looking so great) (glint is fine)
 // This draws some objects highlights directly on the back buffer, after tonemapping but before AA (the output alpha is ignored, it's adding the color anyway).
-// These look best linearized by channel at the end, even if it's additive and thus the concept of gamma on additive colors is a bit fuzzy "(linear+linear) != toLinear(gamma+gamma)" (there's no way to emulate the SDR gamma space additive blends look).
+// These look best linearized by channel at the end, even if it's additive and thus the concept of gamma on additive colors is a bit fuzzy "(linear+linear) != toLinear(gamma+gamma)";
+// we could say that originally they would have added in in perceptual space, but there's no way to emulate the SDR gamma space additive blends look without a compute shader (as the back buffer could be linear),
+// the best we could do is emulate blending against mid gray (the most likely background color) and pre-apply that offset in the additive color, but it's not worth it.
 void main(
   float4 WPos : SV_Position0,
   float4 baseTC : TEXCOORD0,
