@@ -19,7 +19,8 @@ Texture2D<float4> _tex1 : register(t1);
 #define FORCE_SHARPEN_IN_LINEAR_SPACE 1
 
 // CA_SharpeningPS
-// Runs after "PostAAComposites" and probably "UpscaleImage" too
+// Runs after "PostAAComposites" and probably "UpscaleImage" too.
+// It seems like this applies if the user has set sharpening to a positive value, or if the scene in the game has the sharpening increased for some reason.
 void main(
   float4 v0 : SV_Position0,
   float4 inBaseTC : TEXCOORD0,

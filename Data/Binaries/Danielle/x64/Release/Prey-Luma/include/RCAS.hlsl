@@ -9,9 +9,9 @@
 #ifndef RCAS_DENOISE
 #define RCAS_DENOISE 0
 #endif
-// Lower means less artifacts and "less sharpening"
+// Lower means less artifacts and "less sharpening", it's unclear what 16 stands for here, and whether this is meant for linear or gamma space (probably gamma space)
 #ifndef RCAS_LIMIT
-#define RCAS_LIMIT 0.1875
+#define RCAS_LIMIT (0.25-(1.0/16.0))
 #endif
 
 Texture2D<float4> Source : register(t0);

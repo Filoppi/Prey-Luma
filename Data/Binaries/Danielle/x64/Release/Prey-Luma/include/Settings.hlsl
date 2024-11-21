@@ -133,6 +133,12 @@
 #ifndef BLOOM_QUALITY
 #define BLOOM_QUALITY 1
 #endif
+// 0 None: disabled
+// 1 Vanilla: basic sharpening
+// 2 RCAS: AMD improved sharpening
+#ifndef POST_TAA_SHARPENING_TYPE
+#define POST_TAA_SHARPENING_TYPE 2
+#endif
 // Disabled as we are now in HDR (10 or 16 bits)
 #ifndef ENABLE_DITHERING
 #define ENABLE_DITHERING 0
@@ -178,9 +184,6 @@
 #if !defined(ENABLE_SHARPENING) || !DEVELOPMENT || !ENABLE_POST_PROCESS
 #undef ENABLE_SHARPENING
 #define ENABLE_SHARPENING (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
-#endif
-#ifndef ENABLE_TAA_RCAS
-#define ENABLE_TAA_RCAS 1
 #endif
 #define ENABLE_CHROMATIC_ABERRATION (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
 #if !defined(ENABLE_VIGNETTE) || !DEVELOPMENT || !ENABLE_POST_PROCESS

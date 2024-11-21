@@ -429,6 +429,7 @@ std::vector<ShaderDefineData> shader_defines_data = {
   {"ENABLE_POST_PROCESS", '1', false, false, "Allows you to disable all post processing (at once)"},
   {"ENABLE_CAMERA_MOTION_BLUR", '0', false, false, "Camera Motion Blur can look pretty botched in Prey, and can mess with DLSS/TAA, it's turned off by default in Luma"},
   {"ENABLE_COLOR_GRADING_LUT", '1', false, false, "Allows you to disable color grading\nDon't disable it unless you know what you are doing"},
+  {"POST_TAA_SHARPENING_TYPE", '2', false, false, "0 - None (disabled)\n1 - Vanilla (basic sharpening)\n2 - RCAS (AMD improved sharpening)"},
 #if DEVELOPMENT || TEST //TODOFT: Disabled for final users for now because these require the "DEVELOPMENT" flag to be used atm
   {"ENABLE_SHARPENING", '1', false, false, "Allows you to disable sharpening\nDisabling it is not suggested, especially if you use TAA"},
   {"ENABLE_VIGNETTE", '1', false, false, "Allows you to disable vignette\nIt's not that prominent in Prey, it's only used in certain cases to convey gameplay information,\nso don't disable it unless you know what you are doing"},

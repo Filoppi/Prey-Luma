@@ -73,7 +73,7 @@ void main(
 	
 	float3 cBlur = (cTL + cTR + cBL + cBR) * 0.25f;
   	float sharpenAmount = cbPostAA.params.x;
-#if !ENABLE_SHARPENING
+#if !ENABLE_SHARPENING || POST_TAA_SHARPENING_TYPE <= 0
   	sharpenAmount = min(sharpenAmount, 1.0);
 #endif
 	const float3 preSharpenColor = cM;

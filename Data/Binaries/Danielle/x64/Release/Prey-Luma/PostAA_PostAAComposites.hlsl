@@ -186,14 +186,14 @@ void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
 	float paperWhite = GamePaperWhiteNits / sRGB_WhiteLevelNits;
 	
 // LUMA FT: this will seemengly only run when using SMAA 2TX and TAA
-#if _RT_SAMPLE2
+#if _RT_SAMPLE2 && POST_TAA_SHARPENING_TYPE > 0
 
   float sharpenAmount = cbComposites.Sharpening;
 #if !ENABLE_SHARPENING
   sharpenAmount = min(sharpenAmount, 1.0);
 #endif // !ENABLE_SHARPENING
 
-#if ENABLE_TAA_RCAS && ENABLE_SHARPENING // LUMA FT: added RCAS instead of basic sharpening
+#if ENABLE_SHARPENING && POST_TAA_SHARPENING_TYPE >= 2 // LUMA FT: added RCAS instead of basic sharpening
 
   float normalizationRange = 1.0;
 #if POST_PROCESS_SPACE_TYPE >= 1
@@ -223,9 +223,9 @@ void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
   // LUMA FT: correct sharpening to avoid negative luminances (invalid colors) on rapidly changing colors (they create rings artifacts). This should work independently of "POST_PROCESS_SPACE_TYPE".
 	outColor.rgb = FixUpSharpeningOrBlurring(outColor.rgb, preSharpenColor);
 
-#endif // ENABLE_TAA_RCAS
+#endif // ENABLE_SHARPENING && POST_TAA_SHARPENING_TYPE >= 2
 
-#endif // _RT_SAMPLE2
+#endif // _RT_SAMPLE2 && POST_TAA_SHARPENING_TYPE > 0
 
 #if POST_PROCESS_SPACE_TYPE >= 1 // LUMA FT: added support for linear space input, making sure we blend in vignette and film grain and lens component in "SDR" gamma space
   float3 preEffectsLinearColor = outColor.rgb;
