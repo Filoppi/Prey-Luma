@@ -237,7 +237,7 @@ bool LoadCompiledShaderFromFile(std::vector<uint8_t>& output, LPCWSTR file_path,
   return file_loaded;
 }
 
-void CompileShaderFromFileFXC(std::vector<uint8_t>& output, const CComPtr<ID3DBlob>& optional_uncompiled_code_input, LPCWSTR file_path, LPCSTR shader_target, const D3D_SHADER_MACRO* defines = nullptr, bool save_to_disk = false, bool& error = dummy_bool, std::string* out_error = nullptr, LPCWSTR library = L"D3DCompiler_47.dll") {
+void CompileShaderFromFileFXC(std::vector<uint8_t>& output, const CComPtr<ID3DBlob>& optional_uncompiled_code_input, LPCWSTR file_read_path, LPCSTR shader_target, const D3D_SHADER_MACRO* defines = nullptr, bool save_to_disk = false, bool& error = dummy_bool, std::string* out_error = nullptr, LPCWSTR file_write_path = nullptr, LPCSTR func_name = "main", LPCWSTR library = L"D3DCompiler_47.dll") {
   typedef HRESULT(WINAPI * pD3DCompileFromFile)(LPCWSTR, const D3D_SHADER_MACRO*, ID3DInclude*, LPCSTR, LPCSTR, UINT, UINT, ID3DBlob**, ID3DBlob**);
   typedef HRESULT(WINAPI * pD3DCompile)(LPCVOID, SIZE_T, LPCSTR, const D3D_SHADER_MACRO*, ID3DInclude*, LPCSTR, LPCSTR, UINT, UINT, ID3DBlob**, ID3DBlob**);
   typedef HRESULT(WINAPI * pD3DWriteBlobToFile)(ID3DBlob*, LPCWSTR, BOOL);
@@ -264,19 +264,18 @@ void CompileShaderFromFileFXC(std::vector<uint8_t>& output, const CComPtr<ID3DBl
   if (optional_uncompiled_code_input != nullptr && d3d_compile[library] != nullptr) {
 #pragma warning(push)
 #pragma warning(disable : 4244)
-      const std::wstring& shader_name_w_s = file_path;
+      const std::wstring& shader_name_w_s = file_read_path;
       std::string shader_name_s(shader_name_w_s.length(), ' ');
       std::copy(shader_name_w_s.begin(), shader_name_w_s.end(), shader_name_s.begin());
       LPCSTR shader_name = shader_name_s.c_str();
 #pragma warning(pop)
-      // TODO: expose the name of the function to compile ("main") so we could unify more shaders into a single file?
       result = d3d_compile[library](
           optional_uncompiled_code_input->GetBufferPointer(),
           optional_uncompiled_code_input->GetBufferSize(),
           shader_name,
           defines,
           D3D_COMPILE_STANDARD_FILE_INCLUDE,
-          "main",
+          func_name,
           shader_target,
           D3DCOMPILE_ENABLE_BACKWARDS_COMPATIBILITY,
           0,
@@ -285,10 +284,10 @@ void CompileShaderFromFileFXC(std::vector<uint8_t>& output, const CComPtr<ID3DBl
   }
   if (FAILED(result) && d3d_compilefromfile[library] != nullptr) {
       result = d3d_compilefromfile[library](
-          file_path,
+          file_read_path,
           defines,
           D3D_COMPILE_STANDARD_FILE_INCLUDE,
-          "main",
+          func_name,
           shader_target,
           D3DCOMPILE_ENABLE_BACKWARDS_COMPATIBILITY,
           0,
@@ -303,7 +302,7 @@ void CompileShaderFromFileFXC(std::vector<uint8_t>& output, const CComPtr<ID3DBl
 
       if (save_to_disk && d3d_writeBlobToFile[library] != nullptr) {
           const bool overwrite = true; // Overwrite whatever original or custom shader we previously had there
-          std::wstring file_path_cso = file_path;
+          std::wstring file_path_cso = (file_write_path && file_write_path[0] != '\0') ? file_write_path : file_read_path;
           if (file_path_cso.ends_with(L".hlsl")) {
               file_path_cso = file_path_cso.substr(0, file_path_cso.size() - 5);
               file_path_cso += L".cso";
@@ -512,7 +511,7 @@ HRESULT WINAPI BridgeD3DCompileFromFile(
   return CompileFromBlob(source, file_name, defines, include_handler, entrypoint, target, flags1, flags2, code, error_messages);
 }
 
-void CompileShaderFromFileDXC(std::vector<uint8_t>& output, LPCWSTR file_path, LPCSTR shader_target, const D3D_SHADER_MACRO* defines = nullptr, bool& error = dummy_bool, std::string* out_error = nullptr) {
+void CompileShaderFromFileDXC(std::vector<uint8_t>& output, LPCWSTR file_path, LPCSTR shader_target, const D3D_SHADER_MACRO* defines = nullptr, bool& error = dummy_bool, LPCSTR func_name = "main", std::string* out_error = nullptr) {
   CComPtr<ID3DBlob> out_blob;
   CComPtr<ID3DBlob> error_blob;
   // TODO: add optional input (code) blob here too
@@ -521,7 +520,7 @@ void CompileShaderFromFileDXC(std::vector<uint8_t>& output, LPCWSTR file_path, L
       file_path,
       defines,
       D3D_COMPILE_STANDARD_FILE_INCLUDE,
-      "main",
+      func_name,
       shader_target,
       0,
       0,
@@ -562,15 +561,15 @@ void CompileShaderFromFileDXC(std::vector<uint8_t>& output, LPCWSTR file_path, L
   }
 }
 
-void CompileShaderFromFile(std::vector<uint8_t>& output, const CComPtr<ID3DBlob>& optional_uncompiled_code_input, LPCWSTR file_path, LPCSTR shader_target, const std::vector<std::string>& defines = {}, bool save_to_disk = false, bool& error = dummy_bool, std::string* out_error = nullptr, LPCWSTR fxc_library = L"D3DCompiler_47.dll") {
+void CompileShaderFromFile(std::vector<uint8_t>& output, const CComPtr<ID3DBlob>& optional_uncompiled_code_input, LPCWSTR file_path, LPCSTR shader_target, const std::vector<std::string>& defines = {}, bool save_to_disk = false, bool& error = dummy_bool, std::string* out_error = nullptr, LPCWSTR file_write_path = nullptr, LPCSTR func_name = "main", LPCWSTR fxc_library = L"D3DCompiler_47.dll") {
   std::vector<D3D_SHADER_MACRO> local_defines;
   FillDefines(defines, local_defines);
 
   if (shader_target[3] < '6') {
-    CompileShaderFromFileFXC(output, optional_uncompiled_code_input, file_path, shader_target, local_defines.data(), save_to_disk, error, out_error, fxc_library);
+    CompileShaderFromFileFXC(output, optional_uncompiled_code_input, file_path, shader_target, local_defines.data(), save_to_disk, error, out_error, file_write_path, func_name, fxc_library);
     return;
   }
-  CompileShaderFromFileDXC(output, file_path, shader_target, local_defines.data(), error, out_error);
+  CompileShaderFromFileDXC(output, file_path, shader_target, local_defines.data(), error, func_name, out_error);
 }
 
 }  // namespace renodx::utils::shader::compiler

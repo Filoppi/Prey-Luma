@@ -790,20 +790,18 @@ void CleanShadersCache() {
 void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = std::unordered_set<uint64_t>()) {
   std::vector<std::string> shader_defines;
   {
-      {
-          const std::lock_guard<std::recursive_mutex> lock(s_mutex_shader_defines);
-          shader_defines.assign(shader_defines_data.size() * 2, "");
-          for (uint32_t i = 0; i < shader_defines_data.size(); i++) {
-              shader_defines[(i * 2)] = shader_defines_data[i].compiled_data.name;
-              shader_defines[(i * 2) + 1] = shader_defines_data[i].compiled_data.value;
-          }
+      const std::lock_guard<std::recursive_mutex> lock(s_mutex_shader_defines);
+      shader_defines.assign(shader_defines_data.size() * 2, "");
+      for (uint32_t i = 0; i < shader_defines_data.size(); i++) {
+          shader_defines[(i * 2)] = shader_defines_data[i].compiled_data.name;
+          shader_defines[(i * 2) + 1] = shader_defines_data[i].compiled_data.value;
       }
+  }
 
-      // We need to clear this every time "CompileCustomShaders()" is called as we can't clear previous logs from it
-      {
-          const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
-          shaders_compilation_errors.clear();
-      }
+  // We need to clear this every time "CompileCustomShaders()" is called as we can't clear previous logs from it. We do this even if we have some "pipelines_filter"
+  {
+      const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
+      shaders_compilation_errors.clear();
   }
 
   const auto directory = GetShaderPath();
@@ -819,8 +817,8 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
       shaders_compilation_errors = "The shaders path is already taken by a file";
       return;
   }
-  
-  {
+
+  if (pipelines_filter.empty()) {
       const std::lock_guard<std::recursive_mutex> lock_shader_defines(s_mutex_shader_defines);
 
       code_shaders_defines.clear();
@@ -925,7 +923,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
 
   for (const auto& entry : std::filesystem::directory_iterator(directory)) {
       if (!entry.is_regular_file()) {
-          reshade::log::message(reshade::log::level::warning, "loadCustomShaders(not a regular file)");
+          reshade::log::message(reshade::log::level::warning, "LoadCustomShaders(not a regular file)");
           continue;
       }
       const auto& entry_path = entry.path();
@@ -933,7 +931,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
       const bool is_cso = entry_path.extension().compare(".cso") == 0;
       if (!entry_path.has_extension() || !entry_path.has_stem() || (!is_hlsl && !is_cso)) {
           std::stringstream s;
-          s << "loadCustomShaders(Missing extension or stem or unknown extension: ";
+          s << "LoadCustomShaders(Missing extension or stem or unknown extension: ";
           s << entry_path.string();
           s << ")";
           reshade::log::message(reshade::log::level::warning, s.str().c_str());
@@ -962,7 +960,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
           // As long as cso starts from "0x12345678", it's good, they don't need the shader type specified
           if (filename_no_extension_string.size() < 10) {
               std::stringstream s;
-              s << "loadCustomShaders(Invalid cso file format: ";
+              s << "LoadCustomShaders(Invalid cso file format: ";
               s << filename_no_extension_string;
               s << ")";
               reshade::log::message(reshade::log::level::warning, s.str().c_str());
@@ -1143,7 +1141,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
           if (is_hlsl) {
               {
                   std::stringstream s;
-                  s << "loadCustomShaders(Compiling file: ";
+                  s << "LoadCustomShaders(Compiling file: ";
                   s << entry_path.string();
                   s << ", hash: " << PRINT_CRC32(shader_hash);
                   s << ", target: " << shader_target;
@@ -1152,17 +1150,19 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
               }
 
               bool error = false;
+              // TODO: specify the name of the function to compile (e.g. "main" or HDRTonemapPS) so we could unify more shaders into a single file with multiple techniques?
               renodx::utils::shader::compiler::CompileShaderFromFile(
                   custom_shader->code,
                   uncompiled_code_blob,
-                  trimmed_file_path_cso.c_str(),
+                  entry_path.c_str(),
                   shader_target.c_str(),
                   local_shader_defines,
                   !prevent_shader_cache_saving,
                   error,
-                  &custom_shader->compilation_error);
+                  &custom_shader->compilation_error,
+                  trimmed_file_path_cso.c_str() );
 
-              // Ugly workaround to avoid proving the shader compiler a custom name for CSO files, given we trim their name from multiple hashes that the HLSL original path might have
+              // Ugly workaround to avoid providing the shader compiler a custom name for CSO files, given we trim their name from multiple hashes that the HLSL original path might have
               if (!prevent_shader_cache_saving && !original_file_path_cso.empty() && original_file_path_cso != trimmed_file_path_cso) {
                   if (std::filesystem::is_regular_file(original_file_path_cso)) {
                       std::filesystem::remove(trimmed_file_path_cso);
@@ -1183,7 +1183,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
 
               if (custom_shader->code.empty()) {
                   std::stringstream s;
-                  s << "loadCustomShaders(Compilation failed: ";
+                  s << "LoadCustomShaders(Compilation failed: ";
                   s << entry_path.string();
                   s << ")";
                   reshade::log::message(reshade::log::level::warning, s.str().c_str());
@@ -1197,7 +1197,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
 
               {
                   std::stringstream s;
-                  s << "loadCustomShaders(Shader built with size: " << custom_shader->code.size() << ")";
+                  s << "LoadCustomShaders(Shader built with size: " << custom_shader->code.size() << ")";
                   reshade::log::message(reshade::log::level::debug, s.str().c_str());
               }
           }
@@ -1210,7 +1210,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
                   custom_shader->code.resize(file.tellg());
                   {
                       std::stringstream s;
-                      s << "loadCustomShaders(Reading " << custom_shader->code.size() << " from " << filename_no_extension_string << ")";
+                      s << "LoadCustomShaders(Reading " << custom_shader->code.size() << " from " << filename_no_extension_string << ")";
                       reshade::log::message(reshade::log::level::debug, s.str().c_str());
                   }
                   if (!custom_shader->code.empty()) {
@@ -1279,7 +1279,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
 
 // Optionally compiles all the shaders we have in our data folder and links them with the game rendering pipelines
 void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = std::unordered_set<uint64_t>(), bool recompile_shaders = true, bool immediate_load = true, bool immediate_unload = false) {
-  reshade::log::message(reshade::log::level::debug, "loadCustomShaders()");
+  reshade::log::message(reshade::log::level::debug, "LoadCustomShaders()");
 
   if (recompile_shaders) {
     CompileCustomShaders(pipelines_filter);
@@ -1304,7 +1304,7 @@ void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = st
     auto pipelines_pair = pipeline_caches_by_shader_hash.find(shader_hash);
     if (pipelines_pair == pipeline_caches_by_shader_hash.end()) {
       std::stringstream s;
-      s << "loadCustomShaders(Unknown hash: ";
+      s << "LoadCustomShaders(Unknown hash: ";
       s << PRINT_CRC32(shader_hash);
       s << ")";
       reshade::log::message(reshade::log::level::warning, s.str().c_str());
@@ -1322,7 +1322,7 @@ void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = st
 
       {
         std::stringstream s;
-        s << "loadCustomShaders(Read ";
+        s << "LoadCustomShaders(Read ";
         s << custom_shader->code.size() << " bytes ";
         s << " from " << custom_shader->file_path.string();
         s << ")";
@@ -1337,7 +1337,7 @@ void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = st
 
       {
         std::stringstream s;
-        s << "loadCustomShaders(Cloning pipeline ";
+        s << "LoadCustomShaders(Cloning pipeline ";
         s << reinterpret_cast<void*>(cached_pipeline->pipeline.handle);
         s << " with " << subobject_count << " object(s)";
         s << ")";
@@ -1369,7 +1369,7 @@ void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = st
         const auto new_hash = compute_crc32(static_cast<const uint8_t*>(new_desc->code), new_desc->code_size);
 
         std::stringstream s;
-        s << "loadCustomShaders(Injected pipeline data";
+        s << "LoadCustomShaders(Injected pipeline data";
         s << " with " << PRINT_CRC32(new_hash);
         s << " (" << custom_shader->code.size() << " bytes)";
         s << ")";
@@ -1393,7 +1393,7 @@ void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = st
           new_subobjects,
           &pipeline_clone);
       std::stringstream s;
-      s << "loadCustomShaders(cloned ";
+      s << "LoadCustomShaders(cloned ";
       s << reinterpret_cast<void*>(cached_pipeline->pipeline.handle);
       s << " => " << reinterpret_cast<void*>(pipeline_clone.handle);
       s << ", layout: " << reinterpret_cast<void*>(cached_pipeline->layout.handle);
