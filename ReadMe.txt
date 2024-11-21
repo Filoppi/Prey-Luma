@@ -23,7 +23,7 @@ To decompile shaders you will need... VSCode is suggested.
 Vcpkg package dependencies are forced to the version I tested the mod on, upgrading is possible but there seem to be no issues.
 
 The mod version is stored in ... "VERSION"...
-There's a "DEVELOPMENT" and "TEST" flag in main.cpp. They automatically spread to shaders on the next load/compile. Building in Debug (as opposed to Release), simply adds debug symbols etc, but no additional development features.
+There's a "DEVELOPMENT" and "TEST" flag (defines) in main.cpp. They automatically spread to shaders on the next load/compile. Building in Debug (as opposed to Release), simply adds debug symbols etc, but no additional development features.
 
 The game's original shaders code can be found in the ... pak in the GOG version of the game (extract the zip).
 Luma shaders can be found in ".\Data\Binaries\Danielle\x64\Release\Prey-Luma\".

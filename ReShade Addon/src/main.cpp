@@ -879,6 +879,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
                   // Reflections on dev settings.
                   // They can have a comment like "// Default, Min, Max" next to them (e.g. "// 0.5, 0, 1.3").
                   if (str_view.find("float DevSetting") != std::string::npos) {
+                      if (settings_count >= LumaFrameDevSettings::SettingsNum) continue;
                       settings_count++;
                       const auto meta_data_pos = str_view.find("//");
                       if (meta_data_pos == std::string::npos) continue;
@@ -4800,13 +4801,33 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         ImGui::Text("Developer Settings: ", "");
 
         ImGui::NewLine();
-        ImGui::SliderFloat("Developer Setting 1", &cb_luma_frame_settings.DevSettings.Setting01, cb_luma_frame_dev_settings_min_value.Setting01, cb_luma_frame_dev_settings_max_value.Setting01);
-        ImGui::SliderFloat("Developer Setting 2", &cb_luma_frame_settings.DevSettings.Setting02, cb_luma_frame_dev_settings_min_value.Setting02, cb_luma_frame_dev_settings_max_value.Setting02);
-        ImGui::SliderFloat("Developer Setting 3", &cb_luma_frame_settings.DevSettings.Setting03, cb_luma_frame_dev_settings_min_value.Setting03, cb_luma_frame_dev_settings_max_value.Setting03);
-        ImGui::SliderFloat("Developer Setting 4", &cb_luma_frame_settings.DevSettings.Setting04, cb_luma_frame_dev_settings_min_value.Setting04, cb_luma_frame_dev_settings_max_value.Setting04);
-        ImGui::SliderFloat("Developer Setting 5", &cb_luma_frame_settings.DevSettings.Setting05, cb_luma_frame_dev_settings_min_value.Setting05, cb_luma_frame_dev_settings_max_value.Setting05);
-        ImGui::SliderFloat("Developer Setting 6", &cb_luma_frame_settings.DevSettings.Setting06, cb_luma_frame_dev_settings_min_value.Setting06, cb_luma_frame_dev_settings_max_value.Setting06);
-        ImGui::SliderFloat("Developer Setting 7", &cb_luma_frame_settings.DevSettings.Setting07, cb_luma_frame_dev_settings_min_value.Setting07, cb_luma_frame_dev_settings_max_value.Setting07);
+        static std::string DevSettingsNames[LumaFrameDevSettings::SettingsNum];
+        for (size_t i = 0; i < LumaFrameDevSettings::SettingsNum; i++) {
+            // These strings need to persist
+            if (DevSettingsNames[i].empty()) {
+                DevSettingsNames[i] = "Developer Setting " + std::to_string(i + 1);
+            }
+            float& value = (&cb_luma_frame_settings.DevSettings.Setting01)[i];
+            float& min_value = (&cb_luma_frame_dev_settings_min_value.Setting01)[i];
+            float& max_value = (&cb_luma_frame_dev_settings_max_value.Setting01)[i];
+            float& default_value = (&cb_luma_frame_dev_settings_default_value.Setting01)[i];
+            ImGui::SliderFloat(DevSettingsNames[i].c_str(), &value, min_value, max_value);
+            ImGui::SameLine();
+            if (value != default_value) {
+                ImGui::PushID(DevSettingsNames[i].c_str());
+                if (ImGui::SmallButton(ICON_FK_UNDO)) {
+                    value = default_value;
+                }
+                ImGui::PopID();
+            }
+            else {
+                const auto& style = ImGui::GetStyle();
+                ImVec2 size = ImGui::CalcTextSize(ICON_FK_UNDO);
+                size.x += style.FramePadding.x;
+                size.y += style.FramePadding.y;
+                ImGui::InvisibleButton("", ImVec2(size.x, size.y));
+            }
+        }
 
         ImGui::NewLine();
         ImGui::SliderInt("Tank Performance (Per Frame Sleep MS)", &frame_sleep_ms, 0, 100);
