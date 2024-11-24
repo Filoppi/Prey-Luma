@@ -90,24 +90,17 @@ namespace
     static_assert(CBPerViewGlobal_buffer_size > sizeof(CBPerViewGlobal));
 
     struct LumaFrameDevSettings {
-        static constexpr size_t SettingsNum = 7;
+        static constexpr size_t SettingsNum = 10;
 
-        LumaFrameDevSettings(float Value = 0.f)
-        {
-            Setting01 = Setting02 = Setting03 = Setting04 = Setting05 = Setting06 = Setting07 = Value;
+        LumaFrameDevSettings(float Value = 0.f) {
+            for (size_t i = 0; i < SettingsNum; i++) {
+                Settings[i] = Value;
+            }
         }
-        float& operator[](const size_t i)
-        {
-            return (&Setting01)[i];
+        float& operator[](const size_t i) {
+            return Settings[i];
         }
-        // Matches "SettingsNum"
-        float Setting01;
-        float Setting02;
-        float Setting03;
-        float Setting04;
-        float Setting05;
-        float Setting06;
-        float Setting07;
+        float Settings[SettingsNum];
     };
 
     struct LumaFrameSettings {

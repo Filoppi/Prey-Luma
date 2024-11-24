@@ -395,6 +395,7 @@ LumaFrameSettings cb_luma_frame_settings = { };
 LumaFrameDevSettings cb_luma_frame_dev_settings_default_value(0.f);
 LumaFrameDevSettings cb_luma_frame_dev_settings_min_value(0.f);
 LumaFrameDevSettings cb_luma_frame_dev_settings_max_value(1.f);
+std::array<std::string, LumaFrameDevSettings::SettingsNum> cb_luma_frame_dev_settings_names;
 #endif
 
 constexpr uint32_t ui_cbuffer_index = 7;
@@ -827,6 +828,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
       cb_luma_frame_dev_settings_default_value = LumaFrameDevSettings(0.f);
       cb_luma_frame_dev_settings_min_value = LumaFrameDevSettings(0.f);
       cb_luma_frame_dev_settings_max_value = LumaFrameDevSettings(1.f);
+      cb_luma_frame_dev_settings_names = {};
 #endif
 
       auto settings_directory = directory;
@@ -888,16 +890,32 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
 
                       int settings_float_count = 0;
                       float str_float;
-                      while (ss >> str_float) {
+                      bool reached_end = false;
+                      while (ss.peek() == ' ') {
+                          ss.ignore();
+                          if (!ss.good()) { reached_end = true; break; }
+                      }
+                      // The float read would seemengly advance some state in the stream buffer even if it failed finding it, so skip it in case the next value is not a number (ignore ".3f" like definitions...).
+                      // Float heading spaces are automatically ignored.
+                      while (!reached_end && ss.peek() >= '0' && ss.peek() <= '9' && ss >> str_float) {
                           if (settings_float_count == 0) cb_luma_frame_dev_settings_default_value[settings_count-1] = str_float;
                           else if (settings_float_count == 1) cb_luma_frame_dev_settings_min_value[settings_count-1] = str_float;
                           else if (settings_float_count == 2) cb_luma_frame_dev_settings_max_value[settings_count-1] = str_float;
                           settings_float_count++;
-                          if (!ss.good()) break;
-                          if (ss.peek() == ',' || ss.peek() == ' ') {
+                          if (!ss.good()) { reached_end = true; break; };
+                          // Remove known (supported) characters to ignore (spaces are already ignored above anyway)
+                          while (ss.peek() == ',' || ss.peek() == ' ') {
                               ss.ignore();
-                              if (!ss.good()) break;
+                              if (!ss.good()) { reached_end = true; break; }
                           }
+                      }
+
+                      std::string str;
+                      auto ss_pos = ss.tellg();
+                      // If we found a string, read the whole remaining stream buffer, otherwise the "str" string would end at the first space
+                      if (!reached_end && ss >> str) {
+                          cb_luma_frame_dev_settings_names[settings_count - 1] = ss.str();
+                          cb_luma_frame_dev_settings_names[settings_count - 1] = cb_luma_frame_dev_settings_names[settings_count - 1].substr(ss_pos, cb_luma_frame_dev_settings_names[settings_count - 1].length() - ss_pos);
                       }
                   }
 #endif
@@ -4807,11 +4825,11 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             if (DevSettingsNames[i].empty()) {
                 DevSettingsNames[i] = "Developer Setting " + std::to_string(i + 1);
             }
-            float& value = (&cb_luma_frame_settings.DevSettings.Setting01)[i];
-            float& min_value = (&cb_luma_frame_dev_settings_min_value.Setting01)[i];
-            float& max_value = (&cb_luma_frame_dev_settings_max_value.Setting01)[i];
-            float& default_value = (&cb_luma_frame_dev_settings_default_value.Setting01)[i];
-            ImGui::SliderFloat(DevSettingsNames[i].c_str(), &value, min_value, max_value);
+            float& value = cb_luma_frame_settings.DevSettings[i];
+            float& min_value = cb_luma_frame_dev_settings_min_value[i];
+            float& max_value = cb_luma_frame_dev_settings_max_value[i];
+            float& default_value = cb_luma_frame_dev_settings_default_value[i];
+            ImGui::SliderFloat(cb_luma_frame_dev_settings_names[i].empty() ? DevSettingsNames[i].c_str() : cb_luma_frame_dev_settings_names[i].c_str(), & value, min_value, max_value);
             ImGui::SameLine();
             if (value != default_value) {
                 ImGui::PushID(DevSettingsNames[i].c_str());
