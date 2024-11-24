@@ -56,9 +56,9 @@ float2 DecodeMotionVector(float2 vMotionEncoded, bool bFastEncoded = false, floa
 	return vMotionEncoded;
 }
 
-float GetLinearDepth(float fDevDepth, bool bScaled = false)
+float GetLinearDepth(float fLinearDepth, bool bScaled = false)
 {
-	return fDevDepth * (bScaled ? CV_NearFarClipDist.y : 1.0f);
+    return fLinearDepth * (bScaled ? CV_NearFarClipDist.y : 1.0f); // Note: dividing by CV_NearFarClipDist.w is possibly more correct
 }
 
 float GetLinearDepth(Texture2D depthTexture, int3 vPixCoord, bool bScaled = false)

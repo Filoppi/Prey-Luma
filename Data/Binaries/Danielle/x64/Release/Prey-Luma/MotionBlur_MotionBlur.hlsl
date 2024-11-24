@@ -7,12 +7,12 @@ cbuffer PER_BATCH : register(b0)
 
 #include "include/CBuffer_PerViewGlobal.hlsl"
 
-SamplerState _tex0_s : register(s0); // Color texture
-SamplerState _tex1_s : register(s1); // Motion Blur Motion Vectors X and Y offsets
-SamplerState _tex2_s : register(s2); // Motion Blur Motion Vectors Length and Depth (actually the same texture as above, probably just a different view, both produced by "PackVelocitiesPS()")
-Texture2D<float4> _tex0 : register(t0);
-Texture2D<float4> _tex1 : register(t1);
-Texture2D<float4> _tex2 : register(t2);
+Texture2D<float4> _tex0 : register(t0); // Color texture
+Texture2D<float4> _tex1 : register(t1); // Motion Blur Motion Vectors X and Y offsets
+Texture2D<float4> _tex2 : register(t2); // Motion Blur Motion Vectors Length and Depth (actually the same texture as above, probably just a different view, both produced by "PackVelocitiesPS()")
+SamplerState _tex0_s : register(s0);
+SamplerState _tex1_s : register(s1);
+SamplerState _tex2_s : register(s2);
 
 #include "include/MotionBlur.hlsl"
 
@@ -51,7 +51,7 @@ float4 MotionBlurPS(float4 WPos, float4 inBaseTC)
  	float2 jitters = float2(projectionMatrix[0][2], projectionMatrix[1][2]);
 #endif
 	
-	// LUMA FT: Motion vectors in "uv space", once multiplied by the rendering resolution, the value here represents the horizontal and vertical pixel offset (encoded to have more precision around smaller values),
+	// LUMA FT: Motion vectors in "uv space". Once multiplied by the rendering resolution, the value here represents the horizontal and vertical pixel offset (encoded to have more precision around smaller values) (so not the max velocity as the name would imply),
 	// a value of 0.3 -2 means that we need to move 0.3 pixels on the x and -2 pixels on the y to find where this texel remapped on the previous frame buffers.
 	float3 maxVel = _tex2.SampleLevel(_tex2_s, inBaseTC.xy + tileOffset * vMotionBlurParams.xy, 0).rgb;
 	maxVel.xy = DecodeMotionVector(maxVel.xy, false, jitters);

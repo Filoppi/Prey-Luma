@@ -23,7 +23,7 @@ void main(
 	if (LumaSettings.DLSS)
 	{
 		uint3 pixelCoord = int3(inWPos.xy, 0);
-		const float depth = GetLinearDepth( PostAA_DeviceDepthTex.Load(pixelCoord).r );
+		const float depth = PostAA_DeviceDepthTex.Load(pixelCoord).r;
 		const float2 currTC = inBaseTC.xy;
 		float2 prevTC = CalcPreviousTC(currTC, depth);
 		float2 velocity = prevTC - currTC;
@@ -93,9 +93,9 @@ void main(
 	uint3 pixelCoord = int3(inWPos.xy, 0);
 	
 #if 0 // LUMA FT: fixed depth buffer not being de-jittered (this is probably wrong)
-	const float depth = GetLinearDepth( PostAA_DeviceDepthTex.Sample(ssPostAALinear, jitteredCurrTC * CV_HPosScale.xy).r );
+	const float depth = PostAA_DeviceDepthTex.Sample(ssPostAALinear, jitteredCurrTC * CV_HPosScale.xy).r;
 #else
-	const float depth = GetLinearDepth( PostAA_DeviceDepthTex.Load(pixelCoord).r );
+	const float depth = PostAA_DeviceDepthTex.Load(pixelCoord).r;
 #endif
 
 #if TEST_TAA_TYPE == 2 // LUMA FT: quick depth test

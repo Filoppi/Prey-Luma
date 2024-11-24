@@ -24,9 +24,9 @@ SamplerState ssPostAALinear : register(s0);
 // LUMA FT: according to CryEngine source code (a different version) this might be the previous scene texture too during scope zoom transitions (though that wouldn't make much sense and it would make everything blurry?)
 Texture2D<float4> PostAA_CurrentSceneTex : register(t0);
 Texture2D<float4> PostAA_PreviousSceneTex : register(t1);
-Texture2D<float> PostAA_DepthTex : register(t2); // LUMA FT: unused. This is the near/far direct depth (0 being the near (or possibly, but not likely, a zero distance from the camera), and 1 being the far)
+Texture2D<float> PostAA_DepthTex : register(t2); // LUMA FT: unused. This is the near/far direct depth (0 being the zero (a zero distance from the camera, not the near), and 1 being the far)
 Texture2D<float2> PostAA_VelocityObjectsTex : register(t3);
-Texture2D<float> PostAA_DeviceDepthTex : register(t16); // LUMA FT: This is the inverse depth (1 being the near (or possibly a zero distance from the camera), and 0 being the far). This is actually a R24G8_TYPELESS, and it's the depth used by the stencil (I think)
+Texture2D<float> PostAA_DeviceDepthTex : register(t16); // LUMA FT: This is the inverse depth (1 being the near, and 0 being the far). This is actually a R24G8_TYPELESS, and it's the depth used by the stencil (I think)
 
 #define FXAA_EXTREME_QUALITY
 
@@ -115,9 +115,9 @@ float2 ReadVelocityObjects(float2 _value)
 	return DecodeMotionVector(_value, VELOCITY_OBJECTS_FLOAT);
 }
 
-float GetLinearDepth(float fDevDepth, bool bScaled = false)
+float GetLinearDepth(float fLinearDepth, bool bScaled = false)
 {
-	return fDevDepth * (bScaled ? CV_NearFarClipDist.y : 1.0f);
+    return fLinearDepth * (bScaled ? CV_NearFarClipDist.y : 1.0f); // Note: dividing by CV_NearFarClipDist.w is possibly more correct
 }
 
 float GetLinearDepth(Texture2D depthTexture, int3 vPixCoord, bool bScaled = false)

@@ -40,7 +40,7 @@ pixout PackVelocitiesPS(vtxOut IN)
 	int3 pixelCoord = int3(IN.WPos.xy, 0);
 	float2 baseTC = MapViewportToRaster(IN.baseTC.xy);
 
-	const float fDepth = GetLinearDepth(_tex0_D3D11, pixelCoord).x; // LUMA FT: this should be the current's frame depth buffer
+	const float fDepth = GetLinearDepth(_tex0_D3D11, pixelCoord).x; // LUMA FT: this is the current's frame linear depth
 	const float3 vPosWS = ReconstructWorldPos(pixelCoord.xy, fDepth);
 
 	// LUMA FT: "mViewProjPrev" is not jittered (it doesn't acknowledge jitters from this or the previous frame), which is kinda fine for MB (probably good!).

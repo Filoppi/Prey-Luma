@@ -15,7 +15,7 @@ void main(
 	if (LumaSettings.DLSS)
 	{
 		uint3 pixelCoord = int3(inWPos.xy, 0);
-		const float depth = GetLinearDepth( PostAA_DeviceDepthTex.Load(pixelCoord).r );
+		const float depth = PostAA_DeviceDepthTex.Load(pixelCoord).r;
 		const float2 currTC = inBaseTC.xy;
 		float2 prevTC = CalcPreviousTC(currTC, depth);
 		float2 velocity = prevTC - currTC;
@@ -39,7 +39,7 @@ void main(
 	uint3 pixelCoord = int3(inWPos.xy, 0);
 	
 	// Compute velocity vector for static geometry
-	const float depth = GetLinearDepth( PostAA_DeviceDepthTex.Load(pixelCoord).r );
+	const float depth = PostAA_DeviceDepthTex.Load(pixelCoord).r;
 
 	const float2 currTC = inBaseTC.xy;
 	const float2 prevTC = CalcPreviousTC(currTC, depth);

@@ -45,9 +45,9 @@ float2 MapViewportToRaster(float2 normalizedViewportPos, bool bOtherEye = false)
 		return normalizedViewportPos * CV_HPosScale.xy;
 }
 
-float GetLinearDepth(float fDevDepth, bool bScaled = false)
+float GetLinearDepth(float fLinearDepth, bool bScaled = false)
 {
-	return fDevDepth * (bScaled ? CV_NearFarClipDist.y : 1.0f);
+    return fLinearDepth * (bScaled ? CV_NearFarClipDist.y : 1.0f); // Note: dividing by CV_NearFarClipDist.w is possibly more correct
 }
 
 //TODOFT: move?

@@ -11,9 +11,9 @@ SamplerState ssDepth : register(s1);
 Texture2D<float4> sourceTex : register(t0);
 Texture2D<float4> depthTex : register(t1);
 
-float GetLinearDepth(float fDevDepth)
+float GetLinearDepth(float fLinearDepth)
 {
-	return fDevDepth;
+    return fLinearDepth;
 }
 
 float4 GetTexture2D(Texture2D tex, SamplerState samplerState, float2 uv) { return tex.Sample(samplerState, uv); }
