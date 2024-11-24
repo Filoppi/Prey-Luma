@@ -5161,6 +5161,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             "\nReShade"
             "\nImGui"
             "\nRenoDX"
+            "\n3Dmigoto"
             "\nDKUtil"
             "\nNvidia (DLSS)"
             "\nOklab"
@@ -5491,7 +5492,6 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
       reshade::register_event<reshade::addon_event::unmap_buffer_region>(OnUnmapBufferRegion);
       reshade::register_event<reshade::addon_event::copy_resource>(OnCopyResource);
       reshade::register_event<reshade::addon_event::copy_texture_region>(OnCopyTextureRegion);
-
 
       reshade::register_event<reshade::addon_event::draw>(OnDraw);
       reshade::register_event<reshade::addon_event::dispatch>(OnDispatch);

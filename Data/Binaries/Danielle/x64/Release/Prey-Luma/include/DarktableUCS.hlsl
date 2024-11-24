@@ -1,3 +1,7 @@
+// Copyright 2022 - Aurélien PIERRE - darktable project
+// Darktable Uniform Color Space (UCS)
+// https://eng.aurelienpierre.com/2022/02/color-saturation-control-for-the-21th-century/
+
 struct s_xyY
 {
   float2 xy;
