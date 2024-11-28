@@ -1046,47 +1046,48 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
           const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading); // Don't lock until now as we didn't access any shared data
           auto& custom_shader = custom_shaders_cache[shader_hash]; // Add default initialized shader
           const bool has_custom_shader = (custom_shaders_cache.find(shader_hash) != custom_shaders_cache.end()) && (custom_shader != nullptr);
-          std::wstring original_file_path_cso;
-          std::wstring trimmed_file_path_cso;
+          std::wstring original_file_path_cso; // Only valid for hlsl files
+          std::wstring trimmed_file_path_cso; // Only valid for hlsl files
+
+          if (is_hlsl) {
+              std::wstring file_path_cso = entry_path.c_str();
+              std::wstring hash_wstring = std::wstring(hash_string.begin(), hash_string.end());
+              if (file_path_cso.ends_with(L".hlsl")) {
+                  file_path_cso = file_path_cso.substr(0, file_path_cso.size() - 5);
+                  file_path_cso += L".cso";
+              }
+              else if (!file_path_cso.ends_with(L".cso")) {
+                  file_path_cso += L".cso";
+              }
+              original_file_path_cso = file_path_cso;
+
+              size_t first_hash_pos = file_path_cso.find(L"0x");
+              if (first_hash_pos != std::string::npos) {
+                  // Remove all the non first shader hashes in the file (and anything in between them)
+                  size_t prev_hash_pos = first_hash_pos;
+                  size_t next_hash_pos = file_path_cso.find(L"0x", prev_hash_pos + 1);
+                  while (next_hash_pos != std::string::npos && (file_path_cso.length() - next_hash_pos) >= 10) {
+                      file_path_cso = file_path_cso.substr(0, prev_hash_pos + 10) + file_path_cso.substr(next_hash_pos + 10);
+                      next_hash_pos = file_path_cso.find(L"0x", next_hash_pos + 1);
+                      prev_hash_pos = next_hash_pos;
+                  }
+                  file_path_cso.replace(first_hash_pos + 2 /*0x*/, HASH_CHARACTERS_LENGTH, hash_wstring.c_str());
+              }
+              trimmed_file_path_cso = file_path_cso;
+          }
+
           if (!has_custom_shader) {
               custom_shader = new CachedCustomShader();
 
               std::size_t preprocessed_hash = custom_shader->preprocessed_hash;
-              const bool should_load_compiled_shader = is_hlsl && !prevent_shader_cache_loading; // If this shader doesn't have an hlsl, we should never read it or save it on disk, there's no need (we can still fall back on the original .cso if needed)
               // Note that if anybody manually changed the config hash, the data here could mismatch and end up recompiling when not needed or skipping recompilation even if needed (near impossible chance)
+              const bool should_load_compiled_shader = is_hlsl && !prevent_shader_cache_loading; // If this shader doesn't have an hlsl, we should never read it or save it on disk, there's no need (we can still fall back on the original .cso if needed)
               if (should_load_compiled_shader && reshade::get_config_value(nullptr, NAME_ADVANCED_SETTINGS.c_str(), &config_name[0], preprocessed_hash)) {
                   // This will load the matching cso
                   // TODO: move these to a sub folder called "cache"? It'd make everything cleaner (and the "CompileCustomShaders()" could simply nuke a directory then, and we could remove the restriction where hlsl files need to have a name in front of the hash),
                   // but it would make it harder to manually remove a single specific shader cso we wanted to nuke for test reasons (especially if we exclusively put the hash in their cso name).
                   // Also it would be a problem due to the custom "native" shaders we have (e.g. "copy") that don't have a target hash they are replacing.
-                  std::wstring file_path_cso = entry_path.c_str();
-                  std::wstring hash_wstring = std::wstring(hash_string.begin(), hash_string.end());
-                  if (file_path_cso.ends_with(L".hlsl")) {
-                      file_path_cso = file_path_cso.substr(0, file_path_cso.size() - 5);
-                      file_path_cso += L".cso";
-                  }
-                  else if (!file_path_cso.ends_with(L".cso")) {
-                      file_path_cso += L".cso";
-                  }
-
-                  original_file_path_cso = file_path_cso;
-
-                  size_t first_hash_pos = file_path_cso.find(L"0x");
-                  if (first_hash_pos != std::string::npos) {
-                      // Remove all the non first shader hashes in the file (and anything in between them)
-                      size_t prev_hash_pos = first_hash_pos;
-                      size_t next_hash_pos = file_path_cso.find(L"0x", prev_hash_pos + 1);
-                      while (next_hash_pos != std::string::npos && (file_path_cso.length() - next_hash_pos) >= 10) {
-                          file_path_cso = file_path_cso.substr(0, prev_hash_pos + 10) + file_path_cso.substr(next_hash_pos + 10);
-                          next_hash_pos = file_path_cso.find(L"0x", next_hash_pos + 1);
-                          prev_hash_pos = next_hash_pos;
-                      }
-                      file_path_cso.replace(first_hash_pos + 2 /*0x*/, HASH_CHARACTERS_LENGTH, hash_wstring.c_str());
-                  }
-
-                  trimmed_file_path_cso = file_path_cso;
-
-                  if (renodx::utils::shader::compiler::LoadCompiledShaderFromFile(custom_shader->code, file_path_cso.c_str())) {
+                  if (renodx::utils::shader::compiler::LoadCompiledShaderFromFile(custom_shader->code, trimmed_file_path_cso.c_str())) {
                       // If both reading the pre-processor hash from config and the compiled shader from disk succeeded, then we are free to continue as if this shader was working
                       custom_shader->file_path = entry_path;
                       custom_shader->is_hlsl = is_hlsl;
@@ -1189,11 +1190,13 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
                   !prevent_shader_cache_saving,
                   error,
                   &custom_shader->compilation_error,
-                  trimmed_file_path_cso.c_str() );
+                  trimmed_file_path_cso.c_str());
+              ASSERT_ONCE(!trimmed_file_path_cso.empty()); // If we got here, this string should always be valid, as it means the shader read from disk was an hlsl
 
               // Ugly workaround to avoid providing the shader compiler a custom name for CSO files, given we trim their name from multiple hashes that the HLSL original path might have
               if (!prevent_shader_cache_saving && !original_file_path_cso.empty() && original_file_path_cso != trimmed_file_path_cso) {
                   if (std::filesystem::is_regular_file(original_file_path_cso)) {
+                      ASSERT_ONCE(false); // This shouldn't happen anymore unless the shader was manually created or named
                       std::filesystem::remove(trimmed_file_path_cso);
                       std::filesystem::rename(original_file_path_cso, trimmed_file_path_cso);
                   }
