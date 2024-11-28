@@ -411,7 +411,7 @@ std::string shaders_compilation_errors; // errors and warning log
 // List of define values read by our settings shaders
 std::unordered_map<std::string, uint8_t> code_shaders_defines;
 // These default should ideally match shaders values, but it's not necessary because whathever the default values they have they will be overridden
-// TODO: add grey out conditions (another define, by name, whether its value is > 0), and also add min/max values range (to limit the user insertable values)
+// TODO: add grey out conditions (another define, by name, whether its value is > 0), and also add min/max values range (to limit the user insertable values), and "category"
 std::vector<ShaderDefineData> shader_defines_data = {
   {"DEVELOPMENT", DEVELOPMENT ? '1' : '0', true, DEVELOPMENT ? false : true, "Enables some development/debug features that are otherwise not allowed"}, // development_define_index
   {"POST_PROCESS_SPACE_TYPE", '1', true, false, "0 - Gamma space\n1 - Linear space\n2 - Linear space until UI (then gamma space)\n\nSelect \"2\" if you want the UI to look exactly like it did in Vanilla\nSelect \"1\" for the highest possible quality (e.g. color accuracy, banding, DLSS)"}, // post_process_space_define_index
@@ -692,7 +692,6 @@ std::string GetResourceNameByViewHandle(DeviceData& data, uint64_t handle) {
 }
 #endif
 
-// TODO: use the git repository "Data" shaders directory if "DEVELOPMENT" is on?
 std::filesystem::path GetShaderPath() {
   // NOLINTNEXTLINE(modernize-avoid-c-arrays)
   wchar_t file_path[MAX_PATH] = L"";
@@ -1456,7 +1455,7 @@ void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = st
   }
 }
 
-// TODO: optmize
+// TODO: optimize
 std::optional<std::string> ReadTextFile(const std::filesystem::path& path) {
   std::vector<uint8_t> data;
   std::optional<std::string> result;
@@ -1481,8 +1480,7 @@ std::aligned_storage_t<1U << 18, std::max<size_t>(alignof(FILE_NOTIFY_EXTENDED_I
 
 void CALLBACK HandleEventCallback(DWORD error_code, DWORD bytes_transferred, LPOVERLAPPED overlapped) {
   reshade::log::message(reshade::log::level::info, "Live callback.");
-  // TODO: only re-load the shaders that were changed to improve performance, and also verify this is safe (we kinda already do as we have the preprocessor to check them, checking a single file isn't enough as they have includes).
-  // Replacing shaders from another thread at a random time could break as we need to wait one frame or the pipeline binding could hang.
+  // TODO: verify this is safe. Replacing shaders from another thread at a random time could break as we need to wait one frame or the pipeline binding could hang.
   LoadCustomShaders();
   // Trigger the watch again as the event is only triggered once
   ToggleLiveWatching();
@@ -1726,7 +1724,6 @@ void OnInitSwapchain(reshade::api::swapchain* swapchain) {
   if (SUCCEEDED(hr)) {
       output_resolution.x = swapchain_desc.BufferDesc.Width;
       output_resolution.y = swapchain_desc.BufferDesc.Height;
-      //ASSERT_ONCE(output_resolution.x != output_resolution.y); // Square resolutions are NOT supported on the swapchain by Luma, as we use that information to identify if some passes are shadow map projections (separate views) //TODOFT: delete? we aren't relying on this assumption anymore
       render_resolution.x = output_resolution.x;
       render_resolution.y = output_resolution.y;
   }
@@ -2708,7 +2705,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
           }
       }
       if (!has_drawn_main_post_processing) {
-          //TODO LUMA: optimize these shader searches by simply marking "CachedPipeline" with a tag on what they are (and whether they have a particular role) (also we can restrict the search to pixel shaders)
+          // TODO: optimize these shader searches by simply marking "CachedPipeline" with a tag on what they are (and whether they have a particular role) (also we can restrict the search to pixel shaders)
           // This is the last known pass that is guaranteed to run before UI draws in
           for (auto shader_hash : shader_hashes_PostAAComposites) {
               if (std::find(original_shader_hashes.begin(), original_shader_hashes.end(), shader_hash) != original_shader_hashes.end()) {
@@ -2786,18 +2783,18 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
 #if ENABLE_NGX
       // Don't even try to run DLSS if we have no custom shaders loaded, we need them for DLSS to work properly (it might somewhat work even without them, but it's untested and unneeded)
       if (is_custom_pass && dlss_sr && cloned_pipeline_count != 0) {
-          //TODOFT (TODO LUMA): make sure DLSS lets scRGB colors pass through...
-          //TODOFT: skip SMAA edge detection and edge AA passes, or just disable SMAA in menu settings (make sure the game defaults to TAA from config)
+          //TODOFT (TODO): make sure DLSS lets scRGB colors pass through...
+          //TODOFT3: skip SMAA edge detection and edge AA passes, or just disable SMAA in menu settings (make sure the game defaults to TAA from config)
 
-          //TODO LUMA: add DLSS transparency mask (e.g. glass, decals, emissive) by caching the g-buffers before and after transparent stuff draws near the end?
-          //TODO LUMA: add DLSS bias mask (to ignore animated textures) by marking up some shaders(materials)/textures hashes with it?
-          //TODO LUMA: move DLSS before tonemapping, depth of field, bloom and blur. It wouldn't be easy because exposure is calculated after blur in CryEngine,
-          //but we could simply fall back on using DLSS Auto Exposure (even if that wouldn't match the actual value used by post processing...).
-          //To achieve that, we need to add both DRS+DLSS scaling support to all shaders that run after DLSS, as DLSS would upscale the image before the final upscale pass (and native TAA would be skipped).
-          //Sun shafts and lens optics effects would (actually, could) draw in native resolution after upscaling then.
-          //Overall that solution has no downsides other than the difficulty of running multiple passes at a different resolution (which really isn't hard as we already have a set up for it).
-          //TODO LUMA: increase the number of Halton sequence phases when there's no camera rotation happening, in movement it can benefit from being lower, but when steady (or rotating the camera only, which conserves most of the TAA history),
-          //a higher phase count can drastically improve the quality.
+          // TODO: add DLSS transparency mask (e.g. glass, decals, emissive) by caching the g-buffers before and after transparent stuff draws near the end?
+          // TODO: add DLSS bias mask (to ignore animated textures) by marking up some shaders(materials)/textures hashes with it?
+          // TODO: move DLSS before tonemapping, depth of field, bloom and blur. It wouldn't be easy because exposure is calculated after blur in CryEngine,
+          // but we could simply fall back on using DLSS Auto Exposure (even if that wouldn't match the actual value used by post processing...).
+          // To achieve that, we need to add both DRS+DLSS scaling support to all shaders that run after DLSS, as DLSS would upscale the image before the final upscale pass (and native TAA would be skipped).
+          // Sun shafts and lens optics effects would (actually, could) draw in native resolution after upscaling then.
+          // Overall that solution has no downsides other than the difficulty of running multiple passes at a different resolution (which really isn't hard as we already have a set up for it).
+          // TODO: increase the number of Halton sequence phases when there's no camera rotation happening, in movement it can benefit from being lower, but when steady (or rotating the camera only, which conserves most of the TAA history),
+          // a higher phase count can drastically improve the quality.
           
           // We do DLSS after some post processing (e.g. exposure, tonemap, color grading, bloom, blur, objects highlight, sun shafts, other possible AA forms, etc) because running it before post processing
           // would be harder (we'd need to collect more textures manually and manually skip all later AA steps), most importantly, that wouldn't work with the native dynamic resolution the game supports (without changing every single
@@ -2921,8 +2918,8 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                           static float previous_dlss_exposure_val = dlss_exposure_val;
                           exposure_changed = dlss_exposure_val != previous_dlss_exposure_val;
                           previous_dlss_exposure_val = dlss_exposure_val;
-                          //TODO LUMA: optimize this for the "DLSS_RELATIVE_PRE_EXPOSURE" false case! Avoid re-creating the texture every frame the exposure changes and instead make it dynamic and re-write it from the CPU? Or simply make our exposure calculation shader write to a texture directly
-                          //(though in that case it wouldn't have the same delay as the CPU side pre-exposure buffer readback)
+                          // TODO: optimize this for the "DLSS_RELATIVE_PRE_EXPOSURE" false case! Avoid re-creating the texture every frame the exposure changes and instead make it dynamic and re-write it from the CPU? Or simply make our exposure calculation shader write to a texture directly
+                          // (though in that case it wouldn't have the same delay as the CPU side pre-exposure buffer readback)
                           if (!dlss_exposure.get() || exposure_changed) {
                               D3D11_TEXTURE2D_DESC exposure_texture_desc; // DLSS fails if we pass in a 1D texture so we have to make a 2D one
                               exposure_texture_desc.Width = 1;

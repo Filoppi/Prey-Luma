@@ -43,7 +43,7 @@ float UIColorIntensity(float3 Color, bool LinearSpace = false)
 
 float4 ConditionalLinearizeUI(float4 UIColor, bool PreMultipliedAlphaByAlpha = false, bool ForceStraightAlphaBlend = false)
 {
-	// Luma FT: In this case, the game is likely drawing on scene/world interactive computers that use Scaleform UI
+	// LUMA FT: In this case, the game is likely drawing on scene/world interactive computers that use Scaleform UI
 	// (it's the first thing it does every frame, so as long as we are before "PostAAComposites", we know that'd be the case).
 	// They'd be drawn in gamma space and then linearized in the scene with an sRGB texture view.
 	// There's a good chance the developers developed these on a gamma 2.2 screen and thus the texture would be meant to be linearized with

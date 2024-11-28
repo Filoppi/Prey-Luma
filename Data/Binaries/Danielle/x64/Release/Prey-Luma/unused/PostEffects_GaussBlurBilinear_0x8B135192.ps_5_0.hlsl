@@ -9,6 +9,7 @@ Texture2D<float4> _tex0 : register(t0);
 
 // LUMA: Unchanged.
 // This blurs the image. It's run after upscaling (and usually after TexToTexSampledPS), so it supports DLSS fine and doesn't need any "CV_HPosScale"/"MapViewportToRaster()" adjustments.
+// It seems like it generally handles different aspect ratios correctly.
 void main(
   float4 HPosition : SV_Position0,
   float4 tc0 : TEXCOORD0,

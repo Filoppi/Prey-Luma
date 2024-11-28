@@ -115,7 +115,6 @@ pixout PackVelocitiesPS(vtxOut IN)
 	
 	OUT.Color.xy = EncodeMotionVector(vVelocity);
 	OUT.Color.z = sqrt(length(vVelocity.xy) * 32.0f);
-	OUT.Color.w = fDepth * CV_NearFarClipDist.y / 255.0f;
-
+    OUT.Color.w = fDepth * CV_NearFarClipDist.y / 255.0f;
 	return OUT; 
 }

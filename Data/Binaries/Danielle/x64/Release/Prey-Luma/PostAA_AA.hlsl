@@ -117,7 +117,7 @@ float2 ReadVelocityObjects(float2 _value)
 
 float GetLinearDepth(float fLinearDepth, bool bScaled = false)
 {
-    return fLinearDepth * (bScaled ? CV_NearFarClipDist.y : 1.0f); // Note: dividing by CV_NearFarClipDist.w is possibly more correct
+    return fLinearDepth * (bScaled ? CV_NearFarClipDist.y : 1.0f);
 }
 
 float GetLinearDepth(Texture2D depthTexture, int3 vPixCoord, bool bScaled = false)

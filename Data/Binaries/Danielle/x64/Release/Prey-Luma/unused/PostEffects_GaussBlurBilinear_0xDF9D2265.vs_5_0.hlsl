@@ -1,5 +1,3 @@
-
-
 cbuffer PER_INSTANCE : register(b1)
 {
   float4 PI_psOffsets[16] : packoffset(c0);
@@ -8,7 +6,8 @@ cbuffer PER_INSTANCE : register(b1)
 #include "include/CBuffer_PerViewGlobal.hlsl"
 
 // LUMA: Unchanged
-//TODOFT: when does this run? Does it need DLSS support (CV_HPosScale/MapViewportToRaster())? Probably not
+// This blurs the image. It's run after upscaling (and usually after TexToTexSampledPS), so it supports DLSS fine and doesn't need any "CV_HPosScale"/"MapViewportToRaster()" adjustments.
+// It seems like it generally handles different aspect ratios correctly.
 void main(
   float4 v0 : POSITION0,
   float2 v1 : TEXCOORD0,

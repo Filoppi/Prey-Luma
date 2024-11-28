@@ -100,7 +100,7 @@ float4 RCAS(uint3 pixelCoord, float sharpness, Texture2D<float4> linearColorText
     float3 hitMin = minRGB * rcp(samplesNum * maxRGB);
     float3 hitMax = (peakC.xxx - maxRGB) * rcp(samplesNum * minRGB + peakC.yyy);
     float3 lobeRGB = max(-hitMin, hitMax);
-    float lobe = max(-RCAS_LIMIT, min(max(lobeRGB.r, max(lobeRGB.g, lobeRGB.b)), 0.0)) * sharpness;
+    float lobe = max(-RCAS_LIMIT, min(max(lobeRGB.r, max(lobeRGB.g, lobeRGB.b)), 0.0)) * sharpness; //TODOFT4: tweak RCAS_LIMIT
     
 #if RCAS_DENOISE >= 1
     // denoise
