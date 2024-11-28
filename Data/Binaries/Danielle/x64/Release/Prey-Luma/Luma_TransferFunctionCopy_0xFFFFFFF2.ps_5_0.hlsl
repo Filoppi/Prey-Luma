@@ -13,7 +13,7 @@ float4 main(float4 pos : SV_Position0) : SV_Target0
 	// SDR: In this case, paper white (game and UI) would have been 80 nits (neutral for SDR, thus having a value of 1)
 	if (LumaSettings.DisplayMode == 0)
 	{
-		color.rgb = saturate(color.rgb); // Optional, but saves performance on the gamma pows below
+		color.rgb = saturate(color.rgb); // Optional, but saves performance on the gamma pows below (the vanilla SDR tonemapper might have retained some values beyond 1 so we want to clip them anyway, for a "reliable" SDR look)
 
 #if POST_PROCESS_SPACE_TYPE == 1
 		// Revert whatever gamma adjustment "GAMMA_CORRECTION_TYPE" would have made, and get the color is sRGB gamma encoding (which would have been meant for 2.2 displays)
@@ -77,6 +77,11 @@ float4 main(float4 pos : SV_Position0) : SV_Target0
 		color.rgb *= paperWhite;
 
 #endif // POST_PROCESS_SPACE_TYPE != 1
+
+#if 0 // Optionally clip in SDR to properly emulate SDR
+		if (LumaSettings.DisplayMode == 1)
+			color.rgb = saturate(color.rgb);
+#endif
 	}
 	// This case means the game currently doesn't have Luma custom shaders built in (fallback in case of problems), so the value of most macro defines doesn't matter (we don't want it to)
 	else

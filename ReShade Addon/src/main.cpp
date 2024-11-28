@@ -2156,7 +2156,8 @@ void OnPresent(
     // We don't always lock "s_mutex_shader_defines" here as it wouldn't be particularly relevant.
     bool shader_defines_need_linearization = shader_defines_data[post_process_space_define_index].GetNumericalCompiledValue() != 1;
     bool shader_defines_need_gamma_correction = shader_defines_data[post_process_space_define_index].GetNumericalCompiledValue() == 1 && shader_defines_data[gamma_correction_define_index].GetNumericalCompiledValue() >= 2;
-    if (shader_defines_need_linearization || shader_defines_need_gamma_correction || cloned_pipeline_count == 0) {
+    bool display_mode_needs_gamma_correction = cb_luma_frame_settings.DisplayMode == 0; // SDR on SDR Display on scRGB HDR Swapchain needs Gamma 2.2/sRGB mismatch correction
+    if (shader_defines_need_linearization || shader_defines_need_gamma_correction || display_mode_needs_gamma_correction || cloned_pipeline_count == 0) {
         const std::lock_guard<std::recursive_mutex> lock_shader_objects(s_mutex_shader_objects);
         if (copy_vertex_shader && transfer_function_copy_pixel_shader) {
             IDXGISwapChain* native_swapchain = (IDXGISwapChain*)(swapchain->get_native());
