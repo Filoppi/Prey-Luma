@@ -1,8 +1,15 @@
-
-#include "include/external/XeGTAO.hlsl"
 #include "include/Common.hlsl"
 
+#define PREMULTIPLY_BENT_NORMALS 1
+#define XE_GTAO_ENABLE_DENOISE ENABLE_SSAO_DENOISE
+#define XE_GTAO_ENCODE_BENT_NORMALS 0
+#include "include/XeGTAO.hlsl"
+
 #include "include/CBuffer_PerViewGlobal.hlsl"
+
+#if _944B65F0
+#define _RT_SAMPLE0 1
+#endif
 
 cbuffer CBSSDO : register(b0)
 {
@@ -13,15 +20,10 @@ cbuffer CBSSDO : register(b0)
   } cbSSDO : packoffset(c0);
 }
 
-#if ENABLE_SSAO_TEMPORAL
-// LUMA FT: added these as they are needed to get the frame index and game time and frame delta time
-#include "include/CBuffer_PerFrame.hlsl"
-#endif // ENABLE_SSAO_TEMPORAL
-
-SamplerState ssSSDODepth : register(s0);
-Texture2D<float4> _tex0_D3D11 : register(t0);
-Texture2D<float4> _tex1_D3D11 : register(t1); // The linear depth (previously converted from the device g-buffer depth) (0 near 1 far). R32F
-Texture2D<float4> _tex2_D3D11 : register(t2); // The "lower quality" half resolution linear depth (previously converted from the device g-buffer depth). RGBA16F (all channels are seemengly the same)
+SamplerState ssSSDODepth : register(s0); // MIN_MAG_MIP_POINT CLAMP (as expected from SSDO and GTAO)
+Texture2D<float4> _tex0_D3D11 : register(t0); // Normal maps
+Texture2D<float4> _tex1_D3D11 : register(t1); // The linear (non inverted) depth (previously converted from the device g-buffer depth) (0 is zero (not near), 1 far). R32F. Always set. Only drawn in the top left portion of the image if we have a render resolution scale
+Texture2D<float4> _tex2_D3D11 : register(t2); // The "lower quality" half resolution linear depth (previously converted from the device g-buffer depth). RGBA16F (all channels are seemengly the same). Always set. Only drawn in the top left portion of the image if we have a render resolution scale
 
 float2 MapViewportToRaster(float2 normalizedViewportPos, bool bOtherEye = false)
 {
@@ -30,12 +32,13 @@ float2 MapViewportToRaster(float2 normalizedViewportPos, bool bOtherEye = false)
 
 float3 DecodeGBufferNormal( float4 bufferA )
 {
-	return normalize( bufferA.xyz * 2.0 - 1.0 );
+	// Normalization is needed on decoding as values would have been approximated in low precision buffers
+	return normalize( bufferA.xyz * 2.0 - 1.0 ); // From 0|1 range to -1|+1
 }
 
-float GetLinearDepth(float fDevDepth, bool bScaled = false)
+float GetLinearDepth(float fLinearDepth, bool bScaled = false)
 {
-	return fDevDepth * (bScaled ? CV_NearFarClipDist.y : 1.0f);
+    return fLinearDepth * (bScaled ? CV_NearFarClipDist.y : 1.0f);
 }
 
 float GetLinearDepth(Texture2D depthTexture, int3 vPixCoord, bool bScaled = false)
@@ -57,155 +60,150 @@ float4 SSDOFetchDepths(Texture2D<float4> _texture, float4 tc[samplesGroupNum/2],
 	              _texture.SampleLevel(ssSSDODepth, tc[1].zw, 0)[component] );
 }
 
-#if DEVELOPMENT
-float4 GTAO(float4 WPos, float4 inBaseTC)
-{
-	//TODOFT1: best define all params and temporal/denoising, force asd.
-	static const uint frameCounter = 0;
-	static const float2 localNoise = float2(0.5, 0.5);
-	//static const float2 localNoise = 0.0;
-#if SSAO_QUALITY <= -1
-	static const float sliceCount = 1;
-	static const float stepsPerSlice = 2;
-#elif SSAO_QUALITY == 0
-	static const float sliceCount = 2;
-	static const float stepsPerSlice = 2;
+float4 GTAO(float4 WPos, float4 inBaseTC, out float edges)
+{	
+#if SSAO_QUALITY <= 0
+	static const float sliceCount = 2; // This can't be lower than 2. Values beyond 3 have diminishing returns, but drastically reduce noise.
+	static const float stepsPerSlice = 2; // This can go as low as 0 but values below 1 make no sense. Increasing this value will make AO darker unless we counter adjust its strength. Values beyond 4-5 have diminishing returns.
 #elif SSAO_QUALITY == 1
-	static const float sliceCount = 3;
+	static const float sliceCount = 3; // We could possibly settle for 4-5
 	static const float stepsPerSlice = 3;
 #elif SSAO_QUALITY >= 2
-	static const float sliceCount = 9;
+	static const float sliceCount = 7; // 6-7 is good for high quality. XeGTAO highest quality preset went up to 9, but that seems like overkill.
 	static const float stepsPerSlice = 3;
 #endif
-	static const uint denoisePasses = 0;
 	
 	GTAOConstants consts;
+
+#if ENABLE_SSAO_TEMPORAL && ENABLE_SSAO_DENOISE
+	const uint frameCounter = LumaSettings.FrameIndex;
+	static const uint denoisePasses = 1; // Match this with how many times the denoiser pass will later run: "0: disabled, 1: sharp, 2: medium, 3: soft".
+#elif ENABLE_SSAO_DENOISE
+	static const uint frameCounter = 0;
+	static const uint denoisePasses = 1;
+#else
+	static const uint frameCounter = 0;
+	static const uint denoisePasses = 0;
+#endif
 	
 	row_major float4x4 projectionMatrix = mul( CV_ViewProjMatr, CV_InvViewMatr ); // The current projection matrix used to be stored in "CV_PrevViewProjMatr" in vanilla Prey
 
-#if 0 // Identical but slower option (it requires "projectionMatrix" to be calculated) //TODOFT: actually, this looks less broken?
-	bool rowMajor = true; //TODOFT
-	float depthLinearizeMul = rowMajor ? (-projectionMatrix[2][3]) : (-projectionMatrix[3][2]);     // float depthLinearizeMul = ( clipFar * clipNear ) / ( clipFar - clipNear );
-	float depthLinearizeAdd = projectionMatrix[2][2];     // float depthLinearizeAdd = clipFar / ( clipFar - clipNear );
-    consts.DepthUnpackConsts = float2(depthLinearizeMul, depthLinearizeAdd);
-#elif 0
-    float depthLinearizeMul = ( CV_NearFarClipDist.y * CV_NearFarClipDist.x ) / ( CV_NearFarClipDist.y - CV_NearFarClipDist.x );
-    float depthLinearizeAdd = CV_NearFarClipDist.y / ( CV_NearFarClipDist.y - CV_NearFarClipDist.x );
-    consts.DepthUnpackConsts = float2(depthLinearizeMul, depthLinearizeAdd);
-#else // Do this given it's unused atm (due to flags)
-	consts.DepthUnpackConsts = float2(1, 0); // Multiplier (scale, x/depth) and addend (offset, depth+y)
-#endif
-    //consts.DepthUnpackConsts = CV_NearFarClipDist.xy; //TODOFT
+	//TODO LUMA: do this in shader cbuffer or vertex shader? As optimization? It's mostly fine here
+	//TODOFT5: investigate whether the AO color bleeding implementation is good for GTAO (see "AOColorBleedRT"), it seems like it simply prevents AO from applying on bright diffuse color objects but that makes no sense?
 
-#if 0 //TODOFT: DRS
-	consts.ViewportSize = round(CV_ScreenSize.xy / CV_HPosScale.xy); // Round to make sure its an integer (this is probably unnecessary but we do it for extra safety)
-	consts.ViewportPixelSize = CV_ScreenSize.zw * 2.0; // These already have "CV_HPosScale.xy" baked in
-#else // This already supports DRS (I think)
-	consts.ViewportSize = round(CV_ScreenSize.xy);
-	consts.ViewportPixelSize = 1.0 / CV_ScreenSize.xy;
+#if 1 // The depth in this pass was already linearized (with far matching a value of 1 and the camera origin matching a value of 0), so all we need to do is multiply by the far distance
+	consts.DepthFar = CV_NearFarClipDist.y;
+#elif 1
+	float depthLinearizeMul = -projectionMatrix[2][3]; // float depthLinearizeMul = ( clipFar * clipNear ) / ( clipFar - clipNear );
+	float depthLinearizeAdd = projectionMatrix[2][2]; // float depthLinearizeAdd = clipFar / ( clipFar - clipNear );
+	if (depthLinearizeMul * depthLinearizeAdd < 0)
+		depthLinearizeAdd = -depthLinearizeAdd;
+	consts.DepthUnpackConsts = float2(depthLinearizeMul, depthLinearizeAdd);
+#else // This seems to be slightly less accurate and more unstable (the y far is dived by the max view distance (it seems to be a relative multiplier of 10), which is different from the far, so the result is different), and requires the depth to be inverted after sampling
+   	float depthLinearizeMul = (CV_NearFarClipDist.y * CV_NearFarClipDist.x) / (CV_NearFarClipDist.y - CV_NearFarClipDist.x);
+    float depthLinearizeAdd = CV_NearFarClipDist.y / (CV_NearFarClipDist.y - CV_NearFarClipDist.x);
+    consts.DepthUnpackConsts = float2(depthLinearizeMul, depthLinearizeAdd);
 #endif
+
+#if 0 // Unused by GTAO
+	consts.ViewportSize = round(CV_ScreenSize.xy * CV_HPosScale.xy); // Round to make sure its an integer (this is probably unnecessary but we do it for extra safety). This already supports DRS (I think)
+#endif
+	consts.ViewportPixelSize = 1.0 / CV_ScreenSize.xy; // These already have "CV_HPosScale.xy" baked in
+	consts.RenderResolutionScale = CV_HPosScale.xy;
+	consts.SampleUVClamp = CV_HPosClamp.xy;
 	consts.DenoiseBlurBeta = (denoisePasses==0) ? 1e4f : 1.2f; 
 	consts.NoiseIndex = (denoisePasses>0) ? (frameCounter % 64) : 0;
-	consts.FinalValuePower = XE_GTAO_DEFAULT_FINAL_VALUE_POWER;
+	consts.FinalValuePower = 0.4125 / (stepsPerSlice ? sqrt(stepsPerSlice / 3.0) : 1); // Higher values make AO darker. We modulate by "stepsPerSlice" to keep the intensity consistent.
 	consts.DepthMIPSamplingOffset = XE_GTAO_DEFAULT_DEPTH_MIP_SAMPLING_OFFSET;
-	consts.ThinOccluderCompensation = XE_GTAO_DEFAULT_THIN_OCCLUDER_COMPENSATION;
+	consts.ThinOccluderCompensation = XE_GTAO_DEFAULT_THIN_OCCLUDER_COMPENSATION; // XeGTAO default is zero (none). We found that to be fine for Prey too.
 	consts.SampleDistributionPower = XE_GTAO_DEFAULT_SAMPLE_DISTRIBUTION_POWER;
 	consts.EffectFalloffRange = XE_GTAO_DEFAULT_FALLOFF_RANGE;
+#if 0
 	consts.RadiusMultiplier = XE_GTAO_DEFAULT_RADIUS_MULTIPLIER;
-#if 1
-	consts.EffectRadius = 0.5f; // Default copied from GTAO code
-#else
-	// Retrieve back the original radius ("r_ssdoRadius" cvar, defaulted to ~1.2).
+	consts.EffectRadius = 0.5f * CV_HPosScale.y; // Default copied from GTAO code
+#else // We found that using the game's native radius looks best and more in line with SSDO
+	consts.RadiusMultiplier = 1.0f;
+	// Retrieve back the original radius given it was pre-multiplied by these factors ("r_ssdoRadius" cvar, defaulted to ~1.2).
 	// Note that SSDO also multiplied the radius by 0.15 for some bands.
 	float2 radius = (cbSSDO.ssdoParams.xy / float2(projectionMatrix[0][0], projectionMatrix[1][1])) * 2.0 * CV_NearFarClipDist.y;
 	consts.EffectRadius = lerp(radius.x, radius.y, 0.5); // Take the average of x and y given that GTAO doesn't differentiate on them (if our calculations were correct, both x and y radiuses would have been identical anyway).
 #endif
-	consts.Padding0 = 0.0;
 	
-#if 1 // Identical but faster option (assuming we already used "projectionMatrix" for anything else)
+#if 1 // Identical but faster option (if we calculated "projectionMatrix" for any other reason), possibly more reliable
 	float tanHalfFOVY = 1.f / projectionMatrix[1][1];
 	float tanHalfFOVX = 1.f / projectionMatrix[0][0];
-	if (LumaSettings.DevSetting07 <= 0.25 || LumaSettings.DevSetting07 >= 0.75)
-	{
-		 tanHalfFOVY = 0.5f / projectionMatrix[1][1];
-		 tanHalfFOVX = 0.5f / projectionMatrix[0][0];
-	}
 #else
 	float FOVX = 1.f / CV_ProjRatio.z;
-	float inverseAspectRatio = (float)CV_ScreenSize.z / (float)CV_ScreenSize.w; // Theoretically the projection matrix aspect ratio always matches the screen aspect ratio //TODOFT: is this the right formula or does it bake in "CV_HPosScale.xy"?
+	float inverseAspectRatio = (float)CV_ScreenSize.z / (float)CV_ScreenSize.w; // Theoretically the projection matrix aspect ratio always matches the screen aspect ratio
     float tanHalfFOVX = tan( FOVX * 0.5f );
     float tanHalfFOVY = tanHalfFOVX * inverseAspectRatio;
 #endif
     consts.CameraTanHalfFOV             = float2( tanHalfFOVX, tanHalfFOVY );
 
-#if 0 // LUMA FT: random test... (looks worse)
-    consts.NDCToViewMul                 = float2( consts.CameraTanHalfFOV.x * 2.0f, consts.CameraTanHalfFOV.y * 2.0f );
-    consts.NDCToViewAdd                 = float2( consts.CameraTanHalfFOV.x * -1.0f, consts.CameraTanHalfFOV.y * -1.0f );
-#else
+#if 1 // Flip Y view (GTAO default/suggested calculations)
     consts.NDCToViewMul                 = float2( consts.CameraTanHalfFOV.x * 2.0f, consts.CameraTanHalfFOV.y * -2.0f );
-    consts.NDCToViewAdd                 = float2( consts.CameraTanHalfFOV.x * -1.0f, consts.CameraTanHalfFOV.y * 1.0f );
+    consts.NDCToViewAdd                 = float2( -consts.CameraTanHalfFOV.x, consts.CameraTanHalfFOV.y );
+	static const float3 normalsConversion = float3(1, 1, -1);
+#else // Flip X view (this seems to work equally but it feels weirder). Flipping both might also work with a different "normalsConversion" value, but there's no need to go there.
+    consts.NDCToViewMul                 = float2( consts.CameraTanHalfFOV.x * -2.0f, consts.CameraTanHalfFOV.y * 2.0f );
+    consts.NDCToViewAdd                 = float2( consts.CameraTanHalfFOV.x, -consts.CameraTanHalfFOV.y );
+	static const float3 normalsConversion = float3(-1, -1, -1);
 #endif
     consts.NDCToViewMul_x_PixelSize     = consts.NDCToViewMul * consts.ViewportPixelSize;
+	
+	float2 localNoise = (denoisePasses > 0) ? SpatioTemporalNoise(WPos.xy, consts.NoiseIndex) : 0; // "ENABLE_SSAO_DENOISE"
 
 	Texture2D<float4> depthTexture;
-#if _RT_SAMPLE0 //TODOFT: add support for "_tex2_D3D11" half res AO (all is run at half res) (the full res is always bound anyway)
+#if _RT_SAMPLE0 // GTAO always samples depth with 0-1 UVs so the half res depth should natively work (though the gather samples will return depths that are further away than it expects) (the full res is always bound anyway)
 	depthTexture = _tex2_D3D11;
 #else // !_RT_SAMPLE0
 	depthTexture = _tex1_D3D11;
 #endif // _RT_SAMPLE0
 
-	//static const float3 normalsConversion = float3(1, -1, -1); //TODOFT: flip x too?
-	/*static*/ const float3 normalsConversion = float3(LumaSettings.DevSetting01 * 2 - 1, -(LumaSettings.DevSetting02 * 2 - 1), -(LumaSettings.DevSetting03 * 2 - 1));
 	float3 normal = DecodeGBufferNormal( _tex0_D3D11.Load(float3(WPos.xy, 0)) );
-	float3 normalViewSpace = normal; // View Space normals
-	if (LumaSettings.DevSetting07 >= 0.5)
-	{
-		normalViewSpace = normalize( mul( CV_ViewMatr, float4(normal, 0) ).xyz ) * normalsConversion; // View Space normals
-	}
+	float3 normalViewSpace = normalize( mul( CV_ViewMatr, float4(normal, 0) ).xyz ) * normalsConversion; // From world space to view Space normals
 
-	// Our linearized (non device) depth buffer is NOT inverted, so "XE_GTAO_DEPTH_TEXTURE_INVERTED" is not needed, but it's normalized in near/far space, so "XE_GTAO_DEPTH_TEXTURE_LINEAR" is needed (actually we don't).
-	float4 outColor = XeGTAO_MainPass(WPos.xy, sliceCount, stepsPerSlice, localNoise, normalViewSpace, consts, depthTexture, ssSSDODepth);
-	
-#if 1 //TODOFT: move this?
-	if (LumaSettings.DevSetting04 >= 0.5) // Seems good!
-	{
-		if (LumaSettings.DevSetting05 >= 2.0 / 3.0) // Bad branch??? Seems like the best!!!
-		{
-			outColor.xyz = (outColor.xyz - 0.5) * 2.0f; // From 0|1 range to -1|+1
-		}
-		else if (LumaSettings.DevSetting05 >= 1.0 / 3.0) // Best branch??? Actually, no conversion is needed at all!!!
-		{
-			outColor.xyz = outColor.xyz * 0.5 + 0.5; // From -1|+1 range to 0|1
-		}
-		outColor.xyz = mul( CV_InvViewMatr, float4(outColor.xyz * normalsConversion, 0) ).xyz;
-		if (LumaSettings.DevSetting05 >= 2.0 / 3.0)
-		{
-			outColor.xyz = outColor.xyz * 0.5 + 0.5; // From -1|+1 range to 0|1
-		}
-	}
+	float4 bentNormalsAndOcclusion = XeGTAO_MainPass(WPos.xy, sliceCount, stepsPerSlice, localNoise, normalViewSpace, consts, depthTexture, ssSSDODepth, edges);
+	bentNormalsAndOcclusion.xyz = mul( CV_InvViewMatr, float4(bentNormalsAndOcclusion.xyz * normalsConversion, 0) ).xyz; // From view space to world Space (bent) normals
+
+#if TEST_SSAO
+  	bentNormalsAndOcclusion.a *= LumaSettings.DevSetting06 * 2;
 #endif
-	//TODOFT: quick test
-  	//outColor.a = LumaSettings.DevSetting06;
-  	outColor.a *= LumaSettings.DevSetting06 * 2;
-	
-#if !ENABLE_SSAO
-  	outColor.a = 0;
-#endif // !ENABLE_SSAO
-	return outColor;
+
+#if PREMULTIPLY_BENT_NORMALS
+	if (denoisePasses <= 0) // It's done in the last denoise pass otherwise
+		bentNormalsAndOcclusion.xyz *= bentNormalsAndOcclusion.a;
+#endif
+
+    bentNormalsAndOcclusion.xyz = bentNormalsAndOcclusion.xyz * 0.5 + 0.5; // Encode: From -1|+1 range to 0|1
+
+	return bentNormalsAndOcclusion;
 }
+
+// This draws bent normals ("xyz") and the "ambient occlusion" on "a"
+void main(float4 WPos : SV_Position0, float4 inBaseTC : TEXCOORD0, out float4 outBentNormalsAndOcclusion : SV_Target0
+#if SSAO_TYPE >= 1
+  , out float edges : SV_Target1
+#endif
+  )
+{
+#if TEST_SSAO && 0 // Debug view world space normals (requires a special view mode to directly show this buffer)
+	outBentNormalsAndOcclusion = float4(DecodeGBufferNormal(_tex0_D3D11.Load(float3(WPos.xy, 0))) * 0.5 + 0.5, 0.f);
+	edges = 0;
+	return;
 #endif
 
-// This draws bent normals ("rgb") and the "ambient occlusion" on "a"
-float4 DirOccPassPS(float4 WPos, float4 inBaseTC)
-{
-#if SSAO_TYPE >= 1 && DEVELOPMENT // LUMA FT: Added GTAO
-	return GTAO(WPos, inBaseTC);
-#else // SSAO_TYPE < 0
+#if SSAO_TYPE >= 1 // LUMA FT: Added GTAO
 
-#if 0 //TODOFT4: remove and fix warning with it
-	if (inBaseTC.x <= 0.5)
+	outBentNormalsAndOcclusion = GTAO(WPos, inBaseTC, edges);
+
+#else // SSAO_TYPE < 0 // SSDO
+
+#if TEST_SSAO && 0
+	if (inBaseTC.x > 0.5)
 	{
-		return GTAO(WPos, inBaseTC);
+		outBentNormalsAndOcclusion = GTAO(WPos, inBaseTC, edges);
+		return;
 	}
 #endif
 
@@ -260,7 +258,7 @@ float4 DirOccPassPS(float4 WPos, float4 inBaseTC)
 	float maxRadius = cbSSDO.ssdoParams.w;
 #if ENABLE_SSAO_DENOISE
 	// LUMA FT: for each resolution axis being odd, halven the max radius.
-	// This is probably connected to the 4x4 jitter/denoising that runs later.
+	// This is related to the 4x4 jitter/denoising that runs later.
 	if (int(WPos.x) & 1) maxRadius *= 0.5;
 	if (int(WPos.y) & 1) maxRadius *= 0.5;
 #else // LUMA FT: apply the average max radius scale anyway
@@ -273,26 +271,21 @@ float4 DirOccPassPS(float4 WPos, float4 inBaseTC)
 	const float2 radiusNormal = clamp( targetRadius / fCenterDepth, minRadius, maxRadius );
 
 #if ENABLE_SSAO_DENOISE
-	// Compute jittering matrix
-	//TODOFT: add temporal randomization here if we get TAA done properly?
-	// LUMA FT: flip the jitter every 4 pixels (this matches the blur that runs after, that is 4x4, so it should not be changed).
-	// LUMA FT: SSAO should be affected by the world jitters, so theoretically TAA adds quality to it aver time.
-	const float jitterIndex = dot( frac( WPos.xy * 0.25 ), float2( 1, 0.25 ) );
-
-// LUMA FT: added temporal randomization here so that TAA can add more quality to it over time (it should theoretically only be done when TAA is on, but we can't know that here).
-// This can look very noisy and weird.
-#if ENABLE_SSAO_TEMPORAL
-#if 1
-	const float time = CV_AnimGenParams.z;
-	const float angularTime = time * PI_X2 * 3.0; // 1 sec for 1 full 360 degrees turn by default, so we scale it by a factor
-#else // LUMA FT: Ideally this would be done by frame index instead than by time, so it's not affected by frame rate, but we don't have access to the frame index here ("CF_VolumetricFogDistributionParams.w" doesn't seem to work here, nor does g_simulationParameters "c_simulationDeltaTime" or g_particleParameters "c_deltaTime").
-	const float frameCount = CF_VolumetricFogDistributionParams.w; // From 0 to 1023
-	const float angularTime = (frameCount / 1023.f) * PI_X2 * 1.0;
-#endif
+// LUMA FT: added temporal randomization here so that TAA can add more quality to it over time
+// (it should theoretically only be done when TAA is on, but we can't easily know that here, either way, TAA jitters will affect AO to begin with).
+// This can look very weird given that this kind of "randomization" isn't made to be temporally reconstructed (we'd need to blend in with the previous AO results and reject them by depth to do this properly).
+#if ENABLE_SSAO_TEMPORAL && 0
+	static const uint phases = 8; // Higher values could be better. 8 is the default jitter period for DLAA.
+	const float angularTime = LumaSettings.DLSS ? (abs(((LumaSettings.FrameIndex % phases) / (float)(phases - 1)) - 0.5) * 2.0 * PI_X2) : 0.0;
 #else // !ENABLE_SSAO_TEMPORAL
 	static const float angularTime = 0;
 #endif // ENABLE_SSAO_TEMPORAL
 
+	// Compute jittering matrix
+	// LUMA FT: flip the jitter every 4 pixels (this matches the blur that runs after, that is 4x4, so it should not be changed).
+	// LUMA FT: SSAO should be affected by the world jitters, so theoretically TAA adds quality to it aver time.
+	const float jitterIndex = dot( frac( WPos.xy * 0.25 ), float2( 1, 0.25 ) );
+	
 	float2 vJitterSinCos = float2( sin( PI_X2 * jitterIndex + angularTime ), cos( PI_X2 * jitterIndex + angularTime ) );
 	const float2x2 mSampleRotMat = { vJitterSinCos.y, vJitterSinCos.x, -vJitterSinCos.x, vJitterSinCos.y };
 
@@ -314,7 +307,7 @@ float4 DirOccPassPS(float4 WPos, float4 inBaseTC)
 	// Compute normal in view space
 	float3 vNormal = DecodeGBufferNormal( _tex0_D3D11.Load(pixCoord) );
 	float3 vNormalVS = normalize( mul( CV_ViewMatr, float4(vNormal, 0) ).xyz ) * float3(1, -1, -1);
-	
+
 	float4 sh2 = 0;
 	[unroll]
 	for (int i = 0; i < samplesNum; i += samplesGroupNum)
@@ -339,7 +332,7 @@ float4 DirOccPassPS(float4 WPos, float4 inBaseTC)
 	#endif
 		
 	#if _RT_SAMPLE0 // LUMA FT: Branch on half or full resolution depth buffer, depending on the quality the user set
-		float4 fLinearDepthTap = SSDOFetchDepths( _tex2_D3D11, vSampleTC, 3 ) + 0.0000001; // LUMA FT: Arkane seems to have added 0.0000001 here, it's unclear why
+		float4 fLinearDepthTap = SSDOFetchDepths( _tex2_D3D11, vSampleTC, 3 ) + 0.0000001; // LUMA FT: Arkane seems to have added 0.0000001 here, it's unclear why (due to the lower precision?)
 	#else
 		float4 fLinearDepthTap = SSDOFetchDepths( _tex1_D3D11, vSampleTC, 0 );
 	#endif
@@ -383,13 +376,13 @@ float4 DirOccPassPS(float4 WPos, float4 inBaseTC)
 	
 	// LUMA FT: fixed hardcoded division by ~8 samples and moved this before view matrix multiplication (the order doesn't matter).
 	// The result was actually multiplied by 0.15 instead of 0.125, and that theoretically changes the AO strenght, but it might end up causing clipping on the normals (they are UNORM textures)?
-	// Maybe they did it to bring the normals to a more acceptable range, so for consistency we allowed the same offset to be baked in the look.
+	// Maybe they did it to bring the normals to a more acceptable range, so for consistency we allowed the same offset to be baked in the look (the difference is tiny, it makes AO a bit stronger).
 	sh2.xyzw /= samplesNum;
 	static const float hardcodedOfset = 0.15 * 8.0;
 	bool wasBeyondOne = any(sh2.xyzw > 1) || any(sh2.xyz < 1);
 	sh2.xyzw *= hardcodedOfset;
 
-#if 0 // LUMA FT: quick test to see if the hardcoded offset caused any "clipping" (values beyond the 0-1 range) in the SSAO result (it seems fine)
+#if TEST_SSAO && 0 // LUMA FT: quick test to see if the hardcoded offset caused any "clipping" (values beyond the 0-1 range) in the SSAO result (it seems fine, and anyway now these output on FP16 textures so we can go beyond 0-1, filtering will average the values!)
 	bool isBeyondOne = any(sh2.xyzw > 1) || any(sh2.xyz < 1);
 	if (!wasBeyondOne && isBeyondOne)
 	{
@@ -397,20 +390,38 @@ float4 DirOccPassPS(float4 WPos, float4 inBaseTC)
 	}
 #endif
 
+	// LUMA FT: SSDO bent normals ("sh2.xyz") aren't "normalized" as they are pre-multiplied by the occlusion (see "PREMULTIPLY_BENT_NORMALS")
+#if 0 // LUMA FT: disabled as this isn't necessary, Luma updates the RT to FP16, and the next filtering pass could still retain the extra information
+	sh2.w = saturate(sh2.w); // Saturate as visibility beyond 0-1 makes no sense
+#endif
+#if !PREMULTIPLY_BENT_NORMALS
+	if (sh2.w != 0) // In this case, just leave whatever we had... it doesn't matter
+		sh2.xyz /= sh2.w; // Undo pre-multiply by occlusion
+#endif // !PREMULTIPLY_BENT_NORMALS
+
+#if TEST_SSAO
+	if (sh2.w != 0 && LumaSettings.DevSetting06 != 0.5)
+	{
+#if PREMULTIPLY_BENT_NORMALS
+		sh2.xyz /= sh2.w;
+#endif // PREMULTIPLY_BENT_NORMALS
+  		sh2.w *= LumaSettings.DevSetting06 * 2;
+#if PREMULTIPLY_BENT_NORMALS
+		sh2.xyz *= sh2.w;
+#endif // PREMULTIPLY_BENT_NORMALS
+	}
+#endif
+	
 	sh2.xyz = mul( CV_InvViewMatr, float4(sh2.xyz * float3(1, -1, -1), 0) ).xyz;
 
-	float4 outColor;
-
 	// Encode
-	outColor.rgb = sh2.xyz * 0.5 + 0.5;
-	outColor.a = sh2.w;
-	//TODOFT: do saturate because this might end up saved on FP16 textures?
-	//TODOFT2: fix "GaussBlurBilinear" color bleeding function not scaling ultrawide colors properly...
+	outBentNormalsAndOcclusion.xyz = sh2.xyz * 0.5 + 0.5; // From -1|+1 range to 0|1
+	outBentNormalsAndOcclusion.w = sh2.w;
+
+#endif // SSAO_TYPE >= 1
 
 #if !ENABLE_SSAO
-  	//outColor.rgb = 0; // Disabling bent normals breaks the scene, they'd need to be ignored in a later g-buffer compose pass
-  	outColor.a = 0;
+  	outBentNormalsAndOcclusion.xyz = 0.5;
+  	outBentNormalsAndOcclusion.w = 0;
 #endif // !ENABLE_SSAO
-	return outColor;
-#endif // SSAO_TYPE >= 1
 }

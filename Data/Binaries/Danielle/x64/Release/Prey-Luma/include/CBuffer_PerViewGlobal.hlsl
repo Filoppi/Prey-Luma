@@ -40,7 +40,7 @@ cbuffer CBPerViewGlobal : register(b13)
   // near / (near - far), near / (far - near), 1 / hfov, 1.
   float4 CV_ProjRatio : packoffset(c35);
   float4 CV_NearestScaled : packoffset(c36);
-  // near, far, far / maxViewDistance, 1/far. At least in vanila CryEngine, in Prey's version they might be difference, it seems to be: near, far / maxViewDistance, 1, 1/far.
+  // near (usually 0.1), far (usually 8000), far / maxViewDistance (usually 1), 1/far.
   float4 CV_NearFarClipDist : packoffset(c37);
   float4 CV_SunLightDir : packoffset(c38);
   float4 CV_SunColor : packoffset(c39);

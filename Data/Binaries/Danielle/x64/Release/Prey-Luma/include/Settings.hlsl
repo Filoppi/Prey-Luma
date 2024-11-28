@@ -118,7 +118,7 @@
 // 0 SSDO (Vanilla, CryEngine)
 // 1 GTAO (Luma)
 #ifndef SSAO_TYPE
-#define SSAO_TYPE 0
+#define SSAO_TYPE 1
 #endif
 // 0 Vanilla
 // 1 High (best balance for 2024 GPUs)
@@ -126,8 +126,9 @@
 #ifndef SSAO_QUALITY
 #define SSAO_QUALITY 1
 #endif
-// Requires TAA enabled to not look terrible, but it still looks bad anyway
-#define ENABLE_SSAO_TEMPORAL 0
+// Makes AO jitter a bit to add blend in more quality over time.
+// Requires TAA enabled to not look terrible.
+#define ENABLE_SSAO_TEMPORAL 1
 // 0 Vanilla
 // 1 High
 #ifndef BLOOM_QUALITY
@@ -161,8 +162,8 @@
 #define ENABLE_MOTION_BLUR (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
 #define ENABLE_BLOOM (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
 #define ENABLE_SSAO (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
-// Needs to be enabled from SSAO to look good
-#define ENABLE_SSAO_DENOISE (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
+// Spacial (not temporal) SSAO denoising. Needs to be enabled for it to look good.
+#define ENABLE_SSAO_DENOISE (!DEVELOPMENT || 1)
 // Enable for a more blurry (?) but temporally stable TAA. This isn't really related to "FORCE_MOTION_VECTORS_JITTERED" as that just determines how to interpret motion vectors.
 #define ENABLE_TAA_DEJITTER (ENABLE_POST_PROCESS && (DEVELOPMENT ? 0 : 0))
 // Disables all kinds of AA (SMAA, FXAA, TAA, ...) (disabling "ENABLE_SHARPENING" is also suggested if disabling AA). Doesn't affect DLSS.
@@ -250,6 +251,7 @@
 #define TEST_SMAA_EDGES (DEVELOPMENT && 0)
 #define TEST_DYNAMIC_RESOLUTION_SCALING (DEVELOPMENT && 0)
 #define TEST_EXPOSURE (DEVELOPMENT && 0)
+#define TEST_SSAO (DEVELOPMENT && 0)
 
 /////////////////////////////////////////
 // Prey LUMA user settings
@@ -272,6 +274,7 @@ cbuffer LumaSettings : register(b2)
     float GamePaperWhiteNits; // Access this through the global variables below
     float UIPaperWhiteNits; // Access this through the global variables below
     uint DLSS; // Is DLSS enabled (implies it engaged and it's compatible) (this is on even in fullscreen UI menus that don't use upscaling)
+    uint FrameIndex;
 #if DEVELOPMENT
     // These are reflected in ImGui (the number is hardcoded in c++).
     // You can add up to 3 numbers as comment to their right to define the UI settings sliders default, min and max values, and their name.

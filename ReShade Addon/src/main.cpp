@@ -324,6 +324,10 @@ std::unordered_set<uint32_t> shader_hashes_PostAA;
 std::unordered_set<uint32_t> shader_hashes_PostAAComposites;
 uint32_t shader_hash_PostAAUpscaleImage;
 std::unordered_set<uint32_t> shader_hashes_LensOptics;
+#if DEVELOPMENT
+std::unordered_set<uint32_t> shader_hashes_DirOccPass;
+std::unordered_set<uint32_t> shader_hashes_SSDO_Blur;
+#endif
 const uint32_t shader_hash_copy_vertex = std::stoul("FFFFFFF0", nullptr, 16);
 const uint32_t shader_hash_copy_pixel = std::stoul("FFFFFFF1", nullptr, 16);
 const uint32_t shader_hash_transform_function_copy_pixel = std::stoul("FFFFFFF2", nullptr, 16);
@@ -364,6 +368,8 @@ bool has_drawn_motion_blur_previous = false;
 bool has_drawn_motion_blur = false;
 bool has_drawn_tonemapping = false;
 bool has_drawn_composed_gbuffers = false;
+bool has_drawn_ssao = false;
+bool has_drawn_ssao_denoise = false;
 bool found_per_view_globals = false;
 // Whether the rendering resolution was scaled in this frame (different from the ouput resolution)
 bool prey_drs_active = false;
@@ -421,7 +427,7 @@ std::vector<ShaderDefineData> shader_defines_data = {
   {"FORCE_NEUTRAL_COLOR_GRADING_LUT_TYPE", '0', false, false, "Can force a neutral LUT in different ways (color grading is still applied)"},
   {"DRAW_LUT", '0', false, (DEVELOPMENT || TEST) ? false : true},
 #endif
-  {"SSAO_TYPE", '0', false, false, "0 - Vanilla\n1 - GTAO"},
+  {"SSAO_TYPE", '1', false, false, "0 - Vanilla\n1 - Luma GTAO"}, // ssao_type_define_index
   {"SSAO_QUALITY", '1', false, false, "0 - Vanilla\n1 - High\n2 - Extreme (slow)"},
   {"BLOOM_QUALITY", '1', false, false, "0 - Vanilla\n1 - High"},
 #if DEVELOPMENT || TEST
@@ -439,29 +445,41 @@ std::vector<ShaderDefineData> shader_defines_data = {
   {"ENABLE_DITHERING", '0', false, false, "Temporal dithering control\nIt doesn't seem to be needed in this game so Luma disabled it by default"},
   {"DITHERING_BIT_DEPTH", '9', false, false, "Dithering quantization (values between 7 and 9 should be best)"},
 };
+//TODOFT5: define these automatically?
 constexpr uint32_t development_define_index = 0;
 constexpr uint32_t post_process_space_define_index = 1;
 constexpr uint32_t gamma_correction_define_index = 2;
+constexpr uint32_t ssao_type_define_index = (DEVELOPMENT || TEST) ? 12 : 8;
 constexpr uint32_t dlss_relative_pre_exposure_define_index = 8;
 
 // Resources:
+
 #if ENABLE_NGX
+// DLSS
 com_ptr<ID3D11Texture2D> dlss_output_color;
 com_ptr<ID3D11Texture2D> dlss_exposure;
 com_ptr<ID3D11Texture2D> dlss_motion_vectors;
 com_ptr<ID3D11RenderTargetView> dlss_motion_vectors_rtv;
 #endif // ENABLE_NGX
+
+// Custom shaders
 com_ptr<ID3D11Texture2D> copy_texture;
 com_ptr<ID3D11Texture2D> transfer_function_copy_texture;
 com_ptr<ID3D11ShaderResourceView> transfer_function_copy_shader_resource_view;
 com_ptr<ID3D11VertexShader> copy_vertex_shader;
 com_ptr<ID3D11PixelShader> copy_pixel_shader;
 com_ptr<ID3D11PixelShader> transfer_function_copy_pixel_shader;
-com_ptr<ID3D11PixelShader> draw_exposure_pixel_shader;
+com_ptr<ID3D11PixelShader> draw_exposure_pixel_shader; // DLSS
+com_ptr<ID3D11Buffer> exposure_buffer_gpu; // DLSS
+com_ptr<ID3D11Buffer> exposure_buffer_cpu; // DLSS
+com_ptr<ID3D11RenderTargetView> exposure_buffer_rtv; // DLSS
 
-com_ptr<ID3D11Buffer> exposure_buffer_gpu;
-com_ptr<ID3D11Buffer> exposure_buffer_cpu;
-com_ptr<ID3D11RenderTargetView> exposure_buffer_rtv;
+// GTAO
+com_ptr<ID3D11Texture2D> gtao_edges_texture;
+UINT gtao_edges_texture_width = 0;
+UINT gtao_edges_texture_height = 0;
+com_ptr<ID3D11RenderTargetView> gtao_edges_rtv;
+com_ptr<ID3D11ShaderResourceView> gtao_edges_srv;
 
 com_ptr<ID3D11BlendState> default_blend_state;
 
@@ -2262,6 +2280,8 @@ void OnPresent(
       dlss_scene_exposure = 1.f;
       dlss_scene_pre_exposure = 1.f;
   }
+  has_drawn_ssao = false;
+  has_drawn_ssao_denoise = false;
   has_drawn_composed_gbuffers = false;
   has_drawn_motion_blur_previous = has_drawn_motion_blur;
   has_drawn_motion_blur = false;
@@ -2340,13 +2360,15 @@ void OnPresent(
       NativePlugin::SetHaltonSequencePhases(16); // r_AntialiasingTAAPattern 10
   }
 #endif // NGX
+
+  cb_luma_frame_settings.FrameIndex++;
 }
 
 //TODOFT5: "_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR" as define at the top?
-//TODOFT5: fix cpp file formatting in general (and make sure it's all thread safe, but it should be) (remove clang.tidy files?)
+//TODOFT5: fix cpp file formatting in general (remove clang.tidy files?)
 //TODOFT5: Add "UpdateSubresource" to check whether they map buffers with that (it's not optimized so probably it's unused by CryEngine)? Also make sure that our CopyTexture() func works!
 //TODOFT5: merge all the shader permutations that use the same code (and then move shader binaries to bin folder?)
-//TODOFT5: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project? And move all external includes to the "external" folder?
+//TODOFT5: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project?
 //TODOFT: add a new RT to draw UI on top (pre-multiplied alpha everywhere), so we could compose it smartly, possibly in the final linearization pass.
 
 // Return false to prevent the original draw call from running (e.g. if you replaced it or just want to skip it)
@@ -2580,6 +2602,107 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
           for (auto shader_hash : shader_hashes_MotionBlur) {
               if (std::find(original_shader_hashes.begin(), original_shader_hashes.end(), shader_hash) != original_shader_hashes.end()) {
                   has_drawn_motion_blur = true;
+                  break;
+              }
+          }
+      }
+      if (!has_drawn_ssao) {
+          for (auto shader_hash : shader_hashes_DirOccPass) {
+            if (cloned_pipeline_count != 0 && shader_defines_data[ssao_type_define_index].GetNumericalCompiledValue() >= 1) { // If using GTAO
+#if 0
+                com_ptr<ID3D11RenderTargetView> render_target_view;
+                native_device_context->OMGetRenderTargets(1, &render_target_view, nullptr);
+                com_ptr<ID3D11Resource> render_target_resource;
+                render_target_view->GetResource(&render_target_resource);
+                com_ptr<ID3D11Texture2D> render_target_texture_2d;
+                render_target_resource->QueryInterface(&render_target_texture_2d);
+                D3D11_TEXTURE2D_DESC texture_desc;
+                render_target_texture_2d->GetDesc(&texture_desc);
+#else
+                //TODOFT: make sure the output res always matches! (branch above)
+                if (!gtao_edges_texture.get() || gtao_edges_texture_width != output_resolution.x || gtao_edges_texture_height != output_resolution.y) {
+                    gtao_edges_texture_width = output_resolution.x;
+                    gtao_edges_texture_height = output_resolution.y;
+
+                    D3D11_TEXTURE2D_DESC texture_desc;
+                    texture_desc.Width = gtao_edges_texture_width;
+                    texture_desc.Height = gtao_edges_texture_height;
+                    texture_desc.MipLevels = 1;
+                    texture_desc.ArraySize = 1;
+                    texture_desc.Format = DXGI_FORMAT::DXGI_FORMAT_R8_UNORM; // The texture is encoded to this format
+                    texture_desc.SampleDesc.Count = 1;
+                    texture_desc.SampleDesc.Quality = 0;
+                    texture_desc.Usage = D3D11_USAGE_DEFAULT;
+                    texture_desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+                    texture_desc.CPUAccessFlags = 0;
+                    texture_desc.MiscFlags = 0;
+
+                    gtao_edges_texture = nullptr;
+                    HRESULT hr = native_device->CreateTexture2D(&texture_desc, nullptr, &gtao_edges_texture);
+                    assert(SUCCEEDED(hr));
+
+                    D3D11_RENDER_TARGET_VIEW_DESC rtv_desc;
+                    rtv_desc.Format = texture_desc.Format;
+                    rtv_desc.ViewDimension = D3D11_RTV_DIMENSION::D3D11_RTV_DIMENSION_TEXTURE2D;
+                    rtv_desc.Texture2D.MipSlice = 0;
+
+                    gtao_edges_rtv = nullptr;
+                    hr = native_device->CreateRenderTargetView(gtao_edges_texture.get(), &rtv_desc, &gtao_edges_rtv);
+                    assert(SUCCEEDED(hr));
+
+                    D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+                    srv_desc.Format = texture_desc.Format;
+                    srv_desc.ViewDimension = D3D11_SRV_DIMENSION::D3D11_SRV_DIMENSION_TEXTURE2D;
+                    srv_desc.Texture2D.MipLevels = 1;
+                    srv_desc.Texture2D.MostDetailedMip = 0;
+
+                    gtao_edges_srv = nullptr;
+                    hr = native_device->CreateShaderResourceView(gtao_edges_texture.get(), &srv_desc, &gtao_edges_srv);
+                    assert(SUCCEEDED(hr));
+                }
+#endif
+
+                // Add a second render target (the depth edges) as it's needed by GTAO.
+                // We need to cache and restore all the RTs as the game uses a push and pop mechanism that tracks them closely, so any changes in state can break them.
+                ID3D11RenderTargetView* rtvs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
+                ID3D11DepthStencilView* dsvs;
+                native_device_context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &rtvs[0], &dsvs);
+                ID3D11RenderTargetView* rtv1 = rtvs[1];
+                rtvs[1] = gtao_edges_rtv.get();
+                native_device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &rtvs[0], dsvs);
+
+                SetPreyLumaConstantBuffers(cmd_list, stages, settings_pipeline_layout, LumaConstantBufferType::LumaSettings);
+                SetPreyLumaConstantBuffers(cmd_list, stages, shared_data_pipeline_layout, LumaConstantBufferType::LumaData);
+                native_device_context->Draw(3, 0);
+
+                rtvs[1] = rtv1;
+                native_device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &rtvs[0], dsvs);
+                for (UINT i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; i++) {
+                    if (rtvs[i] != nullptr) {
+                        rtvs[i]->Release();
+                        rtvs[i] = nullptr;
+                    }
+                }
+                has_drawn_ssao = true;
+                return false;
+            }
+            else {
+                gtao_edges_texture = nullptr; // We can leave "gtao_edges_texture_width" and "gtao_edges_texture_height" as they were
+                gtao_edges_rtv = nullptr;
+                gtao_edges_srv = nullptr;
+            }
+            has_drawn_ssao = true;
+            break;
+          }
+      }
+      if (has_drawn_ssao && !has_drawn_ssao_denoise) {
+          for (auto shader_hash : shader_hashes_SSDO_Blur) {
+              if (std::find(original_shader_hashes.begin(), original_shader_hashes.end(), shader_hash) != original_shader_hashes.end()) {
+                  if (gtao_edges_srv.get()) {
+                      ID3D11ShaderResourceView* const shader_resource_view_const = gtao_edges_srv.get();
+                      native_device_context->PSSetShaderResources(3, 1, &shader_resource_view_const);
+                  }
+                  has_drawn_ssao_denoise = true;
                   break;
               }
           }
@@ -5313,6 +5436,11 @@ void Init(bool async) {
   shader_hashes_LensOptics.emplace(std::stoul("ED01E418", nullptr, 16));
   shader_hashes_LensOptics.emplace(std::stoul("53529823", nullptr, 16));
   shader_hashes_LensOptics.emplace(std::stoul("DDDE2220", nullptr, 16));
+  // DeferredShading DirOccPass
+  shader_hashes_DirOccPass.emplace(std::stoul("944B65F0", nullptr, 16));
+  shader_hashes_DirOccPass.emplace(std::stoul("DB98D83F", nullptr, 16));
+  // ShadowBlur - SSDO Blur
+  shader_hashes_SSDO_Blur.emplace(std::stoul("1023CD1B", nullptr, 16));
   //TODOFT: once we have collected 100% of the game shaders, update these hashes lists and make them const
 
   cb_luma_frame_settings.ScenePeakWhite = default_peak_white;

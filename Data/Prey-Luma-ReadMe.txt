@@ -10,7 +10,7 @@ List of features:
 -Increased buffers quality in SDR and HDR, reducing banding all around
 -Upgraded quality and look of sun shaft effects and lens "optic" effects (e.g. lens flare)
 -Improved the quality of dynamic shadow, especially from up close (they had broken filtering that causes them to be blocky)
--Improved SSAO quality
+-Added a more modern Ambient Occlusion solution (GTAO) (the original AO is also improved in quality)
 -Added DLSS Super Resolution (on Nvidia GPUs) (OptiScaler can be used to inject FSR 3)
 -Added RCAS sharpening after TAA (replacing the original basic sharpening implementation)
 -Improved all of the native Anti Aliasing implementations
