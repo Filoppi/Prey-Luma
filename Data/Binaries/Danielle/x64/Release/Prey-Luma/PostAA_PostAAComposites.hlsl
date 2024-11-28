@@ -28,8 +28,8 @@ SamplerState ssSceneLum : register(s7);
 Texture2D<float4> compositeSourceTex : register(t0);
 Texture2D<float4> lensOpticsTex : register(t5);
 Texture3D<float4> filmGrainTex : register(t6);
-Texture2D<float4> SceneLumTex : register(t7);
 Texture2D<float2> dummyFloat2Texture : register(t8); // Luma FT
+Texture2D<float2> SceneLumTex : register(t7);
 
 float2 MapViewportToRaster(float2 normalizedViewportPos, float2 HPosScale /*= CV_HPosScale.xy*/)
 {
@@ -38,7 +38,11 @@ float2 MapViewportToRaster(float2 normalizedViewportPos, float2 HPosScale /*= CV
 
 float GetExposure(float2 scaledTC)
 {
-	const float fSceneLum = SceneLumTex.Sample(ssSceneLum, scaledTC).x; // This is a 1x1 texture, so any UV will return the same value
+#if 1 // This is a 1x1 texture, so any UV will return the same value
+    const float fSceneLum = SceneLumTex.Load(0).x;
+#else
+	const float fSceneLum = SceneLumTex.Sample(ssSceneLum, scaledTC).x;
+#endif
 	const float fSceneKey = 1.03 - 2.0 / (2.0 + log2(fSceneLum + 1.0));
 	float fExposure = fSceneKey / fSceneLum;
 #if ENABLE_EXPOSURE_CLAMPING
@@ -104,7 +108,7 @@ void ApplyLensOptics(inout float4 cScene, float2 scaledTC, float2 invRendRes, fl
 {
 #if _RT_SAMPLE1
 
-	float4 cLensOpticsComposite = lensOpticsTex.Sample(ssLensOptics, scaledTC.xy);
+	float4 cLensOpticsComposite = lensOpticsTex.Sample(ssLensOptics, scaledTC.xy); // LUMA FT: "Load()" doesn't seem to work here (sun becomes green?), maybe the texture is scaled (if it was, then clamping to "HPosClamp.xy" wouldn't be right anymore), or maybe they use a weird sampler
 #if _RT_SAMPLE3 && ENABLE_CHROMATIC_ABERRATION
 	float2 vTexelShift = invRendRes * cbComposites.ChromaShift;
   float2 baseTCCenter = 0.5 * CV_HPosScale.xy; // LUMA FT: fixed source texture center not acknowledging resolution scaling (MapViewportToRaster()), resulting in CA being different depending on the resolution
@@ -155,12 +159,17 @@ void ApplyLensOptics(inout float4 cScene, float2 scaledTC, float2 invRendRes, fl
 void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
 {
   bool gammaSpace = bool(POST_PROCESS_SPACE_TYPE <= 0);
-
+	
+    float2 HPosClamp = 1.f - (CV_ScreenSize.zw * LumaData.RenderResolutionScale);
   // LUMA: If DLSS run, buffers would have already been upscaled, so we want to ignore the logic that acknowledges a different rendering resolution here (CV_HPosScale.xy would have also been replaced by c++ code to be 1).
-	float2 scaledTC = MapViewportToRaster(baseTC.xy, CV_HPosScale.xy); // Scale down the UVs to map to the top left portion of the source texture, in case the resolution scale was < 1 (so UVs might scale to a range smaller than 0-1)
-	float2 forcedScaledTC = MapViewportToRaster(baseTC.xy, LumaData.RenderResolutionScale); // Given that "CV_HPosScale" might be 1, use the real rendering resolution scale, in case we needed it for anything (e.g. sampling from the depth buffer)
+    float2 scaledTC = min(MapViewportToRaster(baseTC.xy, CV_HPosScale.xy), HPosClamp); // Scale down the UVs to map to the top left portion of the source texture, in case the resolution scale was < 1 (so UVs might scale to a range smaller than 0-1)
+    float2 forcedScaledTC = min(MapViewportToRaster(baseTC.xy, LumaData.RenderResolutionScale), HPosClamp); // Given that "CV_HPosScale" might be 1, use the real rendering resolution scale, in case we needed it for anything (e.g. sampling from the depth buffer)
 
+#if 1 // LUMA FT: Optimization assuming a standard bilinear sampler would always have been used here
+    outColor = compositeSourceTex.Load(WPos.xyz);
+#else
 	outColor = compositeSourceTex.Sample(ssCompositeSource, scaledTC.xy);
+#endif
   // LUMA FT: fixed sharpening chromatic aberration using the wrong inverse resolution for sampling (they used "invOutputRes", which isn't adjusted by the rendering resolution scale),
   // though it's arguable whether sharpening should always be run by sampling the mid point between this texel and the adjacent ones, or if it can also sample UVs closer to the current texel (scaled by rend res scale): both have pros and cons).
   float2 invOutputRes = CV_ScreenSize.zw * 2.0; // MapViewportToRaster()
@@ -209,13 +218,13 @@ void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
   // This is probably fine, this code path is never used for "blurring", it's always exclusively for sharpening
 	outColor.rgb = RCAS(WPos.xyz, sharpenAmount, compositeSourceTex, dummyFloat2Texture, normalizationRange, true, outColor, false).rgb; // This should work independently of "POST_PROCESS_SPACE_TYPE".
 
-#else
+#else // POST_TAA_SHARPENING_TYPE <= 1
 
 	// Apply sharpening
-	float3 cTL = DecodeBackBufferToLinearSDRRange(compositeSourceTex.Sample(ssCompositeSource, scaledTC + invRenderingRes * float2(-0.5, -0.5)).rgb);
-	float3 cTR = DecodeBackBufferToLinearSDRRange(compositeSourceTex.Sample(ssCompositeSource, scaledTC + invRenderingRes * float2( 0.5, -0.5)).rgb);
-	float3 cBL = DecodeBackBufferToLinearSDRRange(compositeSourceTex.Sample(ssCompositeSource, scaledTC + invRenderingRes * float2(-0.5,  0.5)).rgb);
-	float3 cBR = DecodeBackBufferToLinearSDRRange(compositeSourceTex.Sample(ssCompositeSource, scaledTC + invRenderingRes * float2( 0.5,  0.5)).rgb);
+	float3 cTL = DecodeBackBufferToLinearSDRRange(compositeSourceTex.Sample(ssCompositeSource, min(scaledTC + invRenderingRes * float2(-0.5, -0.5), HPosClamp)).rgb);
+	float3 cTR = DecodeBackBufferToLinearSDRRange(compositeSourceTex.Sample(ssCompositeSource, min(scaledTC + invRenderingRes * float2( 0.5, -0.5), HPosClamp)).rgb);
+	float3 cBL = DecodeBackBufferToLinearSDRRange(compositeSourceTex.Sample(ssCompositeSource, min(scaledTC + invRenderingRes * float2(-0.5,  0.5), HPosClamp)).rgb);
+	float3 cBR = DecodeBackBufferToLinearSDRRange(compositeSourceTex.Sample(ssCompositeSource, min(scaledTC + invRenderingRes * float2( 0.5,  0.5), HPosClamp)).rgb);
 
 	float3 cFiltered = (cTL + cTR + cBL + cBR) * 0.25;
   float3 preSharpenColor = outColor.rgb;

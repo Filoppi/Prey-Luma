@@ -105,7 +105,7 @@ void main(
     // LUMA FT: this prevents the UV sampling from straying from vanilla, while still allowing a higher number of iterations
     static const float uvScale = float(depthShaftsIterationsVanilla) / float(depthShaftsIterations);
 
-    float4 baseColor = _tex0.Sample(_tex0_s, MapViewportToRaster(saturate(inBaseTC.xy + (sunDir.xy * float(i) * uvScale)))); // LUMA FT: added saturate to UVs to avoid them going over the used portion of the source texture
+    float4 baseColor = _tex0.Sample(_tex0_s, min(MapViewportToRaster(inBaseTC.xy + (sunDir.xy * float(i) * uvScale)), CV_HPosScale.xy)); // LUMA FT: added clamp to UVs to avoid them going over the used portion of the source texture
     accumColor += baseColor * (1.0-(float(i)/float(depthShaftsIterations)));
   }
   accumColor /= float(depthShaftsIterations);

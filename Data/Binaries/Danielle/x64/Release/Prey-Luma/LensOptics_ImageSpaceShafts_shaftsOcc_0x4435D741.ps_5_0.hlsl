@@ -26,13 +26,14 @@ void main(
 {
   float4 r0,r1,r2;
 
-  // LUMA FT: fixed depth map not being scaled by rendering resolution scale ("MapViewportToRaster()")
+  // LUMA FT: fixed depth map not being scaled by rendering resolution scale ("MapViewportToRaster()") (we are not sure whether "CV_ScreenSize"/"CV_HPosScale" are already updated to post DLSS full screen res here)
   // Note that these don't need to get dejittered because they run after TAA.
   v2.xy *= LumaData.RenderResolutionScale;
+  float2 HPosClamp = 1.f - (CV_ScreenSize.zw * LumaData.RenderResolutionScale);
   // LUMA FT: it's not clear why this is sampling depth with possibly a bilinear sampler,
   // possibly because this pass can run at a lower resolution than rendering resolution,
-  // or maybe befcause they forgot, but ultimately it doesn't really matter as this very low important so depth sampling doesn't need to be conservative of max (e.g. GatherRed()).
-  r0.x = depthMap.Sample(depthMap_s, v2.xy).x;
+  // or maybe because they forgot, but ultimately it doesn't really matter as this very low important so depth sampling doesn't need to be conservative of max (e.g. GatherRed()).
+  r0.x = depthMap.Sample(depthMap_s, min(v2.xy, HPosClamp)).x;
   r0.x = -v1.z + r0.x;
   r0.y = cmp(0 < r0.x);
   r0.x = cmp(r0.x < 0);

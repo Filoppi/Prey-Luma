@@ -24,8 +24,11 @@ void main(
   // Dejitter the background depth/color, to get a more consistent result over time (basically a quick way of resolving TAA)
   sampleUV -= LumaData.CameraJitters.xy * float2(0.5, -0.5);
 #endif
-
-  float sceneDepth = _tex0.Sample(_tex0_s, sampleUV).x; // Linear depth (0 near, 1 far)
+	
+	sampleUV = min(sampleUV, CV_HPosScale.xy);
+	
+  //TODO LUMA: use .Load() for these textures?
+  float sceneDepth = _tex0.Sample(_tex0_s, sampleUV).x; // Linear depth (0 camera origin or near, 1 far)
   outColor = float4(sceneDepth, sceneDepth, sceneDepth, 1 - sceneDepth.x);
 
   float3 sceneCol = _tex1.Sample(_tex1_s, sampleUV).xyz; // comes straight from hdr scaled target (exposure isn't adjusted yet)

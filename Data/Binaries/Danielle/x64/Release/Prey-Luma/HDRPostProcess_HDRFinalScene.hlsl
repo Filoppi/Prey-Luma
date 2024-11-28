@@ -13,7 +13,7 @@ Texture2DMS<float4> hdrSourceTex : register(t0);
 #else
 Texture2D<float4> hdrSourceTex : register(t0);
 #endif
-Texture2D<float2> adaptedLumTex : register(t1);
+Texture2D<float2> adaptedLumTex : register(t1); // 1px texture
 Texture2D<float4> bloomTex : register(t2);
 Texture2D<float> depthTex : register(t5);
 Texture2D<float4> vignettingTex : register(t7);
@@ -274,8 +274,12 @@ void HDRFinalScenePS(float4 WPos, float4 baseTC, out float4 outColor)
 #else // !ENABLE_VIGNETTE
   float fVignetting = 1.0;
 #endif // ENABLE_VIGNETTE
-	float4 cBloom = bloomTex.Sample(ssHdrLinearClamp, ScreenTC);
+	float4 cBloom = bloomTex.Sample(ssHdrLinearClamp, ScreenTC); // We can't use "Load()" here as this texture has a different resolution
+#if 1 // Exposure is always 1px
+	float2 vAdaptedLum = adaptedLumTex.Load(0);
+#else
 	float2 vAdaptedLum = adaptedLumTex.Sample(ssHdrLinearClamp, baseTC.xy);
+#endif
 
 #if _RT_SAMPLE3 && ENABLE_SUNSHAFTS
 	float4 sunShafts = sunshaftsTex.Load(SunShafts_SunCol.w * pixelCoord); // "SunShafts_SunCol.w" scales the size of the sun shafts

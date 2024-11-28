@@ -51,7 +51,7 @@ void main(OutputShaftVS IN, out float4 outColor : SV_Target0)
 	for( int i=0; i<N_SAMPLE; i++ )
 	{
 		cuv -= duv;
-		color.rgb += occMap.Sample(occMap_s, cuv).rgb * decay; // LUMA FT: this doesn't seem to need to be scaled by "CV_HPosScale.xy" (or maybe it was already, in that case, we should also saturate the uv to avoid reading texels out of bounds)
+		color.rgb += occMap.Sample(occMap_s, cuv).rgb * decay; //TODO LUMA: this doesn't seem to need to be scaled by "CV_HPosScale.xy" (or maybe it was already, in that case, we should also saturate the uv to avoid reading texels out of bounds)
 		decay *= decayFactor;
 	}
 	const float ssFalloff = decayFactor * 0.01;  // falloff curve base factor
