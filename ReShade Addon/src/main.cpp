@@ -888,7 +888,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
                   }
 #if DEVELOPMENT
                   // Reflections on dev settings.
-                  // They can have a comment like "// Default, Min, Max" next to them (e.g. "// 0.5, 0, 1.3").
+                  // They can have a comment like "// Default, Min, Max, Name" next to them (e.g. "// 0.5, 0, 1.3, Custom Name").
                   if (str_view.find("float DevSetting") != std::string::npos) {
                       if (settings_count >= LumaFrameDevSettings::SettingsNum) continue;
                       settings_count++;
@@ -3656,10 +3656,10 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
 
                 const auto prev_texture_mip_lod_bias_offset = texture_mip_lod_bias_offset;
                 // We do this even when DLSS is not on, to help with the game's native TAA and DRS implementations
-                if ((dlss_sr || prey_drs_active) && prey_taa_detected) {
+                if (dlss_sr && prey_taa_detected) {
                     texture_mip_lod_bias_offset = std::log2(render_resolution.y / output_resolution.y) - 1.f; // This results in -1 at output res
                 }
-                else { //TODOFT: does this actually look better if TAA/DRS as disabled? Also why does the check above checks for DRS? Only TAA should matter for mip lod biases?
+                else { //TODOFT3: does this actually look better if TAA/DRS as disabled?
                     texture_mip_lod_bias_offset = -1.f; // Reset to default value
                 }
 
@@ -4946,7 +4946,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             float& min_value = cb_luma_frame_dev_settings_min_value[i];
             float& max_value = cb_luma_frame_dev_settings_max_value[i];
             float& default_value = cb_luma_frame_dev_settings_default_value[i];
-            ImGui::SliderFloat(cb_luma_frame_dev_settings_names[i].empty() ? DevSettingsNames[i].c_str() : cb_luma_frame_dev_settings_names[i].c_str(), & value, min_value, max_value);
+            ImGui::SliderFloat(cb_luma_frame_dev_settings_names[i].empty() ? DevSettingsNames[i].c_str() : cb_luma_frame_dev_settings_names[i].c_str(), &value, min_value, max_value);
             ImGui::SameLine();
             if (value != default_value) {
                 ImGui::PushID(DevSettingsNames[i].c_str());
@@ -4976,7 +4976,11 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         ImGui::SliderInt("Fix Motion Vectors Generation Projection Matrix", &fix_prev_matrix_mode, 0, 8);
         //ImGui::SliderInt("matrix_calculation_mode", &matrix_calculation_mode, 0, 3); // Disabled
         ImGui::SliderInt("matrix_calculation_mode_2", &matrix_calculation_mode_2, 0, 4);
-        ImGui::Checkbox("Disable Camera Jitters", &disable_taa_jitters);
+        if (ImGui::Checkbox("Disable Camera Jitters", &disable_taa_jitters)) {
+            if (!disable_taa_jitters && force_taa_jitter_phases == 1) {
+                force_taa_jitter_phases = 0;
+            }
+        }
         if (disable_taa_jitters) {
             force_taa_jitter_phases = 1; // Having 1 phase means there's no jitters (or well, they might not be centered in the pixel, but they are fixed over time)
         }
