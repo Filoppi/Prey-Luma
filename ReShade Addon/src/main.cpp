@@ -507,8 +507,6 @@ struct DrawStateStack {
         std::memset(&vs_instances, 0, sizeof(void*) * max_shader_class_instances);
         std::memset(&ps_instances, 0, sizeof(void*) * max_shader_class_instances);
 #endif
-        std::memset(&render_target_views, 0, sizeof(void*) * D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT);
-        std::memset(&depth_stencil_views, 0, sizeof(void*) * D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT);
     }
 
     // Cache aside the previous resources/states:
@@ -521,7 +519,7 @@ struct DrawStateStack {
         device_context->RSGetViewports(&viewports_num, &viewports[0]);
         device_context->PSGetShaderResources(0, 1, &shader_resource_view); // Only cache the first one
         device_context->PSGetConstantBuffers(shader_cbuffers_index, 1, &constant_buffer); // Hardcoded to our "shader_cbuffers_index"
-        device_context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &render_target_views[0], &depth_stencil_views[0]);
+        device_context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &render_target_views[0], &depth_stencil_view);
 #if ENABLE_SHADER_CLASS_INSTANCES
         device_context->VSGetShader(&vs, vs_instances, &vs_instances_count);
         device_context->PSGetShader(&ps, ps_instances, &ps_instances_count);
@@ -563,15 +561,11 @@ struct DrawStateStack {
         device_context->PSSetShaderResources(0, 1, &shader_resource_view_const);
         ID3D11Buffer* const constant_buffer_const = constant_buffer.get();
         device_context->PSSetConstantBuffers(shader_cbuffers_index, 1, &constant_buffer_const);
-        device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &render_target_views[0], depth_stencil_views[0]);
+        device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &render_target_views[0], depth_stencil_view.get());
         for (UINT i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; i++) {
             if (render_target_views[i] != nullptr) {
                 render_target_views[i]->Release();
                 render_target_views[i] = nullptr;
-            }
-            if (depth_stencil_views[i] != nullptr) {
-                depth_stencil_views[i]->Release();
-                depth_stencil_views[i] = nullptr;
             }
         }
 #if ENABLE_SHADER_CLASS_INSTANCES
@@ -606,7 +600,7 @@ struct DrawStateStack {
 #endif
     D3D11_PRIMITIVE_TOPOLOGY primitive_topology;
     ID3D11RenderTargetView* render_target_views[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
-    ID3D11DepthStencilView* depth_stencil_views[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
+    com_ptr<ID3D11DepthStencilView> depth_stencil_view;
     com_ptr<ID3D11ShaderResourceView> shader_resource_view;
     com_ptr<ID3D11Buffer> constant_buffer;
     D3D11_RECT scissor_rects[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
