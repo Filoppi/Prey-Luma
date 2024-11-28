@@ -112,12 +112,12 @@ namespace Hooks
 
 	void Patches::SetHaltonSequencePhases(unsigned int phases)
 	{
-		static unsigned int lastWrittePhases = 16; // Default game value
-		if (phases != lastWrittePhases && Offsets::gameVersion == Offsets::GameVersion::PreySteam) // TODO: add support for GOG and DLCs (and remove mention to lack of support from game.cfg, around "r_AntialiasingTAAPattern")
+		static unsigned int lastWrittenPhases = 16; // Default game value
+		if (phases != lastWrittenPhases)
 		{
-			lastWrittePhases = phases;
+			lastWrittenPhases = phases;
 
-			const auto jittersAddress = Offsets::baseAddress + 0xF41CA0;
+			const auto jittersAddress = Offsets::GetAddress(Offsets::CD3D9Renderer_RT_RenderScene_Jitters);
 			constexpr int validValues[] = { 1, 2, 4, 8, 16, 32, 64, 128 }; // 1 works, it disables jitters
 
 			// Note that this needs to be a power of two due to how our hook is implemented (it's a modulo operator, implemented as bitwise filter).
@@ -136,9 +136,10 @@ namespace Hooks
 			closestPhases--;
 
 			// Change Halton pattern generation (r_AntialiasingTAAPattern 10, which is Halton 16 phases) to using a phase of x, this works a lot better with DLSS
-			dku::Hook::WriteImm(jittersAddress + 0x57A, closestPhases);
+			dku::Hook::WriteImm(jittersAddress + Offsets::Get(Offsets::CD3D9Renderer_RT_RenderScene_Jitters), closestPhases);
 		}
 	}
+
 	void Patches::SetHaltonSequencePhases(unsigned int renderResY, unsigned int outputResY, unsigned int basePhases)
 	{
 		// NV DLSS suggested formula
