@@ -64,7 +64,7 @@
 #ifndef ENABLE_LUT_TETRAHEDRAL_INTERPOLATION
 #define ENABLE_LUT_TETRAHEDRAL_INTERPOLATION 0
 #endif
-// 0 Vanilla SDR (Hable), 1 Luma HDR (Vanilla+ Hable/DICE mix), 2 Untonemapped
+// 0 Vanilla SDR (Hable), 1 Luma HDR (Vanilla+ Hable/DICE mix) (also works for SDR), 2 Untonemapped
 #ifndef TONEMAP_TYPE
 #define TONEMAP_TYPE 1
 #endif
@@ -75,6 +75,7 @@
 #endif
 #define DELAY_HDR_TONEMAP (TRY_DELAY_HDR_TONEMAP && TONEMAP_TYPE == 1)
 // Sun shafts were drawn after tonemapping in the Vanilla game, thus they were completely SDR, Luma has implemented an HDR version of them which tries to retain the artistic direction.
+// This looks better as true in SDR too, as it avoids heavy clipping.
 #define ANTICIPATE_SUNSHAFTS (!DELAY_HDR_TONEMAP || 1)
 // 0 Vanilla
 // 1 Medium (Vanilla+)
@@ -90,9 +91,10 @@
 // Unjitter the sun shafts depth buffer and re-jitter their generation.
 // This is because they draw before TAA/DLSS but with screen space logic, so jittering needs to be done manually.
 #define REJITTER_SUNSHAFTS 1
-// Lens optics were clipped to 1 due to being rendered before tonemapping. As long as "DELAY_HDR_TONEMAP" is true, now these will also be tonemapped instead of clipped.
-#ifndef ENABLE_LENS_OPTICS_HDR
-#define ENABLE_LENS_OPTICS_HDR 1
+// Lens optics were clipped to 1 due to being rendered before tonemapping. As long as "DELAY_HDR_TONEMAP" is true, now these will also be tonemapped instead of clipped (even in SDR, so "TONEMAP_TYPE" needs to be HDR).
+#if !defined(ENABLE_LENS_OPTICS_HDR) || ENABLE_LENS_OPTICS_HDR >= 1
+#undef ENABLE_LENS_OPTICS_HDR
+#define ENABLE_LENS_OPTICS_HDR (TONEMAP_TYPE >= 1)
 #endif
 #ifndef AUTO_HDR_VIDEOS
 #define AUTO_HDR_VIDEOS 1
@@ -242,7 +244,7 @@
 // 1 Additive Bloom
 // 2 Native Bloom
 #define TEST_BLOOM_TYPE (DEVELOPMENT ? 0 : 0)
-#define TEST_SUN_SHAFTS (DEVELOPMENT && 0)
+#define TEST_SUNSHAFTS (DEVELOPMENT && 0)
 // 0 None
 // 1 Show fixed color
 // 2 Show only lens optics
@@ -265,7 +267,6 @@ cbuffer LumaSettings : register(b2)
 {
   struct
   {
-    //TODOFT0: Also properly add SDR support with a separate TM? And disable many HDR exclusive effects with it
     // 0 for SDR (80 nits) (gamma sRGB output)
     // 1 for HDR
     // 2 for SDR on HDR (203 nits) (gamma 2.2 output)

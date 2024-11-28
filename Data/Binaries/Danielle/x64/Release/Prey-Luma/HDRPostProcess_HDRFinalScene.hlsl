@@ -345,9 +345,9 @@ void HDRFinalScenePS(float4 WPos, float4 baseTC, out float4 outColor)
   outColor.rgb = gamma_sRGB_to_linear(linear_to_sRGB_gamma(outColor.rgb) + (sunShafts.rgb * sunShaftsAlpha));
 #endif
 #endif // _RT_SAMPLE3 && TEST_BLOOM_TYPE == 0 && ENABLE_SUNSHAFTS && !ANTICIPATE_SUNSHAFTS
-#if _RT_SAMPLE3 && ENABLE_SUNSHAFTS && TEST_SUN_SHAFTS
+#if _RT_SAMPLE3 && ENABLE_SUNSHAFTS && TEST_SUNSHAFTS
 	outColor.rgb = cSunShafts.rgb;
-#endif // _RT_SAMPLE3 && ENABLE_SUNSHAFTS && TEST_SUN_SHAFTS
+#endif // _RT_SAMPLE3 && ENABLE_SUNSHAFTS && TEST_SUNSHAFTS
   
 #if ENABLE_COLOR_GRADING_LUT //TODOFT5: test LUT extrapolation one last time
   

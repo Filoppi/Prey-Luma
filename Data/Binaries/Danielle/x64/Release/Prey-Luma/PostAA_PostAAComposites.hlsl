@@ -28,8 +28,8 @@ SamplerState ssSceneLum : register(s7);
 Texture2D<float4> compositeSourceTex : register(t0);
 Texture2D<float4> lensOpticsTex : register(t5);
 Texture3D<float4> filmGrainTex : register(t6);
-Texture2D<float2> dummyFloat2Texture : register(t8); // Luma FT
 Texture2D<float2> SceneLumTex : register(t7);
+Texture2D<float2> dummyFloat2Texture : register(t8); // LUMA FT
 
 float2 MapViewportToRaster(float2 normalizedViewportPos, float2 HPosScale /*= CV_HPosScale.xy*/)
 {
@@ -131,25 +131,25 @@ void ApplyLensOptics(inout float4 cScene, float2 scaledTC, float2 invRendRes, fl
 // It's arguable whether they should be affected, but for visual consistency, given that theoretically they are generated from world images, they should also be affected by exposure,
 // and visually it should look more consistent.
 #if ENABLE_LENS_OPTICS_HDR
-    cLensOpticsComposite.rgb *= lerp(1.0, fExposure, SunShaftsAndLensOpticsExposureAlpha);
-#endif
+		  cLensOpticsComposite.rgb *= lerp(1.0, fExposure, SunShaftsAndLensOpticsExposureAlpha);
+#endif // ENABLE_LENS_OPTICS_HDR
 
-  // LUMA FT: By default, lens optics passes are rendered, tonemapped to a 0-1 range without applying gamma, and then stored on a R11G11B10F texture.
-  // Here, they were blended in in gamma space, without gamma correction. It's unclear why they were rendered in "baked" gamma space but stored on linear float textures.
-  // Possibly there was a mistake and they were meant to be linear and not treated as gamma space; it's unclear,
-  // but to emulate the vanilla look (after empirical tests), we assume their color was meant to be in gamma space (it's fair to assume so for anything that is additive to gamma space backgrounds).
-  // We tried linearizing their values before writing on their texture (independently of "POST_PROCESS_SPACE_TYPE"), which should retain more quality given they were stored on R11G11B10F low quality linear buffers (now R16G16B16A16F),
-  // but their blends end up looking different then.
-  // Note that we tried to scale them to HDR with some AutoHDR algorithm here, but it did not look good, so we implemented it directly in their drawing, in each pass.
+// LUMA FT: By default, lens optics passes are rendered, tonemapped to a 0-1 range without applying gamma, and then stored on a R11G11B10F texture.
+// Here, they were blended in in gamma space, without gamma correction. It's unclear why they were rendered in "baked" gamma space but stored on linear float textures.
+// Possibly there was a mistake and they were meant to be linear and not treated as gamma space; it's unclear,
+// but to emulate the vanilla look (after empirical tests), we assume their color was meant to be in gamma space (it's fair to assume so for anything that is additive to gamma space backgrounds).
+// We tried linearizing their values before writing on their texture (independently of "POST_PROCESS_SPACE_TYPE"), which should retain more quality given they were stored on R11G11B10F low quality linear buffers (now R16G16B16A16F),
+// but their blends end up looking different then.
+// Note that we tried to scale them to HDR with some AutoHDR algorithm here, but it did not look good, so we implemented it directly in their drawing, in each pass.
 #if ENABLE_LENS_OPTICS_HDR // LUMA FT: unlock full additive range, in HDR there's no need to only blend in part of them if the background is already white (also because we moved tonemapping to be after this). Its alpha is meant to be ignored anyway.
-		cScene.rgb += cLensOpticsComposite.rgb;
+		  cScene.rgb += cLensOpticsComposite.rgb;
+#else // !ENABLE_LENS_OPTICS_HDR
+#if 1 // LUMA FT: this emulates SDR behaviour relatively accurately but looks a bit better (despite possibly clipping more), still, it does not look right in HDR as the background is already too bright due to the tonemapped sun shafts.
+		  cScene.rgb += cLensOpticsComposite.rgb * (1.0-saturate(GetLuminance(cScene.rgb)));
 #else
-#if 1 // LUMA FT: this emulates SDR behaviour relatively accurately but looks a bit better, still, it does not look right in HDR as the background is already too bright due to the tonemapper sun shafts.
-		cScene.rgb += cLensOpticsComposite.rgb * (1.0-saturate(GetLuminance(cScene.rgb)));
-#else
-		cScene.rgb += cLensOpticsComposite.rgb * (1.0-saturate(cScene.rgb)); // Crytek: should blend in linear space, but increases cost further
+		  cScene.rgb += cLensOpticsComposite.rgb * (1.0-saturate(cScene.rgb)); // Crytek: should blend in linear space, but increases cost further
 #endif
-#endif
+#endif // ENABLE_LENS_OPTICS_HDR
 
 #endif // _RT_SAMPLE1
 }
@@ -262,7 +262,7 @@ void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
 	ApplyFilmGrain(outColor, baseTC.xy, fExposure);
 #endif // ENABLE_FILM_GRAIN
 
-// It's better to do tonemapping here than in "HDRPostProces.cfx" "HDRFinalScenePS", as this is after AA and after some other additive post process effects are drawn.
+// It's better to do tonemapping here than in "HDRPostProces.cfx" "HDRFinalScenePS", as this is after AA and after some other additive post process effects are drawn (e.g. tonemapping after film grain is good otherwise it could clip and not be visible on top of peak white backgrounds).
 // Ideally we'd do tonemapping and dithering even later, in "PostEffectsGame.cfx" "UberGamePostProcess" but that's not always run.
 // Note that this is more like a simple "display mapping" pass, it doesn't really change shadows and mid tones.
 #if DELAY_HDR_TONEMAP

@@ -30,7 +30,7 @@ void main(
 // This shader in particular can draw a red line that was often clipped (to white) in SDR due to the background already being 1, while in HDR its additive and always visible
 // and it sticks out a lot more, to the point where it looks ugly. The color is usually mostly sourced from the "irisBaseMap" texture.
 #if ENABLE_LENS_OPTICS_HDR
-  r0.xyz = lerp(r0.xyz, GetLuminance(r0.xyz), 2.0 / 3.0);
+  r0.xyz = lerp(r0.xyz, GetLuminance(r0.xyz), 2.0 / 3.0); // We do this in SDR too given it should look better there too
 #endif
   r0.xyz = inColor.xyz * r0.xyz; // This is the color tint of all lens optics sun effects
   r0.w = inColor.w;
