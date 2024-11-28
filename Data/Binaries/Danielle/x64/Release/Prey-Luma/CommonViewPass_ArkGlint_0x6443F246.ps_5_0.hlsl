@@ -28,10 +28,10 @@ void main(
 {
   // LUMA FT: fix these effects not scaling properly with resolution (e.g. the overlay lines would become too small) (maybe we shouldn't increase their target resolution if we are below them? We have TAA though)
   // Note that these look best at 1920x1080. It's not clear if the horizontal resolution (aspect ratio) was acknowledged at all in the code, but for now we scale that axis too.
-  WPos.xy *= float2(BaseHorizontalResolution, BaseVerticalResolution) / (CV_ScreenSize.xy / CV_HPosScale.xy);
+  WPos.xy *= float2(BaseHorizontalResolution, BaseVerticalResolution) / CV_ScreenSize.xy;
   // LUMA FT: Add the camera jitters given that these are rendered before TAA, so we have the oportunity to add temporal detail to them
   // (camera jitters might have already been partially considered in the geometry (vertex shader) of this pass, but modulating the screen position helps further)
-	WPos.xy += LumaData.CameraJitters.xy * float2(0.5, -0.5) * (CV_ScreenSize.xy / CV_HPosScale.xy);
+	WPos.xy += LumaData.CameraJitters.xy * float2(0.5, -0.5) * CV_ScreenSize.xy;
 
 #if 0 //TODOFT2: do this?
 	float fGlintSpeed = VisionMtlParams.x;
