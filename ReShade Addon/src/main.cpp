@@ -324,10 +324,8 @@ std::unordered_set<uint32_t> shader_hashes_PostAA;
 std::unordered_set<uint32_t> shader_hashes_PostAAComposites;
 uint32_t shader_hash_PostAAUpscaleImage;
 std::unordered_set<uint32_t> shader_hashes_LensOptics;
-#if DEVELOPMENT
 std::unordered_set<uint32_t> shader_hashes_DirOccPass;
 std::unordered_set<uint32_t> shader_hashes_SSDO_Blur;
-#endif
 const uint32_t shader_hash_copy_vertex = std::stoul("FFFFFFF0", nullptr, 16);
 const uint32_t shader_hash_copy_pixel = std::stoul("FFFFFFF1", nullptr, 16);
 const uint32_t shader_hash_transform_function_copy_pixel = std::stoul("FFFFFFF2", nullptr, 16);
