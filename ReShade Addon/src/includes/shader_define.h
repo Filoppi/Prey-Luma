@@ -125,7 +125,7 @@ public:
     }
 
     // This assumes the value was numerical to begin with (it usually is)
-    uint8_t GetNumericalCompiledValue() const {
+    uint8_t GetCompiledNumericalValue() const {
         // Avoid edge characters (that ImGui allows to write)
         if (compiled_data.value[0] == '\0' || compiled_data.value[0] == ' ' || compiled_data.value[0] == '-') {
             // Default to 0 if we have no default value

@@ -1,4 +1,3 @@
-
 #include "NativePlugin.h"
 
 #include <cassert>
