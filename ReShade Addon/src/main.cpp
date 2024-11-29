@@ -445,7 +445,7 @@ std::vector<ShaderDefineData> shader_defines_data = {
   {"ENABLE_DITHERING", '0', false, false, "Temporal dithering control\nIt doesn't seem to be needed in this game so Luma disabled it by default"},
   {"DITHERING_BIT_DEPTH", '9', false, false, "Dithering quantization (values between 7 and 9 should be best)"},
 };
-//TODOFT5: define these automatically?
+//TODOFT5: define these automatically? Through some kind of hashed map, though none of the ones by string is optimized?
 constexpr uint32_t development_define_index = 0;
 constexpr uint32_t post_process_space_define_index = 1;
 constexpr uint32_t gamma_correction_define_index = 2;
@@ -2703,7 +2703,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
           }
       }
       if (!has_drawn_main_post_processing) {
-          // TODO: optimize these shader searches by simply marking "CachedPipeline" with a tag on what they are (and whether they have a particular role) (also we can restrict the search to pixel shaders)
+          //TODOFT5: optimize these shader searches by simply marking "CachedPipeline" with a tag on what they are (and whether they have a particular role) (also we can restrict the search to pixel shaders). Actually, just make an struct with pixel/vertex/compute shaders as separate arrays, so we can define how to catch any pass, and quickly search them individually.
           // This is the last known pass that is guaranteed to run before UI draws in
           for (auto shader_hash : shader_hashes_PostAAComposites) {
               if (std::find(original_shader_hashes.begin(), original_shader_hashes.end(), shader_hash) != original_shader_hashes.end()) {
