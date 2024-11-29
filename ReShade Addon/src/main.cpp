@@ -11,7 +11,7 @@
 #define TEST 0
 
 // "_DEBUG" might already be defined in debug?
-// Setting it to 0 causes the compiler to still assume it as defined and that thus we are in debug mode.
+// Setting it to 0 causes the compiler to still assume it as defined and that thus we are in debug mode (don't change this manually).
 #ifndef NDEBUG
 #define _DEBUG 1
 #endif // !NDEBUG
@@ -288,6 +288,51 @@ const std::string NAME_ADVANCED_SETTINGS = std::string(NAME) + " Advanced";
 // Needs to be here to compile properly
 #include "includes/shader_define.h"
 
+struct ShaderHashesList {
+    std::unordered_set<uint32_t> pixel_shaders;
+    std::unordered_set<uint32_t> vertex_shaders;
+    std::unordered_set<uint32_t> compute_shaders;
+
+    bool Contains(uint32_t shader_hash, reshade::api::shader_stage shader_stage) {
+        //TODOFT: is this right?
+        // NOTE: we could probably check if the value matches a specific shader stage (e.g. a switch), but I'm not 100% sure other flags are never set
+        if ((shader_stage & (reshade::api::shader_stage::pixel | reshade::api::shader_stage::vertex)) != 0) {
+            return pixel_shaders.contains(shader_hash) || vertex_shaders.contains(shader_hash);
+        }
+        //if ((shader_stage & reshade::api::shader_stage::pixel) != 0) {
+        //    return pixel_shaders.contains(shader_hash);
+        //}
+        //if ((shader_stage & reshade::api::shader_stage::vertex) != 0) {
+        //    return vertex_shaders.contains(shader_hash);
+        //}
+        if ((shader_stage & reshade::api::shader_stage::compute) != 0) {
+            return compute_shaders.contains(shader_hash);
+        }
+        return false;
+    }
+    bool Contains(const ShaderHashesList& other) {
+        for (const uint32_t shader_hash : other.pixel_shaders) {
+            if (pixel_shaders.contains(shader_hash)) {
+                return true;
+            }
+        }
+        for (const uint32_t shader_hash : other.vertex_shaders) {
+            if (vertex_shaders.contains(shader_hash)) {
+                return true;
+            }
+        }
+        for (const uint32_t shader_hash : other.compute_shaders) {
+            if (compute_shaders.contains(shader_hash)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    bool Empty() {
+        return pixel_shaders.empty() && vertex_shaders.empty() && compute_shaders.empty();
+    }
+};
+
 // Settings
 #if DEVELOPMENT || TEST
 bool auto_dump = true;
@@ -317,15 +362,15 @@ constexpr float default_peak_white = 1000;
 bool hdr_enabled_display = false;
 bool hdr_supported_display = false;
 float default_user_peak_white = default_peak_white;
-std::unordered_set<uint32_t> shader_hashes_TiledShadingTiledDeferredShading;
-std::unordered_set<uint32_t> shader_hashes_MotionBlur;
-std::unordered_set<uint32_t> shader_hashes_HDRPostProcessHDRFinalScene;
-std::unordered_set<uint32_t> shader_hashes_PostAA;
-std::unordered_set<uint32_t> shader_hashes_PostAAComposites;
+ShaderHashesList shader_hashes_TiledShadingTiledDeferredShading;
+ShaderHashesList shader_hashes_MotionBlur;
+ShaderHashesList shader_hashes_HDRPostProcessHDRFinalScene;
+ShaderHashesList shader_hashes_PostAA;
+ShaderHashesList shader_hashes_PostAAComposites;
 uint32_t shader_hash_PostAAUpscaleImage;
-std::unordered_set<uint32_t> shader_hashes_LensOptics;
-std::unordered_set<uint32_t> shader_hashes_DirOccPass;
-std::unordered_set<uint32_t> shader_hashes_SSDO_Blur;
+ShaderHashesList shader_hashes_LensOptics;
+ShaderHashesList shader_hashes_DirOccPass;
+ShaderHashesList shader_hashes_SSDO_Blur;
 const uint32_t shader_hash_copy_vertex = std::stoul("FFFFFFF0", nullptr, 16);
 const uint32_t shader_hash_copy_pixel = std::stoul("FFFFFFF1", nullptr, 16);
 const uint32_t shader_hash_transform_function_copy_pixel = std::stoul("FFFFFFF2", nullptr, 16);
@@ -1965,6 +2010,7 @@ void OnInitPipeline(
           // Indexes
           assert(std::find(cached_pipeline->shader_hashes.begin(), cached_pipeline->shader_hashes.end(), shader_hash) == cached_pipeline->shader_hashes.end());
           cached_pipeline->shader_hashes.emplace_back(shader_hash);
+          ASSERT_ONCE(cached_pipeline->shader_hashes.size() == 1); // Just to make sure if this actually happens
 
           // Make sure we didn't already have a valid pipeline in there (this should never happen)
           auto pipelines_pair = pipeline_caches_by_shader_hash.find(shader_hash);
@@ -2446,6 +2492,8 @@ void OnPresent(
 //TODOFT5: Add "UpdateSubresource" to check whether they map buffers with that (it's not optimized so probably it's unused by CryEngine)? Also make sure that our CopyTexture() func works!
 //TODOFT5: merge all the shader permutations that use the same code (and then move shader binaries to bin folder?)
 //TODOFT5: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project?
+//TODOFT5: remove sharpening from custom menu settings? And fix TAA not appearing set correctly (duplicate)?
+//TODOFT5: investigate why some effects don't scale properly with dynamic res, simply look at the sun in the first scene
 //TODOFT: add a new RT to draw UI on top (pre-multiplied alpha everywhere), so we could compose it smartly, possibly in the final linearization pass.
 
 // Return false to prevent the original draw call from running (e.g. if you replaced it or just want to skip it)
@@ -2477,20 +2525,21 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
 
   bool is_custom_pass = false;
 
-  std::vector<uint32_t> original_shader_hashes;
+  ShaderHashesList original_shader_hashes;
 
-#if 1
 #if DEVELOPMENT
   last_drawn_shader = "";
 #endif //DEVELOPMENT
+  // We check the last shader pointers ("pipeline_state_original_compute_shader") we had cached in the pipeline set state functions.
+  // Alternatively we could check "PSGetShader()" against "pipeline_cache_by_pipeline_clone_handle" but that'd probably have uglier and slower code.
   if (is_dispatch) {
       if (pipeline_state_original_compute_shader.handle != 0)
       {
           const auto pipeline_pair = pipeline_cache_by_pipeline_handle.find(pipeline_state_original_compute_shader.handle);
           if (pipeline_pair != pipeline_cache_by_pipeline_handle.end() && pipeline_pair->second != nullptr) {
-              original_shader_hashes = pipeline_pair->second->shader_hashes;
+              original_shader_hashes.compute_shaders = std::unordered_set<uint32_t>(pipeline_pair->second->shader_hashes.begin(), pipeline_pair->second->shader_hashes.end());
 #if DEVELOPMENT
-              last_drawn_shader = original_shader_hashes.empty() ? "" : std::format("{:x}", original_shader_hashes[0]);
+              last_drawn_shader = original_shader_hashes.compute_shaders.empty() ? "" : std::format("{:x}", *original_shader_hashes.compute_shaders.begin());
 #endif //DEVELOPMENT
               is_custom_pass = pipeline_pair->second->cloned;
               stages = reshade::api::shader_stage::compute;
@@ -2501,7 +2550,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
       if (pipeline_state_original_vertex_shader.handle != 0) {
           const auto pipeline_pair = pipeline_cache_by_pipeline_handle.find(pipeline_state_original_vertex_shader.handle);
           if (pipeline_pair != pipeline_cache_by_pipeline_handle.end() && pipeline_pair->second != nullptr) {
-              original_shader_hashes = pipeline_pair->second->shader_hashes;
+              original_shader_hashes.vertex_shaders = std::unordered_set<uint32_t>(pipeline_pair->second->shader_hashes.begin(), pipeline_pair->second->shader_hashes.end());
               is_custom_pass = pipeline_pair->second->cloned;
               stages = reshade::api::shader_stage::vertex;
           }
@@ -2509,36 +2558,15 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
       if (pipeline_state_original_pixel_shader.handle != 0) {
           const auto pipeline_pair = pipeline_cache_by_pipeline_handle.find(pipeline_state_original_pixel_shader.handle);
           if (pipeline_pair != pipeline_cache_by_pipeline_handle.end() && pipeline_pair->second != nullptr) {
-              original_shader_hashes.insert(original_shader_hashes.end(), pipeline_pair->second->shader_hashes.begin(), pipeline_pair->second->shader_hashes.end());
+              original_shader_hashes.pixel_shaders = std::unordered_set<uint32_t>(pipeline_pair->second->shader_hashes.begin(), pipeline_pair->second->shader_hashes.end());
 #if DEVELOPMENT
-              last_drawn_shader = original_shader_hashes.empty() ? "" : std::format("{:x}", original_shader_hashes[original_shader_hashes.size()-1]);
+              last_drawn_shader = original_shader_hashes.pixel_shaders.empty() ? "" : std::format("{:x}", *original_shader_hashes.pixel_shaders.begin());
 #endif //DEVELOPMENT
               is_custom_pass |= pipeline_pair->second->cloned;
               stages |= reshade::api::shader_stage::pixel;
           }
       }
   }
-#else // Alternative (old?) unfinished method
-  const auto pipeline_pair;
-  if (is_dispatch) {
-    com_ptr<ID3D11ComputeShader> cs;
-    native_device_context->CSGetShader(&cs, nullptr, 0);
-    is_custom_pass |= cs.get() ? false : pipeline_cache_by_pipeline_clone_handle.contains((uint64_t)cs.get());
-    stages = reshade::api::shader_stage::compute;
-    original_shader_hashes...
-  }
-  else {
-    com_ptr<ID3D11VertexShader> vs;
-    com_ptr<ID3D11PixelShader> ps;
-    native_device_context->VSGetShader(&vs, nullptr, 0);
-    native_device_context->PSGetShader(&ps, nullptr, 0);
-    // Pipelines are actually just shaders pointers in DX11
-    is_custom_pass |= (vs.get() ? false : pipeline_cache_by_pipeline_clone_handle.contains((uint64_t)vs.get())) || (ps.get() ? false : pipeline_cache_by_pipeline_clone_handle.contains((uint64_t)ps.get()));
-    stages = reshade::api::shader_stage::vertex | reshade::api::shader_stage::pixel;
-    pipeline_pair = pipeline_cache_by_pipeline_clone_handle.find((uint64_t)ps.get());
-    original_shader_hashes...
-  }
-#endif
 
 //TODOFT4: it seems like this assert (or something like this) can happen when DRS changes res to quick or is toggled between frames.
 //Somehow the wrong rend res can persist in our data from a global cbuffer 13 set that wasn't meant for the main scene rendering but some side rendering with a separate res.
@@ -2552,24 +2580,17 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
       ASSERT_ONCE(viewports_num == 1); // Possibly innocuous as long as it's > 0
       native_device_context->RSGetViewports(&viewports_num, &viewports[0]);
       ASSERT_ONCE(viewports[0].TopLeftX == 0 && viewports[0].TopLeftY == 0
-          && ((viewports[0].Width == std::lrintf(render_resolution.x) && viewports[0].Height == std::lrintf(render_resolution.y))
-              || (viewports[0].Width == std::lrintf(output_resolution.x) && viewports[0].Height == std::lrintf(output_resolution.y))));
+          && ((std::lrintf(viewports[0].Width) == std::lrintf(render_resolution.x) && std::lrintf(viewports[0].Height) == std::lrintf(render_resolution.y))
+              || (std::lrintf(viewports[0].Width) == std::lrintf(output_resolution.x) && std::lrintf(viewports[0].Height) == std::lrintf(output_resolution.y))));
   }
 #endif // DEVELOPMENT
 
-  if (!original_shader_hashes.empty()) {
-
-      if (!has_drawn_composed_gbuffers) {
-          for (auto shader_hash : shader_hashes_TiledShadingTiledDeferredShading) {
-              if (std::find(original_shader_hashes.begin(), original_shader_hashes.end(), shader_hash) != original_shader_hashes.end()) {
-                  has_drawn_composed_gbuffers = true;
-                  break;
-              }
-          }
+  if (!original_shader_hashes.Empty()) {
+      //TODOFT5: optimize these shader searches by simply marking "CachedPipeline" with a tag on what they are (and whether they have a particular role) (also we can restrict the search to pixel shaders) upfront
+      if (!has_drawn_composed_gbuffers && original_shader_hashes.Contains(shader_hashes_TiledShadingTiledDeferredShading)) {
+          has_drawn_composed_gbuffers = true;
       }
-      if (!has_drawn_tonemapping) {
-          for (auto shader_hash : shader_hashes_HDRPostProcessHDRFinalScene) {
-              if (std::find(original_shader_hashes.begin(), original_shader_hashes.end(), shader_hash) != original_shader_hashes.end()) {
+      if (!has_drawn_tonemapping && original_shader_hashes.Contains(shader_hashes_HDRPostProcessHDRFinalScene)) {
                   has_drawn_tonemapping = true;
 
                   // Update the DLSS pre-exposure to take the opposite value of our exposure (basically our brightness) to avoid DLSS causing additional lag when the exposure changes.
@@ -2669,22 +2690,12 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                       render_target_view_const = rtv.get();
                       native_device_context->OMSetRenderTargets(1, &render_target_view_const, nullptr);
                   }
-
-                  break;
-              }
-          }
       }
       // Note: this doesn't always run, it's based on a user setting!
-      if (!has_drawn_motion_blur) {
-          for (auto shader_hash : shader_hashes_MotionBlur) {
-              if (std::find(original_shader_hashes.begin(), original_shader_hashes.end(), shader_hash) != original_shader_hashes.end()) {
-                  has_drawn_motion_blur = true;
-                  break;
-              }
-          }
+      if (!has_drawn_motion_blur && original_shader_hashes.Contains(shader_hashes_MotionBlur)) {
+          has_drawn_motion_blur = true;
       }
-      if (!has_drawn_ssao) {
-          for (auto shader_hash : shader_hashes_DirOccPass) {
+      if (!has_drawn_ssao && original_shader_hashes.Contains(shader_hashes_DirOccPass)) {
             if (cloned_pipeline_count != 0 && GetShaderDefineCompiledNumericalValue(SSAO_TYPE_HASH) >= 1) { // If using GTAO
 #if 0
                 com_ptr<ID3D11RenderTargetView> render_target_view;
@@ -2769,38 +2780,24 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                 gtao_edges_srv = nullptr;
             }
             has_drawn_ssao = true;
-            break;
-          }
       }
-      if (has_drawn_ssao && !has_drawn_ssao_denoise) {
-          for (auto shader_hash : shader_hashes_SSDO_Blur) {
-              if (std::find(original_shader_hashes.begin(), original_shader_hashes.end(), shader_hash) != original_shader_hashes.end()) {
-                  if (gtao_edges_srv.get()) {
-                      ID3D11ShaderResourceView* const shader_resource_view_const = gtao_edges_srv.get();
-                      native_device_context->PSSetShaderResources(3, 1, &shader_resource_view_const);
-                  }
-                  has_drawn_ssao_denoise = true;
-                  break;
-              }
+      if (has_drawn_ssao && !has_drawn_ssao_denoise && original_shader_hashes.Contains(shader_hashes_SSDO_Blur)) {
+          if (gtao_edges_srv.get()) {
+              ID3D11ShaderResourceView* const shader_resource_view_const = gtao_edges_srv.get();
+              native_device_context->PSSetShaderResources(3, 1, &shader_resource_view_const);
           }
+          has_drawn_ssao_denoise = true;
       }
-      if (!has_drawn_main_post_processing) {
-          //TODOFT5: optimize these shader searches by simply marking "CachedPipeline" with a tag on what they are (and whether they have a particular role) (also we can restrict the search to pixel shaders). Actually, just make an struct with pixel/vertex/compute shaders as separate arrays, so we can define how to catch any pass, and quickly search them individually.
+      if (!has_drawn_main_post_processing && original_shader_hashes.Contains(shader_hashes_PostAAComposites)) {
           // This is the last known pass that is guaranteed to run before UI draws in
-          for (auto shader_hash : shader_hashes_PostAAComposites) {
-              if (std::find(original_shader_hashes.begin(), original_shader_hashes.end(), shader_hash) != original_shader_hashes.end()) {
                   has_drawn_main_post_processing = true;
                   // If DRS is not currently running, upscaling won't happen
-                  if (!prey_drs_active)
-                  {
+                  if (!prey_drs_active) {
                       has_drawn_upscaling = true;
                   }
-                  break;
-              }
-          }
       }
       if (!has_drawn_upscaling) {
-           if (std::find(original_shader_hashes.begin(), original_shader_hashes.end(), shader_hash_PostAAUpscaleImage) != original_shader_hashes.end()) {
+           if (original_shader_hashes.Contains(shader_hash_PostAAUpscaleImage, reshade::api::shader_stage::pixel)) {
                has_drawn_upscaling = true;
                assert(has_drawn_main_post_processing && prey_drs_active);
            }
@@ -2881,8 +2878,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
           // texture sample coordinates in post processing). Even if it's after pp, it should still have enough quality.
           // We replace the "TAA"/"SMAA 2TX" pass (whichever of the ones in our supported passes list is run), ignoring whatever it would have done (the secondary texture it allocated is kept alive, even if we don't use it, we couldn't really destroy it from ReShade),
           // after there's a "composition" pass (film grain, sharpening, ...) and then an optional upscale pass, both of these are too late for DLSS to run.
-          for (auto shader_hash : shader_hashes_PostAA) {
-              if (std::find(original_shader_hashes.begin(), original_shader_hashes.end(), shader_hash) != original_shader_hashes.end()) {
+          if (original_shader_hashes.Contains(shader_hashes_PostAA)) {
                   ASSERT_ONCE(prey_taa_detected); // Why did we get here without TAA enabled?
                   com_ptr<ID3D11ShaderResourceView> ps_shader_resources[17];
                   // 0 current color source
@@ -3122,9 +3118,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                           dlss_output_color = nullptr;
                       }
                   }
-                  break;
               }
-          }
       }
 #endif // NGX
   }
@@ -3655,10 +3649,10 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
         // so we want to ignore these cases. We stop at the gbuffer compositions draw, because that's the last know cbuffer 13 to have the perfect values we are looking for (that shader is always run, so it's reliable)!
         if (output_resolution_matches && (/*!found_per_view_globals ||*/ (!has_drawn_composed_gbuffers && !has_drawn_tonemapping && !has_drawn_main_post_processing)) /*&& !prey_drs_active*/) {
 #if DEVELOPMENT
-            static float2 previous_render_resolution;
+            static float2 local_previous_render_resolution;
             if (!found_per_view_globals) {
-                previous_render_resolution.x = cb_per_view_global.CV_ScreenSize.x;
-                previous_render_resolution.y = cb_per_view_global.CV_ScreenSize.y;
+                local_previous_render_resolution.x = cb_per_view_global.CV_ScreenSize.x;
+                local_previous_render_resolution.y = cb_per_view_global.CV_ScreenSize.y;
             }
 #endif // DEVELOPMENT
 
@@ -3673,8 +3667,10 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
             // Ignore this when we have no shaders loaded as it would always break due to the "has_drawn_tonemapping" check failing.
             ASSERT_ONCE(cloned_pipeline_count == 0 || !found_per_view_globals || !previous_prey_drs_active || (previous_prey_drs_active == prey_drs_active));
 
-            // Make sure that our rendering resolution doesn't chance randomly within the pipeline (it probably will!)
-            assert(!found_per_view_globals || !prey_drs_detected || (AlmostEqual(render_resolution.x, previous_render_resolution.x, 0.25f) && AlmostEqual(render_resolution.y, previous_render_resolution.y, 0.25f)));
+#if DEVELOPMENT
+            // Make sure that our rendering resolution doesn't change randomly within the pipeline (it probably will!)
+            assert(!found_per_view_globals || !prey_drs_detected || (AlmostEqual(render_resolution.x, local_previous_render_resolution.x, 0.25f) && AlmostEqual(render_resolution.y, local_previous_render_resolution.y, 0.25f)));
+#endif // DEVELOPMENT
 
             // Once we detect the user enabled DRS, we can't ever know it's been disabled because the game only occasionally drops to lower rendering resolutions, so we couldn't know if it was ever disabled
             if (prey_drs_active) {
@@ -5473,59 +5469,32 @@ void Init(bool async) {
 
   // Define the pixel shader of some important passes we can use to determine where we are within the rendering pipeline:
 
-  // TiledShading TiledDeferredShading (compute shaders)
-  shader_hashes_TiledShadingTiledDeferredShading.emplace(std::stoul("1E676CD5", nullptr, 16));
-  shader_hashes_TiledShadingTiledDeferredShading.emplace(std::stoul("80FF9313", nullptr, 16));
-  shader_hashes_TiledShadingTiledDeferredShading.emplace(std::stoul("571D5EAE", nullptr, 16));
-  shader_hashes_TiledShadingTiledDeferredShading.emplace(std::stoul("6710AFD5", nullptr, 16));
-  shader_hashes_TiledShadingTiledDeferredShading.emplace(std::stoul("54147C78", nullptr, 16));
-  shader_hashes_TiledShadingTiledDeferredShading.emplace(std::stoul("BCD5A089", nullptr, 16));
-  shader_hashes_TiledShadingTiledDeferredShading.emplace(std::stoul("C2FC1948", nullptr, 16));
-  shader_hashes_TiledShadingTiledDeferredShading.emplace(std::stoul("E3EF3C20", nullptr, 16));
-  shader_hashes_TiledShadingTiledDeferredShading.emplace(std::stoul("F8633A07", nullptr, 16));
+  // TiledShading TiledDeferredShading
+  shader_hashes_TiledShadingTiledDeferredShading.compute_shaders = { std::stoul("1E676CD5", nullptr, 16), std::stoul("80FF9313", nullptr, 16), std::stoul("571D5EAE", nullptr, 16), std::stoul("6710AFD5", nullptr, 16), std::stoul("54147C78", nullptr, 16), std::stoul("BCD5A089", nullptr, 16), std::stoul("C2FC1948", nullptr, 16), std::stoul("E3EF3C20", nullptr, 16), std::stoul("F8633A07", nullptr, 16) };
   // MotionBlur MotionBlur
-  shader_hashes_MotionBlur.emplace(std::stoul("D0C2257A", nullptr, 16));
-  shader_hashes_MotionBlur.emplace(std::stoul("76B51523", nullptr, 16));
-  shader_hashes_MotionBlur.emplace(std::stoul("6DCC9E5D", nullptr, 16));
+  shader_hashes_MotionBlur.pixel_shaders = { std::stoul("D0C2257A", nullptr, 16), std::stoul("76B51523", nullptr, 16), std::stoul("6DCC9E5D", nullptr, 16) };
   // HDRPostProcess HDRFinalScene (vanilla HDR->SDR tonemapping)
-  shader_hashes_HDRPostProcessHDRFinalScene.emplace(std::stoul("B5DC761A", nullptr, 16));
-  shader_hashes_HDRPostProcessHDRFinalScene.emplace(std::stoul("17272B5B", nullptr, 16));
-  shader_hashes_HDRPostProcessHDRFinalScene.emplace(std::stoul("F87B4963", nullptr, 16));
-  shader_hashes_HDRPostProcessHDRFinalScene.emplace(std::stoul("81CE942F", nullptr, 16));
-  shader_hashes_HDRPostProcessHDRFinalScene.emplace(std::stoul("83557B79", nullptr, 16));
-  shader_hashes_HDRPostProcessHDRFinalScene.emplace(std::stoul("37ACE8EF", nullptr, 16));
-  shader_hashes_HDRPostProcessHDRFinalScene.emplace(std::stoul("66FD11D0", nullptr, 16));
+  shader_hashes_HDRPostProcessHDRFinalScene.pixel_shaders = { std::stoul("B5DC761A", nullptr, 16), std::stoul("17272B5B", nullptr, 16), std::stoul("F87B4963", nullptr, 16), std::stoul("81CE942F", nullptr, 16), std::stoul("83557B79", nullptr, 16), std::stoul("37ACE8EF", nullptr, 16), std::stoul("66FD11D0", nullptr, 16) };
   // PostAA PostAA
 // These passes don't have any projection jitters (unless maybe "SMAA 1TX" could have them if we forced them through config), so we can't replace them with DLSS SR.
 // SMAA (without TX) is completely missing from here as it doesn't have a composition pass we could replace (well, maybe NeighborhoodBlendingSMAA).
 #if 0
-  shader_hashes_PostAA.emplace(std::stoul("D8072D98", nullptr, 16)); // FXAA
-  shader_hashes_PostAA.emplace(std::stoul("E9D92B11", nullptr, 16)); // SMAA 1TX
+  shader_hashes_PostAA.pixel_shaders.emplace(std::stoul("D8072D98", nullptr, 16)); // FXAA
+  shader_hashes_PostAA.pixel_shaders.emplace(std::stoul("E9D92B11", nullptr, 16)); // SMAA 1TX
 #endif
-  shader_hashes_PostAA.emplace(std::stoul("BF813081", nullptr, 16)); // SMAA 2TX and TAA
+  shader_hashes_PostAA.pixel_shaders.emplace(std::stoul("BF813081", nullptr, 16)); // SMAA 2TX and TAA
   // PostAA PostAAComposites
-  shader_hashes_PostAAComposites.emplace(std::stoul("83AE9250", nullptr, 16));
-  shader_hashes_PostAAComposites.emplace(std::stoul("496492FE", nullptr, 16));
-  shader_hashes_PostAAComposites.emplace(std::stoul("ED6287FE", nullptr, 16));
-  shader_hashes_PostAAComposites.emplace(std::stoul("FAEE5EE9", nullptr, 16));
-  shader_hash_PostAAUpscaleImage = std::stoul("C2F1D3F6", nullptr, 16); // Upscaling (post TAA, only when in frames where DRS engage)
-  shader_hashes_LensOptics.emplace(std::stoul("4435D741", nullptr, 16));
-  shader_hashes_LensOptics.emplace(std::stoul("C54F3986", nullptr, 16));
-  shader_hashes_LensOptics.emplace(std::stoul("DAA20F29", nullptr, 16));
-  shader_hashes_LensOptics.emplace(std::stoul("047AB485", nullptr, 16));
-  shader_hashes_LensOptics.emplace(std::stoul("9D7A97B8", nullptr, 16));
-  shader_hashes_LensOptics.emplace(std::stoul("9B2630A0", nullptr, 16));
-  shader_hashes_LensOptics.emplace(std::stoul("51F2811A", nullptr, 16));
-  shader_hashes_LensOptics.emplace(std::stoul("9391298E", nullptr, 16));
-  shader_hashes_LensOptics.emplace(std::stoul("ED01E418", nullptr, 16));
-  shader_hashes_LensOptics.emplace(std::stoul("53529823", nullptr, 16));
-  shader_hashes_LensOptics.emplace(std::stoul("DDDE2220", nullptr, 16));
+  shader_hashes_PostAAComposites.pixel_shaders.emplace(std::stoul("83AE9250", nullptr, 16));
+  shader_hashes_PostAAComposites.pixel_shaders.emplace(std::stoul("496492FE", nullptr, 16));
+  shader_hashes_PostAAComposites.pixel_shaders.emplace(std::stoul("ED6287FE", nullptr, 16));
+  shader_hashes_PostAAComposites.pixel_shaders.emplace(std::stoul("FAEE5EE9", nullptr, 16));
+  shader_hash_PostAAUpscaleImage = std::stoul("C2F1D3F6", nullptr, 16); // Upscaling pixel shader (post TAA, only when in frames where DRS engage)
+  shader_hashes_LensOptics.pixel_shaders = { std::stoul("4435D741", nullptr, 16), std::stoul("C54F3986", nullptr, 16), std::stoul("DAA20F29", nullptr, 16), std::stoul("047AB485", nullptr, 16), std::stoul("9D7A97B8", nullptr, 16), std::stoul("9B2630A0", nullptr, 16), std::stoul("51F2811A", nullptr, 16), std::stoul("9391298E", nullptr, 16), std::stoul("ED01E418", nullptr, 16), std::stoul("53529823", nullptr, 16), std::stoul("DDDE2220", nullptr, 16) };
   // DeferredShading DirOccPass
-  shader_hashes_DirOccPass.emplace(std::stoul("944B65F0", nullptr, 16));
-  shader_hashes_DirOccPass.emplace(std::stoul("DB98D83F", nullptr, 16));
+  shader_hashes_DirOccPass.pixel_shaders = { std::stoul("944B65F0", nullptr, 16), std::stoul("DB98D83F", nullptr, 16) };
   // ShadowBlur - SSDO Blur
-  shader_hashes_SSDO_Blur.emplace(std::stoul("1023CD1B", nullptr, 16));
-  //TODOFT: once we have collected 100% of the game shaders, update these hashes lists and make them const
+  shader_hashes_SSDO_Blur.pixel_shaders.emplace(std::stoul("1023CD1B", nullptr, 16));
+  //TODOFT: once we have collected 100% of the game shaders, update these hashes lists
 
   cb_luma_frame_settings.ScenePeakWhite = default_peak_white;
   cb_luma_frame_settings.ScenePaperWhite = default_paper_white;

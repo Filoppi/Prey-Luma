@@ -108,7 +108,7 @@ void main(
 	// LUMA FT: this internally does not acknowledge the camera jitters difference between the current and previous frame, jitters were not included in any of the two matrices used to calculate "cbPostAA.matReprojection"
 #if 0 // (this is probably wrong)
 	float2 prevTC = CalcPreviousTC(jitteredCurrTC, depth) + jitters;
-#elif 1
+#else
 	float2 prevTC = CalcPreviousTC(currTC, depth);
 #endif
 	// currTC and prevTC are in clip space, find their diff (velocity over this frame)
@@ -192,6 +192,7 @@ void main(
 	float clipLength = 1;
 
 	// LUMA FT: it would be better to convert all these calculations to linear space, but it would change how the TAA looks and we'd need to find new values for the parameters
+	//TODOFT: the above comment isn't true anymore? These were already converted on the spot to linear space (pow 2) in vanilla code?
 	if (!offscreen)
 	{
 		clipLength = ClipHistory(cHistory, cM, cMin, cMax);

@@ -96,7 +96,7 @@ float4 main(float4 pos : SV_Position0) : SV_Target0
 #endif // GAMMA_CORRECTION_TYPE <= 0
 		color.rgb *= paperWhite;
 
-#else // SDR (on SDR)
+#else // SDR (on SDR) //TODOFT: set the dispay mode to -1 and -2 to branch on this live, for better quick SDR/HDR Luma comparisons
 
 		color.rgb = gamma_sRGB_to_linear(color.rgb, GCT_SATURATE);
 
