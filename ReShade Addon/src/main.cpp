@@ -1879,8 +1879,7 @@ void OnInitSwapchain(reshade::api::swapchain* swapchain) {
           cb_luma_frame_settings.ScenePeakWhite = srgb_white_level;
           cb_luma_frame_settings.ScenePaperWhite = srgb_white_level;
           cb_luma_frame_settings.UIPaperWhite = srgb_white_level;
-      } else
-      {
+      } else if (cb_luma_frame_settings.DisplayMode < 2) {
           cb_luma_frame_settings.ScenePeakWhite = default_user_peak_white;
       }
 
@@ -5537,6 +5536,11 @@ void Init(bool async) {
       reshade::get_config_value(runtime, NAME, "DLSSSuperResolution", dlss_sr);
       reshade::get_config_value(runtime, NAME, "TonemapUIBackground", tonemap_ui_background);
       reshade::get_config_value(runtime, NAME, "DisplayMode", cb_luma_frame_settings.DisplayMode);
+#if !DEVELOPMENT && !TEST // Don't allow "SDR in HDR for HDR" mode (there's no strong reason not to, but it avoids permutations exposed to users)
+      if (cb_luma_frame_settings.DisplayMode >= 2) {
+          cb_luma_frame_settings.DisplayMode = 0;
+      }
+#endif
       OnDisplayModeChanged();
 
       if (reshade::get_config_value(runtime, NAME, "ScenePeakWhite", cb_luma_frame_settings.ScenePeakWhite) && cb_luma_frame_settings.ScenePeakWhite <= 0.f) {
@@ -5549,7 +5553,7 @@ void Init(bool async) {
           cb_luma_frame_settings.ScenePaperWhite = srgb_white_level;
           cb_luma_frame_settings.UIPaperWhite = srgb_white_level;
       }
-      else if (cb_luma_frame_settings.DisplayMode == 2) {
+      else if (cb_luma_frame_settings.DisplayMode >= 2) {
           cb_luma_frame_settings.UIPaperWhite = cb_luma_frame_settings.ScenePaperWhite;
           cb_luma_frame_settings.ScenePeakWhite = cb_luma_frame_settings.ScenePaperWhite;
       }
