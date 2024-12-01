@@ -257,6 +257,12 @@ struct __declspec(uuid("c5805458-2c02-4ebf-b139-38b85118d971")) SwapchainData {
   std::unordered_set<uint64_t> back_buffers;
 };
 
+struct __declspec(uuid("90d9d05b-fdf5-44ee-8650-3bfd0810667a")) CommandListData {
+    reshade::api::pipeline pipeline_state_original_compute_shader = reshade::api::pipeline(0);
+    reshade::api::pipeline pipeline_state_original_vertex_shader = reshade::api::pipeline(0);
+    reshade::api::pipeline pipeline_state_original_pixel_shader = reshade::api::pipeline(0);
+};
+
 // Pipelines by handle. Multiple pipelines can target the same shader, and even have multiple shaders within themselved.
 // This only contains pipelines that we are replacing any shaders of.
 std::unordered_map<uint64_t, CachedPipeline*> pipeline_cache_by_pipeline_handle;
@@ -268,11 +274,6 @@ std::unordered_map<uint32_t, std::unordered_set<CachedPipeline*>> pipeline_cache
 std::unordered_map<uint32_t, CachedShader*> shader_cache;
 // All the shaders the user has (and has had) as custom in the live folder. By shader hash.
 std::unordered_map<uint32_t, CachedCustomShader*> custom_shaders_cache;
-
-//TODOFT: make thread safe like maps above?
-reshade::api::pipeline pipeline_state_original_compute_shader = reshade::api::pipeline(0);
-reshade::api::pipeline pipeline_state_original_vertex_shader = reshade::api::pipeline(0);
-reshade::api::pipeline pipeline_state_original_pixel_shader = reshade::api::pipeline(0);
 
 // Custom samplers mapped to original ones by texture LOD bias
 std::unordered_map<uint64_t, std::unordered_map<float, com_ptr<ID3D11SamplerState>>> custom_sampler_by_original_sampler;
@@ -2530,6 +2531,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
   bool is_custom_pass = false;
 
   ShaderHashesList original_shader_hashes;
+  auto& cmd_list_data = cmd_list->get_private_data<CommandListData>();
 
 #if DEVELOPMENT
   last_drawn_shader = "";
@@ -2537,13 +2539,13 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
   // We check the last shader pointers ("pipeline_state_original_compute_shader") we had cached in the pipeline set state functions.
   // Alternatively we could check "PSGetShader()" against "pipeline_cache_by_pipeline_clone_handle" but that'd probably have uglier and slower code.
   if (is_dispatch) {
-      if (pipeline_state_original_compute_shader.handle != 0)
+      if (cmd_list_data.pipeline_state_original_compute_shader.handle != 0)
       {
-          const auto pipeline_pair = pipeline_cache_by_pipeline_handle.find(pipeline_state_original_compute_shader.handle);
+          const auto pipeline_pair = pipeline_cache_by_pipeline_handle.find(cmd_list_data.pipeline_state_original_compute_shader.handle);
           if (pipeline_pair != pipeline_cache_by_pipeline_handle.end() && pipeline_pair->second != nullptr) {
               original_shader_hashes.compute_shaders = std::unordered_set<uint32_t>(pipeline_pair->second->shader_hashes.begin(), pipeline_pair->second->shader_hashes.end());
 #if DEVELOPMENT
-              last_drawn_shader = original_shader_hashes.compute_shaders.empty() ? "" : std::format("{:x}", *original_shader_hashes.compute_shaders.begin());
+              last_drawn_shader = original_shader_hashes.compute_shaders.empty() ? "" : std::format("{:x}", *original_shader_hashes.compute_shaders.begin()); // String hash to int
 #endif //DEVELOPMENT
               is_custom_pass = pipeline_pair->second->cloned;
               stages = reshade::api::shader_stage::compute;
@@ -2551,20 +2553,21 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
       }
   }
   else {
-      if (pipeline_state_original_vertex_shader.handle != 0) {
-          const auto pipeline_pair = pipeline_cache_by_pipeline_handle.find(pipeline_state_original_vertex_shader.handle);
+      if (cmd_list_data.pipeline_state_original_vertex_shader.handle != 0) {
+          const auto pipeline_pair = pipeline_cache_by_pipeline_handle.find(cmd_list_data.pipeline_state_original_vertex_shader.handle);
           if (pipeline_pair != pipeline_cache_by_pipeline_handle.end() && pipeline_pair->second != nullptr) {
               original_shader_hashes.vertex_shaders = std::unordered_set<uint32_t>(pipeline_pair->second->shader_hashes.begin(), pipeline_pair->second->shader_hashes.end());
               is_custom_pass = pipeline_pair->second->cloned;
               stages = reshade::api::shader_stage::vertex;
           }
       }
-      if (pipeline_state_original_pixel_shader.handle != 0) {
-          const auto pipeline_pair = pipeline_cache_by_pipeline_handle.find(pipeline_state_original_pixel_shader.handle);
+
+      if (cmd_list_data.pipeline_state_original_pixel_shader.handle != 0) {
+          const auto pipeline_pair = pipeline_cache_by_pipeline_handle.find(cmd_list_data.pipeline_state_original_pixel_shader.handle);
           if (pipeline_pair != pipeline_cache_by_pipeline_handle.end() && pipeline_pair->second != nullptr) {
               original_shader_hashes.pixel_shaders = std::unordered_set<uint32_t>(pipeline_pair->second->shader_hashes.begin(), pipeline_pair->second->shader_hashes.end());
 #if DEVELOPMENT
-              last_drawn_shader = original_shader_hashes.pixel_shaders.empty() ? "" : std::format("{:x}", *original_shader_hashes.pixel_shaders.begin());
+              last_drawn_shader = original_shader_hashes.pixel_shaders.empty() ? "" : std::format("{:x}", *original_shader_hashes.pixel_shaders.begin()); // String hash to int
 #endif //DEVELOPMENT
               is_custom_pass |= pipeline_pair->second->cloned;
               stages |= reshade::api::shader_stage::pixel;
