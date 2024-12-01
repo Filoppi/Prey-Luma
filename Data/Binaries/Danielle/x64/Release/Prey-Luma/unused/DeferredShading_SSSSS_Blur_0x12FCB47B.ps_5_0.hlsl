@@ -1,5 +1,3 @@
-// ---- Created with 3Dmigoto v1.3.16 on Thu Jun 27 00:11:46 2024
-
 cbuffer PER_BATCH : register(b0)
 {
   float4 SSSBlurDir : packoffset(c0);
@@ -24,6 +22,7 @@ Texture2D<float4> _tex5 : register(t5);
 // 3Dmigoto declarations
 #define cmp -
 
+// Screen Space Subsurface Scattering (SSSSS) (e.g. Skin, Marble, ...)
 void main(
   float4 v0 : SV_Position0,
   float4 v1 : TEXCOORD0,
@@ -38,9 +37,8 @@ void main(
                               { 1.000000, 1.000000, 1.000000, 0},
                               { 1.000000, 1.000000, 1.000000, 0} };
   float4 r0,r1,r2,r3,r4,r5,r6,r7,r8,r9;
-  uint4 bitmask, uiDest;
-  float4 fDest;
-
+	// LUMA FT: the uv doesn't need to be scaled by "CV_HPosScale.xy" here (it already is in the vertex shader)
+	// LUMA FT: clamps to "CV_HPosClamp.xy" are missing, but this shader is of low importance
   r0.xyzw = _tex3.Sample(_tex3_s, v1.xy).xyzw;
   r1.x = cmp(r0.w == 0.000000);
   if (r1.x != 0) discard;
@@ -260,5 +258,4 @@ void main(
   r0.xyz = r0.www ? r1.xyz : r0.xyz;
   o0.xyz = r2.xyz * r0.xyz;
   o0.w = 0;
-  return;
 }

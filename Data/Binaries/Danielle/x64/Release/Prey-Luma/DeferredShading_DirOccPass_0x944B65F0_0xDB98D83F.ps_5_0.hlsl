@@ -1,15 +1,16 @@
 #include "include/Common.hlsl"
 
-#define PREMULTIPLY_BENT_NORMALS 1
-#define XE_GTAO_ENABLE_DENOISE ENABLE_SSAO_DENOISE
-#define XE_GTAO_ENCODE_BENT_NORMALS 0
-#include "include/XeGTAO.hlsl"
-
 #include "include/CBuffer_PerViewGlobal.hlsl"
 
 #if _944B65F0
 #define _RT_SAMPLE0 1
+#define XE_GTAO_DEPTH_FLOAT4 1
 #endif
+
+#define PREMULTIPLY_BENT_NORMALS 1
+#define XE_GTAO_ENABLE_DENOISE ENABLE_SSAO_DENOISE
+#define XE_GTAO_ENCODE_BENT_NORMALS 0
+#include "include/XeGTAO.hlsl"
 
 cbuffer CBSSDO : register(b0)
 {
@@ -22,8 +23,8 @@ cbuffer CBSSDO : register(b0)
 
 SamplerState ssSSDODepth : register(s0); // MIN_MAG_MIP_POINT CLAMP (as expected from SSDO and GTAO)
 Texture2D<float4> _tex0_D3D11 : register(t0); // Normal maps
-Texture2D<float4> _tex1_D3D11 : register(t1); // The linear (non inverted) depth (previously converted from the device g-buffer depth) (0 is zero (not near), 1 far). R32F. Always set. Only drawn in the top left portion of the image if we have a render resolution scale
-Texture2D<float4> _tex2_D3D11 : register(t2); // The "lower quality" half resolution linear depth (previously converted from the device g-buffer depth). RGBA16F (all channels are seemengly the same). Always set. Only drawn in the top left portion of the image if we have a render resolution scale
+Texture2D<float> _tex1_D3D11 : register(t1); // The linear (non inverted) depth (previously converted from the device g-buffer depth) (0 is zero (not near), 1 far). R32F. Always set. Only drawn in the top left portion of the image if we have a render resolution scale
+Texture2D<float4> _tex2_D3D11 : register(t2); // The "lower quality" half resolution linear depth (previously converted from the device g-buffer depth) (depth is stored in the alpha channel, the rest is other depth near/far scaled values). RGBA16F (all channels are seemengly the same). Always set. Only drawn in the top left portion of the image if we have a render resolution scale
 
 float2 MapViewportToRaster(float2 normalizedViewportPos, bool bOtherEye = false)
 {
@@ -41,7 +42,7 @@ float GetLinearDepth(float fLinearDepth, bool bScaled = false)
     return fLinearDepth * (bScaled ? CV_NearFarClipDist.y : 1.0f);
 }
 
-float GetLinearDepth(Texture2D depthTexture, int3 vPixCoord, bool bScaled = false)
+float GetLinearDepth(Texture2D<float> depthTexture, int3 vPixCoord, bool bScaled = false)
 {
 	float fDepth = depthTexture.Load(vPixCoord).x;
 	return GetLinearDepth(fDepth, bScaled);
@@ -52,6 +53,7 @@ float GetLinearDepth(Texture2D depthTexture, int3 vPixCoord, bool bScaled = fals
 // instead of doing 4 times a float1.
 static const int samplesGroupNum = 4;
 
+#if _RT_SAMPLE0 
 float4 SSDOFetchDepths(Texture2D<float4> _texture, float4 tc[samplesGroupNum/2], uint component)
 {
 	return float4( _texture.SampleLevel(ssSSDODepth, tc[0].xy, 0)[component],
@@ -59,6 +61,15 @@ float4 SSDOFetchDepths(Texture2D<float4> _texture, float4 tc[samplesGroupNum/2],
 	              _texture.SampleLevel(ssSSDODepth, tc[1].xy, 0)[component],
 	              _texture.SampleLevel(ssSSDODepth, tc[1].zw, 0)[component] );
 }
+#else
+float4 SSDOFetchDepths(Texture2D<float> _texture, float4 tc[samplesGroupNum/2])
+{
+	return float4( _texture.SampleLevel(ssSSDODepth, tc[0].xy, 0),
+	              _texture.SampleLevel(ssSSDODepth, tc[0].zw, 0),
+	              _texture.SampleLevel(ssSSDODepth, tc[1].xy, 0),
+	              _texture.SampleLevel(ssSSDODepth, tc[1].zw, 0) );
+}
+#endif
 
 float4 GTAO(float4 WPos, float4 inBaseTC, out float edges)
 {	
@@ -90,6 +101,7 @@ float4 GTAO(float4 WPos, float4 inBaseTC, out float edges)
 
 	//TODO LUMA: do this in shader cbuffer or vertex shader? As optimization? It's mostly fine here
 	//TODOFT5: investigate whether the AO color bleeding implementation is good for GTAO (see "AOColorBleedRT"), it seems like it simply prevents AO from applying on bright diffuse color objects but that makes no sense?
+	//TODOFT5: test performance and half resolution version (game setting)
 
 #if 1 // The depth in this pass was already linearized (with far matching a value of 1 and the camera origin matching a value of 0), so all we need to do is multiply by the far distance
 	consts.DepthFar = CV_NearFarClipDist.y;
@@ -105,12 +117,16 @@ float4 GTAO(float4 WPos, float4 inBaseTC, out float edges)
     consts.DepthUnpackConsts = float2(depthLinearizeMul, depthLinearizeAdd);
 #endif
 
-#if 0 // Unused by GTAO
-	consts.ViewportSize = round(CV_ScreenSize.xy * CV_HPosScale.xy); // Round to make sure its an integer (this is probably unnecessary but we do it for extra safety). This already supports DRS (I think)
-#endif
-	consts.ViewportPixelSize = 1.0 / CV_ScreenSize.xy; // These already have "CV_HPosScale.xy" baked in
+	consts.ViewportSize = (CV_ScreenSize.xy / CV_HPosScale.xy) + 0.5; // Round to make sure it maps to the right integer (this is probably unnecessary but we do it for extra safety). This is unused by GTAO anyway
+	consts.ScaledViewportMax = CV_ScreenSize.xy - 0.5;
+	consts.ViewportPixelSize = CV_ScreenSize.zw * 2.0;
+	consts.ScaledViewportPixelSize = 1.0 / CV_ScreenSize.xy; // These already have "CV_HPosScale.xy" baked in (render resolution), which is theoretically not correct, but saves us a multiplication by render resolution on every sample
 	consts.RenderResolutionScale = CV_HPosScale.xy;
+#if _RT_SAMPLE0
+	consts.SampleUVClamp = CV_HPosScale.xy - (CV_ScreenSize.zw * 2.0); // Given that the depth is half resolution (in output and rendering), the UV clamp should be moved further up left
+#else
 	consts.SampleUVClamp = CV_HPosClamp.xy;
+#endif
 	consts.DenoiseBlurBeta = (denoisePasses==0) ? 1e4f : 1.2f; 
 	consts.NoiseIndex = (denoisePasses>0) ? (frameCounter % 64) : 0;
 	consts.FinalValuePower = 0.4125 / (stepsPerSlice ? sqrt(stepsPerSlice / 3.0) : 1); // Higher values make AO darker. We modulate by "stepsPerSlice" to keep the intensity consistent.
@@ -149,15 +165,14 @@ float4 GTAO(float4 WPos, float4 inBaseTC, out float edges)
     consts.NDCToViewAdd                 = float2( consts.CameraTanHalfFOV.x, -consts.CameraTanHalfFOV.y );
 	static const float3 normalsConversion = float3(-1, -1, -1);
 #endif
-    consts.NDCToViewMul_x_PixelSize     = consts.NDCToViewMul * consts.ViewportPixelSize;
+    consts.NDCToViewMul_x_PixelSize     = consts.NDCToViewMul * consts.ScaledViewportPixelSize; // This needs to pretend we are using the rendering resolution for textures
 	
 	float2 localNoise = (denoisePasses > 0) ? SpatioTemporalNoise(WPos.xy, consts.NoiseIndex) : 0; // "ENABLE_SSAO_DENOISE"
 
-	Texture2D<float4> depthTexture;
 #if _RT_SAMPLE0 // GTAO always samples depth with 0-1 UVs so the half res depth should natively work (though the gather samples will return depths that are further away than it expects) (the full res is always bound anyway)
-	depthTexture = _tex2_D3D11;
+	Texture2D<float4> depthTexture = _tex2_D3D11;
 #else // !_RT_SAMPLE0
-	depthTexture = _tex1_D3D11;
+	Texture2D<float> depthTexture = _tex1_D3D11;
 #endif // _RT_SAMPLE0
 
 	float3 normal = DecodeGBufferNormal( _tex0_D3D11.Load(float3(WPos.xy, 0)) );
@@ -308,6 +323,10 @@ void main(float4 WPos : SV_Position0, float4 inBaseTC : TEXCOORD0, out float4 ou
 	float3 vNormal = DecodeGBufferNormal( _tex0_D3D11.Load(pixCoord) );
 	float3 vNormalVS = normalize( mul( CV_ViewMatr, float4(vNormal, 0) ).xyz ) * float3(1, -1, -1);
 
+#if _RT_SAMPLE0 // LUMA FT: fixed depth's UV not being clamped
+	CV_HPosClamp.xy = CV_HPosScale.xy - (CV_ScreenSize.zw * 2.0); 
+#endif
+
 	float4 sh2 = 0;
 	[unroll]
 	for (int i = 0; i < samplesNum; i += samplesGroupNum)
@@ -322,19 +341,18 @@ void main(float4 WPos : SV_Position0, float4 inBaseTC : TEXCOORD0, out float4 ou
 		vSampleUV[1].zw = linearUV.xy + rotatedKernel[i+3].xy * radius;
 		
 		float4 vSampleTC[samplesGroupNum/2];
-	#if 1
-		vSampleTC[0].xy = MapViewportToRaster(vSampleUV[0].xy);
-		vSampleTC[0].zw = MapViewportToRaster(vSampleUV[0].zw);
-		vSampleTC[1].xy = MapViewportToRaster(vSampleUV[1].xy);
-		vSampleTC[1].zw = MapViewportToRaster(vSampleUV[1].zw);
-	#else
-		vSampleTC = vSampleUV;
-	#endif
-		
+		// Remap to rendering resolution area
+		vSampleTC[0].xy = min(MapViewportToRaster(vSampleUV[0].xy), CV_HPosClamp.xy);
+		vSampleTC[0].zw = min(MapViewportToRaster(vSampleUV[0].zw), CV_HPosClamp.xy);
+		vSampleTC[1].xy = min(MapViewportToRaster(vSampleUV[1].xy), CV_HPosClamp.xy);
+		vSampleTC[1].zw = min(MapViewportToRaster(vSampleUV[1].zw), CV_HPosClamp.xy);
+	
 	#if _RT_SAMPLE0 // LUMA FT: Branch on half or full resolution depth buffer, depending on the quality the user set
-		float4 fLinearDepthTap = SSDOFetchDepths( _tex2_D3D11, vSampleTC, 3 ) + 0.0000001; // LUMA FT: Arkane seems to have added 0.0000001 here, it's unclear why (due to the lower precision?)
+		// LUMA FT: Arkane seems to have added 0.0000001 here, it's unclear why (due to the lower precision?)
+		// LUMA FT: we access the alpha channel as that's the one with the actual depth.
+		float4 fLinearDepthTap = SSDOFetchDepths( _tex2_D3D11, vSampleTC, 3 ) + 0.0000001;
 	#else
-		float4 fLinearDepthTap = SSDOFetchDepths( _tex1_D3D11, vSampleTC, 0 );
+		float4 fLinearDepthTap = SSDOFetchDepths( _tex1_D3D11, vSampleTC );
 	#endif
 	
 		fLinearDepthTap *= CV_NearFarClipDist.y;

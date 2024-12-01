@@ -15,8 +15,7 @@ Texture2D<float4> _tex3 : register(t3);
 
 #define cmp -
 
-// Screen Space Subsurface Scattering (SSSSS)
-//TODOFT: make sure this looks identical on all resolutions
+// Screen Space Subsurface Scattering (SSSSS) (e.g. Skin, Marble, ...)
 void main(
   float4 v0 : SV_Position0,
   float4 v1 : TEXCOORD0,
@@ -31,7 +30,8 @@ void main(
                               { 0.100000, 0.100000, 0.100000, 10.000000},
                               { 0.100000, 0.100000, 0.100000, 10.000000} };
   float4 r0,r1,r2,r3,r4,r5,r6;
-
+	// LUMA FT: the uv doesn't need to be scaled by "CV_HPosScale.xy" here (it already is in the vertex shader)
+	// LUMA FT: clamps to "CV_HPosClamp.xy" are missing, but this shader is of low importance
   r0.x = _tex3.Sample(_tex3_s, v1.xy).w;
   r0.y = cmp(r0.x == 0.000000);
   if (r0.y != 0) discard;
@@ -226,5 +226,4 @@ void main(
   r0.xyz = r1.xyz * r2.xyz + r0.xzw;
   o0.xyz = r0.xyz / r3.xyz;
   o0.w = 0;
-  return;
 }

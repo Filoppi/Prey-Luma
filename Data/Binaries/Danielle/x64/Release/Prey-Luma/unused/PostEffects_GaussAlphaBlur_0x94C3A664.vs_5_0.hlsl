@@ -4,6 +4,7 @@ cbuffer PER_INSTANCE : register(b1)
 }
 
 // LUMA: Unchanged.
+// LUMA FT: for some reason this is never multiplied by "CV_HPosScale", probably because it doesn't run on actual screen space textures.
 void main(
   float4 v0 : POSITION0,
   float2 v1 : TEXCOORD0,

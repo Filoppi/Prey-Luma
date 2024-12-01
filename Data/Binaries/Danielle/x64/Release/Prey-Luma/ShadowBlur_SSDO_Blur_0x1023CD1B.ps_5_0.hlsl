@@ -16,7 +16,7 @@ cbuffer PER_BATCH : register(b0)
 SamplerState ssSource : register(s0); // MIN_MAG_LINEAR_MIP_POINT CLAMP
 SamplerState ssDepth : register(s1);  // MIN_MAG_MIP_POINT CLAMP
 Texture2D<float4> sourceTex : register(t0); // AO (bent normals + obscurance)
-Texture2D<float4> depthTex : register(t1); // Same as the "DirOccPass"
+Texture2D<float> depthTex : register(t1); // Same as the "DirOccPass"
 Texture2D<float4> depthHalfResTex : register(t2); // Same as the "DirOccPass" (unused here)
 Texture2D<float> gtaoEdges : register(t3); // LUMA FT: added texture
 
@@ -26,6 +26,7 @@ float GetLinearDepth(float fLinearDepth)
 }
 
 float4 GetTexture2D(Texture2D tex, SamplerState samplerState, float2 uv) { return tex.Sample(samplerState, uv); }
+float GetTexture2D_1(Texture2D<float> tex, SamplerState samplerState, float2 uv) { return tex.Sample(samplerState, uv).x; }
 
 // LUMA FT: for SSDO, this function takes a 2x2 grid and blends them togther (given that each pixel used a different AO radious).
 // For GTAO, it does a more advanced denoise mechanism.
@@ -53,7 +54,11 @@ void main(
 	const bool lastDenoisePass = true;
 
     GTAOConstants consts;
-	consts.ViewportPixelSize = CV_ScreenSize.zw * 2.0; // This is not set to "CV_HPosScale.xy" as in the AO shader because denoise needs it like this
+	consts.ViewportSize = (CV_ScreenSize.xy / CV_HPosScale.xy) + 0.5; // Round to make sure it maps to the right integer (this is probably unnecessary but we do it for extra safety)
+	consts.ScaledViewportMax = CV_ScreenSize.xy - 0.5;
+	consts.ViewportPixelSize = CV_ScreenSize.zw * 2.0;
+	consts.ScaledViewportPixelSize = 1.0 / CV_ScreenSize.xy;
+	consts.SampleUVClamp = CV_HPosClamp.xy;
 	consts.DenoiseBlurBeta = (denoisePasses==0) ? 1e4f : 1.2f;
     outColor = XeGTAO_Denoise( v0.xy, consts, sourceTex, gtaoEdges, ssDepth, lastDenoisePass );
 #if PREMULTIPLY_BENT_NORMALS // On the last denoising pass, do this as it's expected by Prey's code
@@ -92,12 +97,12 @@ void main(
 
 	// Sample depth values
 	const float4 vDepthAddrOffset = float4(1.0, 1.0, -1.0, -1.0) * BlurOffset.xyxy;
-	depth4.x = GetTexture2D(depthTex, ssDepth, addr0 + vDepthAddrOffset.zw).x;
-	depth4.y = GetTexture2D(depthTex, ssDepth, addr1 + vDepthAddrOffset.xw).x;
-	depth4.z = GetTexture2D(depthTex, ssDepth, addr2 + vDepthAddrOffset.zy).x;
-	depth4.w = GetTexture2D(depthTex, ssDepth, addr3 + vDepthAddrOffset.xy).x;
+	depth4.x = GetTexture2D_1(depthTex, ssDepth, addr0 + vDepthAddrOffset.zw).x;
+	depth4.y = GetTexture2D_1(depthTex, ssDepth, addr1 + vDepthAddrOffset.xw).x;
+	depth4.z = GetTexture2D_1(depthTex, ssDepth, addr2 + vDepthAddrOffset.zy).x;
+	depth4.w = GetTexture2D_1(depthTex, ssDepth, addr3 + vDepthAddrOffset.xy).x;
 
-	float centerDepth = GetLinearDepth(GetTexture2D(depthTex, ssDepth, inBaseTC.xy).x);
+	float centerDepth = GetLinearDepth(GetTexture2D_1(depthTex, ssDepth, inBaseTC.xy).x);
 	float4 weight4 = saturate(1.0 - 35.0 * abs(depth4 / centerDepth - 1.0));
 
 	float totalWeight = dot(weight4, 1.0);
