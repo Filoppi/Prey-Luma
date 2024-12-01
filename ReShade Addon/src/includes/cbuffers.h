@@ -118,7 +118,7 @@ namespace
 
     struct LumaFrameData {
         uint32_t PostEarlyUpscaling;
-        uint32_t DummyPadding;
+        uint32_t CustomData; // Per call data (used to be padding)
         float2 CameraJitters;
         float2 PreviousCameraJitters;
         float2 RenderResolutionScale;

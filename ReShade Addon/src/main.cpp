@@ -364,6 +364,8 @@ float default_user_peak_white = default_peak_white;
 ShaderHashesList shader_hashes_TiledShadingTiledDeferredShading;
 ShaderHashesList shader_hashes_MotionBlur;
 ShaderHashesList shader_hashes_HDRPostProcessHDRFinalScene;
+ShaderHashesList shader_hashes_HDRPostProcessHDRFinalScene_Sunshafts;
+ShaderHashesList shader_hashes_SMAA_EdgeDetection;
 ShaderHashesList shader_hashes_PostAA;
 ShaderHashesList shader_hashes_PostAAComposites;
 uint32_t shader_hash_PostAAUpscaleImage;
@@ -399,7 +401,7 @@ int force_taa_jitter_phases = 0; // Ignored if 0 (automatic mode), set to 1 to b
 int frame_sleep_ms = 0;
 #endif
 
-//TODOFT: put all of these in a better place (e.g. device data? frame data?). Probably not needed given it's all single threaded
+//TODOFT: put all of these in a better place (e.g. command list data? device data? frame data?), or atomic? or thread_local?
 // Per frame states:
 bool has_drawn_main_post_processing = false;
 // Useful to know if rendering was skipped in the previous frame (e.g. in case we were in a UI view)
@@ -439,7 +441,7 @@ void* cb_per_view_global_buffer_map_data = nullptr;
 CBPerViewGlobal cb_per_view_global = { };
 CBPerViewGlobal cb_per_view_global_previous = cb_per_view_global;
 #if DEVELOPMENT //TODOFT3: delete once not needed anymore?
-std::string last_drawn_shader = "";
+std::string last_drawn_shader = ""; //TODOFT: move to CommandListData or make thread_local?
 std::vector<std::string> cb_per_view_globals_last_drawn_shader;
 std::vector<ID3D11Buffer*> cb_per_view_global_buffer_pending_verification;
 std::vector<CBPerViewGlobal> cb_per_view_globals;
@@ -2195,7 +2197,7 @@ enum LumaConstantBufferType {
     LumaLumaUIData
 };
 
-void SetPreyLumaConstantBuffers(reshade::api::command_list* cmd_list, reshade::api::shader_stage stages, reshade::api::pipeline_layout layout, LumaConstantBufferType type) {
+void SetPreyLumaConstantBuffers(reshade::api::command_list* cmd_list, reshade::api::shader_stage stages, reshade::api::pipeline_layout layout, LumaConstantBufferType type, uint32_t custom_data = 0) {
     switch (type) {
     case LumaConstantBufferType::LumaSettings: {
         const std::lock_guard<std::recursive_mutex> lock_reshade(s_mutex_reshade);
@@ -2211,7 +2213,7 @@ void SetPreyLumaConstantBuffers(reshade::api::command_list* cmd_list, reshade::a
     case LumaConstantBufferType::LumaData: {
         LumaFrameData frame_data;
         frame_data.PostEarlyUpscaling = has_drawn_dlss_sr && !has_drawn_upscaling;
-        frame_data.DummyPadding = 0;
+        frame_data.CustomData = custom_data;
         frame_data.CameraJitters = projection_jitters;
         frame_data.PreviousCameraJitters = previous_projection_jitters;
         frame_data.RenderResolutionScale.x = render_resolution.x / output_resolution.x;
@@ -2503,7 +2505,6 @@ void OnPresent(
 //TODOFT5: Add "UpdateSubresource" to check whether they map buffers with that (it's not optimized so probably it's unused by CryEngine)? Also make sure that our CopyTexture() func works!
 //TODOFT5: merge all the shader permutations that use the same code (and then move shader binaries to bin folder?)
 //TODOFT5: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project?
-//TODOFT5: investigate why some effects don't scale properly with dynamic res, simply look at the sun in the first scene
 //TODOFT: add a new RT to draw UI on top (pre-multiplied alpha everywhere), so we could compose it smartly, possibly in the final linearization pass.
 
 // Return false to prevent the original draw call from running (e.g. if you replaced it or just want to skip it)
@@ -2604,105 +2605,108 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
           has_drawn_composed_gbuffers = true;
       }
       if (!has_drawn_tonemapping && original_shader_hashes.Contains(shader_hashes_HDRPostProcessHDRFinalScene)) {
-                  has_drawn_tonemapping = true;
+          has_drawn_tonemapping = true;
 
-                  // Update the DLSS pre-exposure to take the opposite value of our exposure (basically our brightness) to avoid DLSS causing additional lag when the exposure changes.
-                  // This way, DLSS will divide the linear buffer by this value, which would have previously been multiplied in given that TAA runs after the scene exposure is factored in (even in HDR, and it shouldn't! But moving it is too hard).
-                  // For this particular case, we don't use the native DLSS exposure texture, but we rely on pre-exposure itself, as it has a different temporal behaviour,
-                  // if we changed the DLSS exposure texture every frame to follow the scene exposure, DLSS would act weird (mostly likely just ignore it, as it uses that as a hint of the exposure the tonemapper would use after TAA),
-                  // while with pre-exposure it works as expected (except it kinda lags behind a bit, because it doesn't store a pre-exposure value attached to every frame, and simply uses the last provided one).
-                  if (dlss_sr && cloned_pipeline_count != 0 && draw_exposure_pixel_shader) {
-                      static D3D11_MAPPED_SUBRESOURCE mapped_exposure;
+          // Update the DLSS pre-exposure to take the opposite value of our exposure (basically our brightness) to avoid DLSS causing additional lag when the exposure changes.
+          // This way, DLSS will divide the linear buffer by this value, which would have previously been multiplied in given that TAA runs after the scene exposure is factored in (even in HDR, and it shouldn't! But moving it is too hard).
+          // For this particular case, we don't use the native DLSS exposure texture, but we rely on pre-exposure itself, as it has a different temporal behaviour,
+          // if we changed the DLSS exposure texture every frame to follow the scene exposure, DLSS would act weird (mostly likely just ignore it, as it uses that as a hint of the exposure the tonemapper would use after TAA),
+          // while with pre-exposure it works as expected (except it kinda lags behind a bit, because it doesn't store a pre-exposure value attached to every frame, and simply uses the last provided one).
+          if (dlss_sr && cloned_pipeline_count != 0 && draw_exposure_pixel_shader) {
+              static D3D11_MAPPED_SUBRESOURCE mapped_exposure;
 
-                      // Create pre-exposure buffers once
-                      if (!exposure_buffer_gpu.get()) {
-                          D3D11_BUFFER_DESC exposure_buffer_desc;
-                          exposure_buffer_desc.ByteWidth = 4; // 1x float32
-                          exposure_buffer_desc.Usage = D3D11_USAGE_DEFAULT;
-                          exposure_buffer_desc.BindFlags = D3D11_BIND_RENDER_TARGET;
-                          exposure_buffer_desc.CPUAccessFlags = 0;
-                          exposure_buffer_desc.MiscFlags = 0;
-                          exposure_buffer_desc.StructureByteStride = sizeof(float);
+              // Create pre-exposure buffers once
+              if (!exposure_buffer_gpu.get()) {
+                  D3D11_BUFFER_DESC exposure_buffer_desc;
+                  exposure_buffer_desc.ByteWidth = 4; // 1x float32
+                  exposure_buffer_desc.Usage = D3D11_USAGE_DEFAULT;
+                  exposure_buffer_desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+                  exposure_buffer_desc.CPUAccessFlags = 0;
+                  exposure_buffer_desc.MiscFlags = 0;
+                  exposure_buffer_desc.StructureByteStride = sizeof(float);
 
-                          D3D11_SUBRESOURCE_DATA exposure_buffer_data;
-                          exposure_buffer_data.pSysMem = &dlss_scene_pre_exposure; // This needs to be "static" data in case the texture initialization was somehow delayed and read the data after the stack destroyed it
-                          exposure_buffer_data.SysMemPitch = 0;
-                          exposure_buffer_data.SysMemSlicePitch = 0;
+                  D3D11_SUBRESOURCE_DATA exposure_buffer_data;
+                  exposure_buffer_data.pSysMem = &dlss_scene_pre_exposure; // This needs to be "static" data in case the texture initialization was somehow delayed and read the data after the stack destroyed it
+                  exposure_buffer_data.SysMemPitch = 0;
+                  exposure_buffer_data.SysMemSlicePitch = 0;
 
-                          exposure_buffer_gpu = nullptr;
-                          HRESULT hr = native_device->CreateBuffer(&exposure_buffer_desc, &exposure_buffer_data, &exposure_buffer_gpu);
-                          ASSERT_ONCE(SUCCEEDED(hr));
+                  exposure_buffer_gpu = nullptr;
+                  HRESULT hr = native_device->CreateBuffer(&exposure_buffer_desc, &exposure_buffer_data, &exposure_buffer_gpu);
+                  ASSERT_ONCE(SUCCEEDED(hr));
 
-                          exposure_buffer_desc.Usage = D3D11_USAGE_STAGING;
-                          exposure_buffer_desc.BindFlags = 0;
-                          exposure_buffer_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+                  exposure_buffer_desc.Usage = D3D11_USAGE_STAGING;
+                  exposure_buffer_desc.BindFlags = 0;
+                  exposure_buffer_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
 
-                          if (exposure_buffer_cpu.get()) {
-                              native_device_context->Unmap(exposure_buffer_cpu.get(), 0);
-                              exposure_buffer_cpu = nullptr;
-                          }
-                          hr = native_device->CreateBuffer(&exposure_buffer_desc, &exposure_buffer_data, &exposure_buffer_cpu);
-                          ASSERT_ONCE(SUCCEEDED(hr));
-
-                          // Keep this mapped permanently to avoid butchering the frame rate (shader memory writes will directly go into our mapped data)
-                          mapped_exposure.pData = nullptr;
-                          hr = native_device_context->Map(exposure_buffer_cpu.get(), 0, D3D11_MAP_READ, 0, &mapped_exposure);
-                          ASSERT_ONCE(SUCCEEDED(hr));
-
-                          D3D11_RENDER_TARGET_VIEW_DESC exposure_buffer_rtv_desc;
-                          exposure_buffer_rtv_desc.Format = DXGI_FORMAT::DXGI_FORMAT_R32_FLOAT;
-                          exposure_buffer_rtv_desc.ViewDimension = D3D11_RTV_DIMENSION::D3D11_RTV_DIMENSION_BUFFER;
-                          exposure_buffer_rtv_desc.Buffer.FirstElement = 0;
-                          exposure_buffer_rtv_desc.Buffer.NumElements = 1;
-
-                          exposure_buffer_rtv = nullptr;
-                          hr = native_device->CreateRenderTargetView(exposure_buffer_gpu.get(), &exposure_buffer_rtv_desc, &exposure_buffer_rtv);
-                          ASSERT_ONCE(SUCCEEDED(hr));
-                      }
-
-                      // Cache original state
-                      com_ptr<ID3D11RenderTargetView> rtv;
-                      native_device_context->OMGetRenderTargets(1, &rtv, nullptr);
-                      com_ptr<ID3D11PixelShader> ps;
-                      native_device_context->PSGetShader(&ps, nullptr, 0);
-
-                      // Draw the exposure
-                      native_device_context->PSSetShader(draw_exposure_pixel_shader.get(), nullptr, 0);
-                      ID3D11RenderTargetView* render_target_view_const = exposure_buffer_rtv.get();
-                      native_device_context->OMSetRenderTargets(1, &render_target_view_const, nullptr);
-                      native_device_context->Draw(3, 0);
-
-                      // Copy it back as CPU buffer and read+store it
-                      native_device_context->CopyResource(exposure_buffer_cpu.get(), exposure_buffer_gpu.get());
-                      float scene_pre_exposure = 1.f;
-                      // Note: this is possibly some frames behind, but has no performance hit and it's fine as it is for the use we make of it
-                      if (mapped_exposure.pData != nullptr) {
-                          scene_pre_exposure = *((float*)mapped_exposure.pData);
-                          if (std::isinf(scene_pre_exposure) || std::isnan(scene_pre_exposure) || scene_pre_exposure <= 0.f) {
-                              scene_pre_exposure = 1.f;
-                          }
-                      }
-                      dlss_scene_pre_exposure = scene_pre_exposure;
-#if DEVELOPMENT || TEST
-                      bool dlss_relative_pre_exposure = GetShaderDefineCompiledNumericalValue(DLSS_RELATIVE_PRE_EXPOSURE_HASH) >= 1;
-#else
-                      bool dlss_relative_pre_exposure = code_shaders_defines.contains("DLSS_RELATIVE_PRE_EXPOSURE") && code_shaders_defines["DLSS_RELATIVE_PRE_EXPOSURE"] >= 1;
-#endif
-                      if (dlss_relative_pre_exposure) {
-                          // With this design, the pre-exposure is set to the relative exposure and the exposure texture is set to 1 (see the shader for more).
-                          dlss_scene_exposure = 1.f;
-                      }
-                      else {
-                          // With this design, we set the DLSS pre-exposure and exposure to the same value, so, given that the exposure was already multiplied in despite it shouldn't have it been so,
-                          // DLSS will divide out the exposure through the pre-exposure parameter and then re-acknowledge it through the exposure texture, basically making DLSS act as if it was done before exposure/tonemapping.
-                          dlss_scene_exposure = scene_pre_exposure;
-                      }
-
-                      // Restore original state
-                      native_device_context->PSSetShader(ps.get(), nullptr, 0);
-                      render_target_view_const = rtv.get();
-                      native_device_context->OMSetRenderTargets(1, &render_target_view_const, nullptr);
+                  if (exposure_buffer_cpu.get()) {
+                      native_device_context->Unmap(exposure_buffer_cpu.get(), 0);
+                      exposure_buffer_cpu = nullptr;
                   }
+                  hr = native_device->CreateBuffer(&exposure_buffer_desc, &exposure_buffer_data, &exposure_buffer_cpu);
+                  ASSERT_ONCE(SUCCEEDED(hr));
+
+                  // Keep this mapped permanently to avoid butchering the frame rate (shader memory writes will directly go into our mapped data)
+                  mapped_exposure.pData = nullptr;
+                  hr = native_device_context->Map(exposure_buffer_cpu.get(), 0, D3D11_MAP_READ, 0, &mapped_exposure);
+                  ASSERT_ONCE(SUCCEEDED(hr));
+
+                  D3D11_RENDER_TARGET_VIEW_DESC exposure_buffer_rtv_desc;
+                  exposure_buffer_rtv_desc.Format = DXGI_FORMAT::DXGI_FORMAT_R32_FLOAT;
+                  exposure_buffer_rtv_desc.ViewDimension = D3D11_RTV_DIMENSION::D3D11_RTV_DIMENSION_BUFFER;
+                  exposure_buffer_rtv_desc.Buffer.FirstElement = 0;
+                  exposure_buffer_rtv_desc.Buffer.NumElements = 1;
+
+                  exposure_buffer_rtv = nullptr;
+                  hr = native_device->CreateRenderTargetView(exposure_buffer_gpu.get(), &exposure_buffer_rtv_desc, &exposure_buffer_rtv);
+                  ASSERT_ONCE(SUCCEEDED(hr));
+              }
+
+              // Cache original state
+              com_ptr<ID3D11RenderTargetView> rtv;
+              native_device_context->OMGetRenderTargets(1, &rtv, nullptr);
+              com_ptr<ID3D11PixelShader> ps;
+              native_device_context->PSGetShader(&ps, nullptr, 0);
+
+              bool has_sunshafts = original_shader_hashes.Contains(shader_hashes_HDRPostProcessHDRFinalScene_Sunshafts); // These shaders use a different cbuffer layout
+              SetPreyLumaConstantBuffers(cmd_list, stages, shared_data_pipeline_layout, LumaConstantBufferType::LumaData, has_sunshafts);
+
+              // Draw the exposure
+              native_device_context->PSSetShader(draw_exposure_pixel_shader.get(), nullptr, 0);
+              ID3D11RenderTargetView* render_target_view_const = exposure_buffer_rtv.get();
+              native_device_context->OMSetRenderTargets(1, &render_target_view_const, nullptr);
+              native_device_context->Draw(3, 0);
+
+              // Copy it back as CPU buffer and read+store it
+              native_device_context->CopyResource(exposure_buffer_cpu.get(), exposure_buffer_gpu.get());
+              float scene_pre_exposure = 1.f;
+              // Note: this is possibly some frames behind, but has no performance hit and it's fine as it is for the use we make of it
+              if (mapped_exposure.pData != nullptr) {
+                  scene_pre_exposure = *((float*)mapped_exposure.pData);
+                  if (std::isinf(scene_pre_exposure) || std::isnan(scene_pre_exposure) || scene_pre_exposure <= 0.f) {
+                      scene_pre_exposure = 1.f;
+                  }
+              }
+              dlss_scene_pre_exposure = scene_pre_exposure;
+#if DEVELOPMENT || TEST
+              bool dlss_relative_pre_exposure = GetShaderDefineCompiledNumericalValue(DLSS_RELATIVE_PRE_EXPOSURE_HASH) >= 1;
+#else
+              bool dlss_relative_pre_exposure = code_shaders_defines.contains("DLSS_RELATIVE_PRE_EXPOSURE") && code_shaders_defines["DLSS_RELATIVE_PRE_EXPOSURE"] >= 1;
+#endif
+              if (dlss_relative_pre_exposure) {
+                  // With this design, the pre-exposure is set to the relative exposure and the exposure texture is set to 1 (see the shader for more).
+                  dlss_scene_exposure = 1.f;
+              }
+              else {
+                  // With this design, we set the DLSS pre-exposure and exposure to the same value, so, given that the exposure was already multiplied in despite it shouldn't have it been so,
+                  // DLSS will divide out the exposure through the pre-exposure parameter and then re-acknowledge it through the exposure texture, basically making DLSS act as if it was done before exposure/tonemapping.
+                  dlss_scene_exposure = scene_pre_exposure;
+              }
+
+              // Restore original state
+              native_device_context->PSSetShader(ps.get(), nullptr, 0);
+              render_target_view_const = rtv.get();
+              native_device_context->OMSetRenderTargets(1, &render_target_view_const, nullptr);
+          }
       }
       // Note: this doesn't always run, it's based on a user setting!
       if (!has_drawn_motion_blur && original_shader_hashes.Contains(shader_hashes_MotionBlur)) {
@@ -2803,11 +2807,12 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
       }
       if (!has_drawn_main_post_processing && original_shader_hashes.Contains(shader_hashes_PostAAComposites)) {
           // This is the last known pass that is guaranteed to run before UI draws in
-                  has_drawn_main_post_processing = true;
-                  // If DRS is not currently running, upscaling won't happen
-                  if (!prey_drs_active) {
-                      has_drawn_upscaling = true;
-                  }
+          has_drawn_main_post_processing = true;
+          // If DRS is not currently running, upscaling won't happen, pretend it did
+          if (!prey_drs_active) {
+              has_drawn_upscaling = true;
+          }
+      }
       // If DLSS is guaranteed to be running instead of SMAA 2TX, we can skip the edge detection passes of SMAA 2TX (these also run other SMAA modes but then DLSS wouldn't run with these).
       // This check might engage one frame late after DLSS engages but it doesn't matter.
       // This is particularly useful because on every boot the game rejects the TAA user config setting (seemengly due to "r_AntialiasingMode" being clamped to 3 (SMAA 2TX)), so we'd waste performance if we didn't skip the passes (we still do).
@@ -5495,6 +5500,8 @@ void Init(bool async) {
   shader_hashes_MotionBlur.pixel_shaders = { std::stoul("D0C2257A", nullptr, 16), std::stoul("76B51523", nullptr, 16), std::stoul("6DCC9E5D", nullptr, 16) };
   // HDRPostProcess HDRFinalScene (vanilla HDR->SDR tonemapping)
   shader_hashes_HDRPostProcessHDRFinalScene.pixel_shaders = { std::stoul("B5DC761A", nullptr, 16), std::stoul("17272B5B", nullptr, 16), std::stoul("F87B4963", nullptr, 16), std::stoul("81CE942F", nullptr, 16), std::stoul("83557B79", nullptr, 16), std::stoul("37ACE8EF", nullptr, 16), std::stoul("66FD11D0", nullptr, 16) };
+  // Same as "shader_hashes_HDRPostProcessHDRFinalScene" but it includes ones with sunshafts only
+  shader_hashes_HDRPostProcessHDRFinalScene_Sunshafts.pixel_shaders = { std::stoul("81CE942F", nullptr, 16), std::stoul("37ACE8EF", nullptr, 16), std::stoul("66FD11D0", nullptr, 16) };
   // PostAA PostAA
 // These passes don't have any projection jitters (unless maybe "SMAA 1TX" could have them if we forced them through config), so we can't replace them with DLSS SR.
 // SMAA (without TX) is completely missing from here as it doesn't have a composition pass we could replace (well, maybe NeighborhoodBlendingSMAA).

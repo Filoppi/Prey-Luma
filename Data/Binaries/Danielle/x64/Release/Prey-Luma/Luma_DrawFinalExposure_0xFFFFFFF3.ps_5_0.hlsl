@@ -10,24 +10,12 @@ cbuffer PER_BATCH : register(b0)
 
 Texture2D<float2> adaptedLumTex : register(t1);
 
-//TODOFT: rename file
 // Custom Luma shader to draw the final exposure value from textures+cbuffers (copied from HDRPostProcesss HDRFinalScene shader)
 float main() : SV_Target0
 {
-#if 0 // Doesn't work as "HDRFilmCurve" seems to contain gargbage (it's never used/read so it's probably not set)
-	// No need to check for these too: "Param3.x == HableShoulderScale && Param3.y == HableLinearScale && Param3.z == HableToeScale",
-	// as in all other parameters, the w element is 1 (or could be zero in case).
-	bool isParam3HDRFilmCurve = Param3.w == HableWhitepoint;
-#elif 0 // There's no guarantee this will work, we proved the sun scale being 0.5 in some scenes but we don't know if it's ever set to 1
-	bool isParam1SunShaftsSunCol = Param1.w != 1.f;
-#else
-	// This would be the most common case anyway
-	bool isParam1HDREyeAdaptation = Param1.x == 0.18f && Param1.w == 1.f;
-#endif
-
-	// The HDR tonemap shader (HDRPostProcess HDRFinalScene) has branches for sun shafts, which shift the "HDREyeAdaptation" cbuffer value,
-	// instead of passing in a new bool cbuffer from the CPU, we simply detect which one it is in the shader with "heuristics" (they are very safe).
-	float4 HDREyeAdaptation = isParam1HDREyeAdaptation ? Param1 : Param2;
+	// The HDR tonemap shader (HDRPostProcess HDRFinalScene) has branches for sun shafts, which shift the "HDREyeAdaptation" cbuffer value.
+	bool hasSunshafts = LumaData.CustomDataOrDummyPadding;
+	float4 HDREyeAdaptation = hasSunshafts ? Param2 : Param1;
 	
 	float vAdaptedLum = adaptedLumTex.Load(0).x; // This is a 1x1 texture, so any UV will return the same value
 
