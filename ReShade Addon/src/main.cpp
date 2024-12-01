@@ -130,7 +130,10 @@ namespace {
 
 #if 1
         if (!IsDebuggerPresent()) {
-            MessageBoxA(NULL, "Loaded. You can now attach the debugger or continue execution.", NAME, MB_SETFOREGROUND);
+            auto ret = MessageBoxA(NULL, "Loaded. You can now attach the debugger or continue execution.\nPress cancel to close the application.", NAME, MB_SETFOREGROUND | MB_OKCANCEL);
+            if (ret == IDABORT || ret == IDCANCEL) {
+                exit(0);
+            }
         }
 #else
         // Wait for the debugger to attach
