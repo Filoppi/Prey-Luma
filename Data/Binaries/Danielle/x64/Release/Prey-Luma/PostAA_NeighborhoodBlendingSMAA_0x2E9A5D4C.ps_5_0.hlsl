@@ -24,7 +24,11 @@ void main(
 #endif
   if (skipSMAA)
   {
+#if 1 // Optimized
+    outColor = _tex1.Load(WPos.xyz);
+#else
     outColor = _tex1.SampleLevel(_tex1_s, inBaseTC.xy, 0);
+#endif
     return;
   }
 

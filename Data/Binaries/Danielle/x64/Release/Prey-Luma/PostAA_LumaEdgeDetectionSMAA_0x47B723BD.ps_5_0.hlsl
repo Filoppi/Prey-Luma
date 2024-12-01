@@ -17,6 +17,7 @@ float GetLuma(float3 cColor)
   return GetLuminance(cColor);
 }
 
+// LUMA FT: some SMAA shader related to edges detection
 void main(
   float4 v0 : SV_Position0,
   float4 inBaseTC : TEXCOORD0,
