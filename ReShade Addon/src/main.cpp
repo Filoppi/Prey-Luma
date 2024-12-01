@@ -2585,7 +2585,8 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
 //Could it be that we get a swapchain resize event too late and thus our output resolution isn't updated quick enough? (not it can't be because the output res is ... unchanged with DRS).
 //We should probably find a moment where we absolutely stop taking in new cbuffer 13 values, one fixed point in the pipeline (e.g. blur?, AO?, scene composion? ...).
 #if DEVELOPMENT && 0 // We are setting the viewport below now, no need to verify it was already right
-  if (has_drawn_dlss_sr && !has_drawn_upscaling) {
+  // We exclude a couple of shaders from "shader_hashes_LensOptics" from this check as we know they run at 1/4 resolution
+  if (has_drawn_dlss_sr && !has_drawn_upscaling && !original_shader_hashes.Contains(std::stoul("4435D741", nullptr, 16), reshade::api::shader_stage::pixel) && !original_shader_hashes.Contains(std::stoul("C54F3986", nullptr, 16), reshade::api::shader_stage::pixel)) {
       D3D11_VIEWPORT viewports[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
       UINT viewports_num = 1;
       native_device_context->RSGetViewports(&viewports_num, nullptr);
@@ -2807,6 +2808,11 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
                   if (!prey_drs_active) {
                       has_drawn_upscaling = true;
                   }
+      // If DLSS is guaranteed to be running instead of SMAA 2TX, we can skip the edge detection passes of SMAA 2TX (these also run other SMAA modes but then DLSS wouldn't run with these).
+      // This check might engage one frame late after DLSS engages but it doesn't matter.
+      // This is particularly useful because on every boot the game rejects the TAA user config setting (seemengly due to "r_AntialiasingMode" being clamped to 3 (SMAA 2TX)), so we'd waste performance if we didn't skip the passes (we still do).
+      if (!has_drawn_main_post_processing && original_shader_hashes.Contains(shader_hashes_SMAA_EdgeDetection) && dlss_sr && prey_taa_detected && cloned_pipeline_count != 0) {
+          return true;
       }
       if (!has_drawn_upscaling) {
            if (original_shader_hashes.Contains(shader_hash_PostAAUpscaleImage, reshade::api::shader_stage::pixel)) {
@@ -5497,6 +5503,9 @@ void Init(bool async) {
   shader_hashes_PostAA.pixel_shaders.emplace(std::stoul("E9D92B11", nullptr, 16)); // SMAA 1TX
 #endif
   shader_hashes_PostAA.pixel_shaders.emplace(std::stoul("BF813081", nullptr, 16)); // SMAA 2TX and TAA
+  // PostAA lendWeightSMAA + PostAA LumaEdgeDetectionSMAA
+  shader_hashes_SMAA_EdgeDetection.pixel_shaders = { std::stoul("5636A813", nullptr, 16), std::stoul("47B723BD", nullptr, 16) };
+
   // PostAA PostAAComposites
   shader_hashes_PostAAComposites.pixel_shaders.emplace(std::stoul("83AE9250", nullptr, 16));
   shader_hashes_PostAAComposites.pixel_shaders.emplace(std::stoul("496492FE", nullptr, 16));
