@@ -351,7 +351,7 @@ bool trace_ignore_vertex_shaders = true;
 #endif
 const bool precompile_custom_shaders = true;
 constexpr uint32_t shader_cbuffers_index = 2; // Default to 2 for Prey
-bool dlss_sr = true;
+bool dlss_sr = true; // If true DLSS is enabled by the user and supported+initialized correctly
 bool dlss_sr_supported = false;
 bool tonemap_ui_background = true;
 constexpr float tonemap_ui_background_amount = 0.25;
@@ -2527,20 +2527,22 @@ void OnPresent(
   // Update halton sequence with the latest rendering resolution.
   // Theoretically we should do that at the beginning of the rendering pass, after picking the current frame resolution (in DRS, res can change almost every frame),
   // but in reality there's probably little difference. Also, our implementation rounds it to the closest power of 2.
-  if (dlss_sr && cloned_pipeline_count != 0) {
+  // This won't do anything (these values are ignored by the game) unless "TAA" or "SMAA 2TX" are active.
 #if DEVELOPMENT
-      if (force_taa_jitter_phases > 0) {
-          NativePlugin::SetHaltonSequencePhases(force_taa_jitter_phases);
-      } else
+  if (force_taa_jitter_phases > 0) {
+      NativePlugin::SetHaltonSequencePhases(force_taa_jitter_phases);
+  }
+  else
 #endif
-      {
-          NativePlugin::SetHaltonSequencePhases(render_resolution.y, output_resolution.y);
-      }
+  if (dlss_sr && prey_taa_detected && cloned_pipeline_count != 0) {
+      NativePlugin::SetHaltonSequencePhases(render_resolution.y, output_resolution.y);
   }
-  // Restore the default value for the game's native TAA
-  else if (!prey_taa_detected && cloned_pipeline_count == 0) {
-      NativePlugin::SetHaltonSequencePhases(16); // r_AntialiasingTAAPattern 10
+  // Restore the default value for the game's native TAA, though instead of going to "16" as "r_AntialiasingTAAPattern" "10" would do, we set the phase to 8, which is actually the game's default for TAA/SMAA 2TX, and more appropriate for its short history (4 would probably work too)
+  else {
+      NativePlugin::SetHaltonSequencePhases(8);
   }
+#else
+  NativePlugin::SetHaltonSequencePhases(8); // We could do this once only on boot but whatever
 #endif // NGX
 
   cb_luma_frame_settings.FrameIndex++;
@@ -3640,7 +3642,7 @@ void OnDestroyResourceView(reshade::api::device* device, reshade::api::resource_
 //TODOFT: an alternative way of approaching this would be to cache all the address of buffers that are ever filled up through ::Map() calls,
 //then story a copy of each of their instances, and when one of these buffers is set to a shader stage, re-set the same cbuffer with our
 //modified and fixed up data. That is a bit slower but it would be more safe, as it would guarantee us 100% that the buffer we are changing is cbuffer 13.
-// Call this after reading the global cbuffer (index 13) memory (from CPU or GPU memory).
+// Call this after reading the global cbuffer (index 13) memory (from CPU or GPU memory). This seemengly only happens in one thread.
 // This will update the "cb_per_view_global" values if the ptr is found to be the right type of buffer (and return true in that case),
 // correct some of its values, and cache information for other usage.
 bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
@@ -3916,11 +3918,11 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
 
                 const auto prev_texture_mip_lod_bias_offset = texture_mip_lod_bias_offset;
                 // We do this even when DLSS is not on, to help with the game's native TAA and DRS implementations
-                if (dlss_sr && prey_taa_detected) {
+                if (dlss_sr && prey_taa_detected && cloned_pipeline_count != 0) {
                     texture_mip_lod_bias_offset = std::log2(render_resolution.y / output_resolution.y) - 1.f; // This results in -1 at output res
                 }
                 else { //TODOFT3: does this actually look better if TAA is disabled?
-                    texture_mip_lod_bias_offset = -1.f; // Reset to default value
+                    texture_mip_lod_bias_offset = prey_taa_detected ? -1.f : 0.f; // Reset to default value
                 }
 
                 bool texture_mip_lod_bias_offset_changed = prev_texture_mip_lod_bias_offset != texture_mip_lod_bias_offset;
@@ -4177,6 +4179,7 @@ void OnMapBufferRegion(reshade::api::device* device, reshade::api::resource reso
 
         ASSERT_ONCE(buffer_desc.ByteWidth != sizeof(CBPerViewGlobal));
         // There seems to only ever be one buffer type of this size, but it's not guaranteed... //TODOFT: not true, there's more? Check the map data!
+        // They seemengly all happen on the same thread.
         if (buffer_desc.ByteWidth == CBPerViewGlobal_buffer_size) {
             cb_per_view_global_buffer = buffer;
 #if DEVELOPMENT
