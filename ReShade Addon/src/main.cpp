@@ -1914,6 +1914,10 @@ void OnDestroySwapchain(reshade::api::swapchain* swapchain) {
   }
 }
 
+void OnInitCommandList(reshade::api::command_list* cmd_list) {
+    auto& cmd_list_data = cmd_list->create_private_data<CommandListData>();
+}
+
 #if DEVELOPMENT
 void OnInitPipelineLayout(
     reshade::api::device* device,
@@ -2120,17 +2124,19 @@ void OnBindPipeline(
     reshade::api::pipeline pipeline) {
   const std::lock_guard<std::recursive_mutex> lock(s_mutex_generic);
 
+  auto& cmd_list_data = cmd_list->get_private_data<CommandListData>();
+
   if ((stages & reshade::api::pipeline_stage::compute_shader) != 0) {
       ASSERT_ONCE(stages == reshade::api::pipeline_stage::compute_shader || stages == reshade::api::pipeline_stage::all); // Make sure only one stage happens at a time
-      pipeline_state_original_compute_shader = pipeline;
+      cmd_list_data.pipeline_state_original_compute_shader = pipeline;
   }
   if ((stages & reshade::api::pipeline_stage::vertex_shader) != 0) {
       ASSERT_ONCE(stages == reshade::api::pipeline_stage::vertex_shader || stages == reshade::api::pipeline_stage::all); // Make sure only one stage happens at a time
-      pipeline_state_original_vertex_shader = pipeline;
+      cmd_list_data.pipeline_state_original_vertex_shader = pipeline;
   }
   if ((stages & reshade::api::pipeline_stage::pixel_shader) != 0) {
       ASSERT_ONCE(stages == reshade::api::pipeline_stage::pixel_shader || stages == reshade::api::pipeline_stage::all); // Make sure only one stage happens at a time
-      pipeline_state_original_pixel_shader = pipeline;
+      cmd_list_data.pipeline_state_original_pixel_shader = pipeline;
   }
 
   auto pair = pipeline_cache_by_pipeline_handle.find(pipeline.handle);
@@ -5677,6 +5683,8 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
       if (asi_loaded) return TRUE;
 #endif // DISABLE_RESHADE
 
+      reshade::register_event<reshade::addon_event::init_command_list>(OnInitCommandList);
+
       reshade::register_event<reshade::addon_event::init_device>(OnInitDevice);
       reshade::register_event<reshade::addon_event::destroy_device>(OnDestroyDevice);
       reshade::register_event<reshade::addon_event::init_swapchain>(OnInitSwapchain);
@@ -5722,6 +5730,8 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
     }
     case DLL_PROCESS_DETACH:
     {
+      reshade::unregister_event<reshade::addon_event::init_command_list>(OnInitCommandList);
+
       reshade::unregister_event<reshade::addon_event::init_device>(OnInitDevice);
       reshade::unregister_event<reshade::addon_event::destroy_device>(OnDestroyDevice);
       reshade::unregister_event<reshade::addon_event::init_swapchain>(OnInitSwapchain);
