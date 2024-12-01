@@ -446,6 +446,18 @@ std::vector<std::string> cb_per_view_globals_last_drawn_shader;
 std::vector<ID3D11Buffer*> cb_per_view_global_buffer_pending_verification;
 std::vector<CBPerViewGlobal> cb_per_view_globals;
 std::vector<CBPerViewGlobal> cb_per_view_globals_previous;
+
+com_ptr<ID3D11Texture2D> debug_draw_texture;
+DXGI_FORMAT debug_draw_texture_format = DXGI_FORMAT_UNKNOWN;
+uint32_t debug_draw_shader_hash = 0;
+char debug_draw_shader_hash_string[HASH_CHARACTERS_LENGTH + 1];
+uint64_t debug_draw_pipeline = 0;
+std::atomic<int32_t> debug_draw_pipeline_instance = 0; // Theoretically should be within "CommandListData" but this should work for most cases
+int32_t debug_draw_pipeline_target_instance = -1;
+// If true we are drawing the render target texture, otherwise the shader resource texture
+bool debug_draw_render_target_view = true;
+int32_t debug_draw_view_index = 0;
+bool debug_draw_auto_clear_texture = false;
 #endif // DEVELOPMENT
 LumaFrameSettings cb_luma_frame_settings = { };
 #if DEVELOPMENT
@@ -2298,7 +2310,12 @@ void OnPresent(
     bool shader_defines_need_linearization = GetShaderDefineCompiledNumericalValue(POST_PROCESS_SPACE_TYPE_HASH) != 1;
     bool shader_defines_need_gamma_correction = GetShaderDefineCompiledNumericalValue(POST_PROCESS_SPACE_TYPE_HASH) == 1 && GetShaderDefineCompiledNumericalValue(GAMMA_CORRECTION_TYPE_HASH) >= 2;
     bool display_mode_needs_gamma_correction = cb_luma_frame_settings.DisplayMode == 0; // SDR on SDR Display on scRGB HDR Swapchain needs Gamma 2.2/sRGB mismatch correction
-    if (shader_defines_need_linearization || shader_defines_need_gamma_correction || display_mode_needs_gamma_correction || cloned_pipeline_count == 0) {
+#if DEVELOPMENT
+    bool needs_draw_debug_texture = debug_draw_texture.get() != nullptr;
+#else
+    constexpr bool needs_draw_debug_texture = false;
+#endif
+    if (shader_defines_need_linearization || shader_defines_need_gamma_correction || display_mode_needs_gamma_correction || cloned_pipeline_count == 0 || needs_draw_debug_texture) {
         const std::lock_guard<std::recursive_mutex> lock_shader_objects(s_mutex_shader_objects);
         if (copy_vertex_shader && transfer_function_copy_pixel_shader) {
             IDXGISwapChain* native_swapchain = (IDXGISwapChain*)(swapchain->get_native());
@@ -2311,6 +2328,30 @@ void OnPresent(
             ASSERT_ONCE((target_desc.BindFlags & D3D11_BIND_RENDER_TARGET) != 0);
             // For now we only support this format, nothing else wouldn't realy make sense
             ASSERT_ONCE(target_desc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT);
+
+#if DEVELOPMENT
+            if (debug_draw_texture.get()) {
+                D3D11_SHADER_RESOURCE_VIEW_DESC debug_srv_desc;
+                debug_srv_desc.Format = debug_draw_texture_format;
+                debug_srv_desc.ViewDimension = D3D11_SRV_DIMENSION::D3D11_SRV_DIMENSION_TEXTURE2D;
+                debug_srv_desc.Texture2D.MipLevels = 1;
+                debug_srv_desc.Texture2D.MostDetailedMip = 0;
+                com_ptr<ID3D11ShaderResourceView> debug_srv;
+                // We recreate this every frame, it doesn't really matter (and this is allowed to fail in case of quirky formats)
+                HRESULT hr = native_device->CreateShaderResourceView(debug_draw_texture.get(), &debug_srv_desc, &debug_srv);
+                ASSERT_ONCE(SUCCEEDED(hr));
+
+                ID3D11ShaderResourceView* const debug_srv_const = debug_srv.get();
+                native_device_context->PSSetShaderResources(1, 1, &debug_srv_const); // Use index 1 (0 is already used)
+
+                // TODO: add gamma visualization parameter, and scaling options (fullscreen, render res, native texture res)
+            }
+            // Empty the shader resource so the shader can tell there isn't one
+            else {
+                ID3D11ShaderResourceView* const debug_srv_const = nullptr;
+                native_device_context->PSSetShaderResources(1, 1, &debug_srv_const);
+            }
+#endif
 
             D3D11_TEXTURE2D_DESC proxy_target_desc;
             if (transfer_function_copy_texture.get() != nullptr) {
@@ -2440,6 +2481,11 @@ void OnPresent(
   cb_per_view_globals_last_drawn_shader.clear();
   cb_per_view_globals_previous = cb_per_view_globals;
   cb_per_view_globals.clear();
+
+  if (debug_draw_auto_clear_texture) {
+    debug_draw_texture = nullptr;
+  }
+  debug_draw_pipeline_instance = 0;
 #endif // DEVELOPMENT
 
 #if ENABLE_NGX
@@ -2510,7 +2556,7 @@ void OnPresent(
 // Return false to prevent the original draw call from running (e.g. if you replaced it or just want to skip it)
 // Prey always seemengly draws in direct mode. There's a few compute shaders but most passes are classic pixel shaders.
 // If we ever wanted to still run the game's original draw call (first) and then ours (second), we'd need to pass more arguments in this function (to replicate the draw call identically).
-bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = false) {
+bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= false*/, ShaderHashesList& original_shader_hashes) {
   const auto* device = cmd_list->get_device();
   auto device_api = device->get_api();
   ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
@@ -2536,7 +2582,6 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
 
   bool is_custom_pass = false;
 
-  ShaderHashesList original_shader_hashes;
   auto& cmd_list_data = cmd_list->get_private_data<CommandListData>();
 
 #if DEVELOPMENT
@@ -3250,13 +3295,99 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
   return false; // Return true to cancel this draw call
 }
 
+#if DEVELOPMENT
+void CopyDebugDrawTexture(reshade::api::command_list* cmd_list) {
+    ID3D11Device* native_device = (ID3D11Device*)(cmd_list->get_device()->get_native());
+    ID3D11DeviceContext* native_device_context = (ID3D11DeviceContext*)(cmd_list->get_native());
+
+    com_ptr<ID3D11Resource> texture_resource;
+    // TODO: add support for render target indexes beyond 0
+    if (debug_draw_render_target_view) {
+        com_ptr<ID3D11RenderTargetView> render_target_view;
+
+        ID3D11RenderTargetView* rtvs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
+        native_device_context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &rtvs[0], nullptr);
+        render_target_view = rtvs[debug_draw_view_index];
+        for (UINT i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; i++) {
+            if (rtvs[i] != nullptr) {
+                rtvs[i]->Release();
+                rtvs[i] = nullptr;
+            }
+        }
+
+        if (render_target_view) {
+            render_target_view->GetResource(&texture_resource);
+            D3D11_RENDER_TARGET_VIEW_DESC rtv_desc;
+            render_target_view->GetDesc(&rtv_desc);
+            debug_draw_texture_format = rtv_desc.Format; // Note: this isn't synchronized with the conditions that update "debug_draw_texture" below but it should work anyway
+        }
+    }
+    else {
+        com_ptr<ID3D11ShaderResourceView> shader_resource_view;
+        native_device_context->PSGetShaderResources(debug_draw_view_index, 1, &shader_resource_view);
+        if (shader_resource_view) {
+            shader_resource_view->GetResource(&texture_resource);
+            D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+            shader_resource_view->GetDesc(&srv_desc);
+            debug_draw_texture_format = srv_desc.Format;
+        }
+    }
+    if (texture_resource) {
+        com_ptr<ID3D11Texture2D> texture;
+        texture_resource->QueryInterface(&texture);
+        // For now we re-create it every frame as we don't care for performance
+        if (texture) {
+            D3D11_TEXTURE2D_DESC texture_desc;
+            texture->GetDesc(&texture_desc);
+            texture_desc.Usage = D3D11_USAGE_DEFAULT;
+            texture_desc.CPUAccessFlags = 0;
+            texture_desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS; // Just do all of them
+            debug_draw_texture = nullptr;
+            HRESULT hr = native_device->CreateTexture2D(&texture_desc, nullptr, &debug_draw_texture); //TODOFT: figure out error
+            ASSERT_ONCE(SUCCEEDED(hr));
+
+            // Back it up as it gets immediately overwritten or re-used later
+            if (debug_draw_texture) {
+                native_device_context->CopyResource(debug_draw_texture.get(), texture.get());
+            }
+        }
+    }
+}
+#endif
+
 bool OnDraw(
     reshade::api::command_list* cmd_list,
     uint32_t vertex_count,
     uint32_t instance_count,
     uint32_t first_vertex,
     uint32_t first_instance) {
-  return HandlePreDraw(cmd_list);
+    ShaderHashesList original_shader_hashes;
+    bool cancelled_or_replaced = HandlePreDraw(cmd_list, false, original_shader_hashes);
+#if DEVELOPMENT
+    // TODO: add support for cancelled passes here (and below), given that we can't retrieve the render target texture anymore. Also add support for compute shaders?
+    // First run the draw call (don't delegate it to ReShade) and then copy its output
+    auto& cmd_list_data = cmd_list->get_private_data<CommandListData>();
+    bool wants_debug_draw = debug_draw_shader_hash != 0 || debug_draw_pipeline != 0;
+    if (wants_debug_draw && (debug_draw_shader_hash == 0 || original_shader_hashes.Contains(debug_draw_shader_hash, reshade::api::shader_stage::pixel)) && (debug_draw_pipeline == 0 || debug_draw_pipeline == cmd_list_data.pipeline_state_original_pixel_shader.handle)) {
+        auto local_debug_draw_pipeline_instance = debug_draw_pipeline_instance.fetch_add(1);
+        if (debug_draw_pipeline_target_instance == -1 || local_debug_draw_pipeline_instance - 1 == debug_draw_pipeline_target_instance) {
+            if (!cancelled_or_replaced) {
+                ID3D11DeviceContext* native_device_context = (ID3D11DeviceContext*)(cmd_list->get_native());
+                if (instance_count > 1) {
+                    native_device_context->DrawInstanced(vertex_count, instance_count, first_vertex, first_instance);
+                }
+                else {
+                    ASSERT_ONCE(first_instance == 0);
+                    native_device_context->Draw(vertex_count, first_vertex);
+                }
+                cancelled_or_replaced = true;
+            }
+
+            CopyDebugDrawTexture(cmd_list);
+        }
+    }
+#endif
+    return cancelled_or_replaced;
 }
 
 bool OnDrawIndexed(
@@ -3266,11 +3397,37 @@ bool OnDrawIndexed(
     uint32_t first_index,
     int32_t vertex_offset,
     uint32_t first_instance) {
-    return HandlePreDraw(cmd_list);
+    ShaderHashesList original_shader_hashes;
+    bool cancelled_or_replaced = HandlePreDraw(cmd_list, false, original_shader_hashes);
+#if DEVELOPMENT
+    // First run the draw call (don't delegate it to ReShade) and then copy its output
+    auto& cmd_list_data = cmd_list->get_private_data<CommandListData>();
+    bool wants_debug_draw = debug_draw_shader_hash != 0 || debug_draw_pipeline != 0;
+    if (wants_debug_draw && (debug_draw_shader_hash == 0 || original_shader_hashes.Contains(debug_draw_shader_hash, reshade::api::shader_stage::pixel)) && (debug_draw_pipeline == 0 || debug_draw_pipeline == cmd_list_data.pipeline_state_original_pixel_shader.handle)) {
+        auto local_debug_draw_pipeline_instance = debug_draw_pipeline_instance.fetch_add(1);
+        if (debug_draw_pipeline_target_instance == -1 || local_debug_draw_pipeline_instance - 1 == debug_draw_pipeline_target_instance) {
+            if (!cancelled_or_replaced) {
+                ID3D11DeviceContext* native_device_context = (ID3D11DeviceContext*)(cmd_list->get_native());
+                if (instance_count > 1) {
+                    native_device_context->DrawIndexedInstanced(index_count, instance_count, first_index, vertex_offset, first_instance);
+                }
+                else {
+                    ASSERT_ONCE(first_instance == 0);
+                    native_device_context->DrawIndexed(index_count, first_index, vertex_offset);
+                }
+                cancelled_or_replaced = true;
+            }
+
+            CopyDebugDrawTexture(cmd_list);
+        }
+    }
+#endif
+    return cancelled_or_replaced;
 }
 
 bool OnDispatch(reshade::api::command_list* cmd_list, uint32_t group_count_x, uint32_t group_count_y, uint32_t group_count_z) {
-  return HandlePreDraw(cmd_list, true);
+    ShaderHashesList original_shader_hashes;
+    return HandlePreDraw(cmd_list, true, original_shader_hashes);
 }
 
 bool OnDrawOrDispatchIndirect(
@@ -3280,10 +3437,11 @@ bool OnDrawOrDispatchIndirect(
     uint64_t offset,
     uint32_t draw_count,
     uint32_t stride) {
-  ASSERT_ONCE(false); // Not used by Prey
-  // NOTE: according to ShortFuse, this can be "reshade::api::indirect_command::unknown" too, so we'd need to fall back on checking what shader is bound to know if this is a compute shader draw
-  bool is_dispatch = type == reshade::api::indirect_command::dispatch || type == reshade::api::indirect_command::dispatch_mesh || type == reshade::api::indirect_command::dispatch_rays;
-  return HandlePreDraw(cmd_list, is_dispatch);
+    ASSERT_ONCE(false); // Not used by Prey (DrawIndexedInstancedIndirect() and DrawInstancedIndirect() weren't used in CryEngine)
+    // NOTE: according to ShortFuse, this can be "reshade::api::indirect_command::unknown" too, so we'd need to fall back on checking what shader is bound to know if this is a compute shader draw
+    bool is_dispatch = type == reshade::api::indirect_command::dispatch || type == reshade::api::indirect_command::dispatch_mesh || type == reshade::api::indirect_command::dispatch_rays;
+    ShaderHashesList original_shader_hashes;
+    return HandlePreDraw(cmd_list, is_dispatch, original_shader_hashes);
 }
 
 // TODO: use the native ReShade sampler desc instead? It's not really necessary
@@ -4792,6 +4950,22 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
                         UnloadCustomShaders({ pipeline_handle }, false, false);
                     }
                   }
+                  if (pipeline_pair->second->HasPixelShader()) {
+                      if (ImGui::Button("Debug Draw Shader")) {
+                          debug_draw_pipeline = pipeline_pair->first; // Note: this is probably completely useless at the moment as we don't store the index of the pipeline instance the user had selected (e.g. "debug_draw_pipeline_target_instance")
+                          debug_draw_shader_hash = pipeline_pair->second->shader_hashes[0];
+                          std::string new_debug_draw_shader_hash_string = std::format("{:x}", debug_draw_shader_hash);
+                          if (new_debug_draw_shader_hash_string.size() <= HASH_CHARACTERS_LENGTH)
+                              strcpy(&debug_draw_shader_hash_string[0], new_debug_draw_shader_hash_string.c_str());
+                          else
+                              debug_draw_shader_hash_string[0] = 0;
+                          debug_draw_texture = nullptr;
+#if 0 // Let the user settings persist for now, it seems more intuitive
+                          debug_draw_pipeline_target_instance = -1;
+                          debug_draw_render_target_view = true;
+#endif
+                      }
+                  }
                 }
                 ImGui::EndChild(); // Settings
                 pipeline_pair->second->test = test_pipeline;
@@ -5073,6 +5247,61 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 
         ImGui::NewLine();
         ImGui::SliderInt("Tank Performance (Per Frame Sleep MS)", &frame_sleep_ms, 0, 100);
+
+        ImGui::NewLine();
+        ImGuiInputTextFlags text_flags = ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_AlwaysOverwrite | ImGuiInputTextFlags_NoUndoRedo;
+        if (ImGui::InputTextWithHint("Debug Draw Shader Hash", "12345678", debug_draw_shader_hash_string, HASH_CHARACTERS_LENGTH + 1, text_flags)) {
+            try {
+                if (strlen(debug_draw_shader_hash_string) != HASH_CHARACTERS_LENGTH) {
+                    throw std::invalid_argument("Shader Hash has invalid length");
+                }
+                debug_draw_shader_hash = std::stoul(&debug_draw_shader_hash_string[0], nullptr, 16);
+            }
+            catch (const std::exception& e) {
+                debug_draw_shader_hash = 0;
+            }
+            // Keep the pipeline ptr if we are simply clearing the hash
+            if (debug_draw_shader_hash != 0) {
+                debug_draw_pipeline = 0;
+            }
+            debug_draw_texture = nullptr;
+        }
+        ImGui::SameLine();
+        if (debug_draw_shader_hash != 0 || debug_draw_pipeline != 0) {
+            ImGui::PushID("Debug Draw");
+            if (ImGui::SmallButton(ICON_FK_UNDO)) {
+                debug_draw_shader_hash_string[0] = 0;
+                debug_draw_shader_hash = 0;
+                debug_draw_pipeline = 0;
+                debug_draw_texture = nullptr;
+            }
+            ImGui::PopID();
+        }
+        else {
+            const auto& style = ImGui::GetStyle();
+            ImVec2 size = ImGui::CalcTextSize(ICON_FK_UNDO);
+            size.x += style.FramePadding.x;
+            size.y += style.FramePadding.y;
+            ImGui::InvisibleButton("", ImVec2(size.x, size.y));
+        }
+        const char* debug_draw_mode_strings[2] = {
+            "Render Target",
+            "Shader Resource",
+        };
+        static int debug_draw_mode;
+        if (ImGui::SliderInt("Debug Draw Mode", &debug_draw_mode, 0, 1, debug_draw_mode_strings[debug_draw_mode], ImGuiSliderFlags_NoInput)) {
+            debug_draw_render_target_view = debug_draw_mode <= 0;
+            debug_draw_view_index = 0;
+        }
+        if (debug_draw_render_target_view) {
+            ImGui::SliderInt("Debug Draw Render Target Index", &debug_draw_view_index, 0, D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT - 1);
+        }
+        else {
+            ImGui::SliderInt("Debug Draw Pixel Shader Resource Index", &debug_draw_view_index, 0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT - 1);
+            
+        }
+        ImGui::SliderInt("Debug Draw Pipeline Instance", &debug_draw_pipeline_target_instance, -1, 100); // In case the same pipeline was run more than once by the game, we can pick one to print
+        ImGui::Checkbox("Debug Draw Auto Clear Texture", &debug_draw_auto_clear_texture); // Is it persistent or not (in case the target texture stopped being found on newer frames). We could also "freeze" it and stop updating it, but we don't need that for now.
 
         ImGui::NewLine();
         ImGui::SliderFloat("DLSS Custom Exposure", &dlss_custom_exposure, 0.0, 10.0);

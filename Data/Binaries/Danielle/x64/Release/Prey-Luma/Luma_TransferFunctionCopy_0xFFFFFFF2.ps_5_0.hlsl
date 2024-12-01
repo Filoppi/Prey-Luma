@@ -1,14 +1,42 @@
 #include "include/ColorGradingLUT.hlsl" // Use this as it has some gamma correction helpers
 
 Texture2D<float4> sourceTexture : register(t0);
+Texture2D<float4> debugTexture : register(t1);
 
 // Custom Luma shader to apply the display (or output) transfer function from a linear input (or apply custom gamma correction)
 float4 main(float4 pos : SV_Position0) : SV_Target0
 {
-	float4 color = sourceTexture.Load((int3)pos.xyz);
-
 	// We can't account for the UI paper white at this point
 	const float paperWhite = LumaSettings.GamePaperWhiteNits / sRGB_WhiteLevelNits;
+
+#if DEVELOPMENT
+	float debugWidth;
+	float debugHeight;
+	debugTexture.GetDimensions(debugWidth, debugHeight);
+	if (debugWidth != 0 && debugHeight != 0)
+    {
+		float2 resolutionScale = 1.0;
+#if 1 // Stretch to fullscreen
+		float targetWidth;
+		float targetHeight;
+		sourceTexture.GetDimensions(targetWidth, targetHeight);
+		resolutionScale = float2(debugWidth / targetWidth, debugHeight / targetHeight);
+#endif
+#if 1 // Scale by rendering resolution
+		resolutionScale *= LumaData.RenderResolutionScale;
+#endif
+		pos.xy = round((pos.xy - 0.5) * resolutionScale) + 0.5;
+		float4 color = debugTexture.Load((int3)pos.xyz); // We don't have a sampler here so we just approimate to the closest texel
+#if 0 // Linearize
+        color.rgb = pow(color.rgb, 2.2f);
+#elif 0
+        color.rgb = pow(color.rgb, 1.f / 2.2f);
+#endif
+		return color * paperWhite;
+    }
+#endif
+
+	float4 color = sourceTexture.Load((int3)pos.xyz);
 
 	// SDR: In this case, paper white (game and UI) would have been 80 nits (neutral for SDR, thus having a value of 1)
 	if (LumaSettings.DisplayMode == 0)
