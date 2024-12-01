@@ -7,8 +7,8 @@ Downsample depth buffer (half res, RGBA16F, with each channel representing max/m
 Draw (deferred) decals
 Downsample depth buffer (again? This one seems to make them even smaller)
 Draws Screen Space Reflections buffer (Takes g-buffers and depth as source, uses "CBSSRRaytrace"/"SSRRaytracePS")
-Downsample SSR buffers
-Compose SSR to a buffer usable later (uses "SSRCompositionPS")
+Downsample SSR buffers to different mip levels
+Compose SSR textures to a final buffer usable later (uses "SSRCompositionPS")
 Draw some dynamic shadow maps (cubemaps?)
 Draw SSDO (SSAO) (uses "DirOccPassPS")
 Blur SSAO (uses "SSDO_Blur_PS")
