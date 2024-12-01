@@ -157,11 +157,11 @@ namespace {
     }
 
 struct CachedPipeline {
-  // Oriignal pipeline
+  // Orignal pipeline
   reshade::api::pipeline pipeline;
   reshade::api::device* device;
   reshade::api::pipeline_layout layout;
-  // Cloned subojects from the oriignal pipeline
+  // Cloned subojects from the orignal pipeline
   reshade::api::pipeline_subobject* subobjects_cache;
   uint32_t subobject_count;
   bool cloned = false;
@@ -169,8 +169,10 @@ struct CachedPipeline {
   reshade::api::pipeline pipeline_clone;
   // Original shaders hash (there should only be one)
   std::vector<uint32_t> shader_hashes;
+#if DEVELOPMENT
   // If true, this pipeline is currently being "tested"
   bool test = false;
+#endif
 
   bool HasPixelShader() const {
     for (uint32_t i = 0; i < subobject_count; i++) {
@@ -220,6 +222,10 @@ std::recursive_mutex s_mutex_shader_objects;
 std::recursive_mutex s_mutex_shader_defines;
 // Mutex to deal with data shader with ReShade, like ini/config saving and loading
 std::recursive_mutex s_mutex_reshade;
+// For "custom_sampler_by_original_sampler"
+std::recursive_mutex s_mutex_samplers;
+// For "native_swapchain3" and "global_native_device"
+std::recursive_mutex s_mutex_device;
 
 bool asi_loaded = true;
 std::thread thread_auto_dumping;
@@ -269,7 +275,6 @@ reshade::api::pipeline pipeline_state_original_vertex_shader = reshade::api::pip
 reshade::api::pipeline pipeline_state_original_pixel_shader = reshade::api::pipeline(0);
 
 // Custom samplers mapped to original ones by texture LOD bias
-std::recursive_mutex s_mutex_samplers;
 std::unordered_map<uint64_t, std::unordered_map<float, com_ptr<ID3D11SamplerState>>> custom_sampler_by_original_sampler;
 
 std::unordered_set<uint64_t> pipelines_to_reload;
@@ -285,7 +290,6 @@ std::vector<uint32_t> trace_shader_hashes;
 std::vector<uint64_t> trace_pipeline_handles;
 
 const uint32_t HASH_CHARACTERS_LENGTH = 8;
-
 const std::string NAME_ADVANCED_SETTINGS = std::string(NAME) + " Advanced";
 
 // Needs to be here to compile properly
@@ -297,17 +301,13 @@ struct ShaderHashesList {
     std::unordered_set<uint32_t> compute_shaders;
 
     bool Contains(uint32_t shader_hash, reshade::api::shader_stage shader_stage) {
-        //TODOFT: is this right?
-        // NOTE: we could probably check if the value matches a specific shader stage (e.g. a switch), but I'm not 100% sure other flags are never set
-        if ((shader_stage & (reshade::api::shader_stage::pixel | reshade::api::shader_stage::vertex)) != 0) {
-            return pixel_shaders.contains(shader_hash) || vertex_shaders.contains(shader_hash);
+        // NOTE: we could probably check if the value matches a specific shader stage (e.g. a switch?), but I'm not 100% sure other flags are ever set
+        if ((shader_stage & reshade::api::shader_stage::pixel) != 0) {
+            if (pixel_shaders.contains(shader_hash)) return true;
         }
-        //if ((shader_stage & reshade::api::shader_stage::pixel) != 0) {
-        //    return pixel_shaders.contains(shader_hash);
-        //}
-        //if ((shader_stage & reshade::api::shader_stage::vertex) != 0) {
-        //    return vertex_shaders.contains(shader_hash);
-        //}
+        if ((shader_stage & reshade::api::shader_stage::vertex) != 0) {
+            if (vertex_shaders.contains(shader_hash)) return true;
+        }
         if ((shader_stage & reshade::api::shader_stage::compute) != 0) {
             return compute_shaders.contains(shader_hash);
         }
@@ -344,20 +344,15 @@ bool auto_dump = false;
 #endif // DEVELOPMENT || TEST
 bool auto_load = true;
 bool live_reload = false;
+#if DEVELOPMENT
 bool trace_list_unique_shaders_only = false;
 bool trace_ignore_vertex_shaders = true;
+#endif
 const bool precompile_custom_shaders = true;
 constexpr uint32_t shader_cbuffers_index = 2; // Default to 2 for Prey
 bool dlss_sr = true;
-bool prey_drs_detected = false;
-float dlss_sr_render_resolution = 1.f;
-bool prey_taa_enabled = false;
-// Index 0 is one frame ago, index 1 is two frames ago
-bool previous_prey_taa_enabled[2] = { false, false };
-bool prey_taa_detected = false;
 bool dlss_sr_supported = false;
 bool tonemap_ui_background = true;
-Matrix44A reprojection_matrix;
 constexpr float tonemap_ui_background_amount = 0.25;
 constexpr float srgb_white_level = 80;
 constexpr float default_paper_white = 203; // ITU White Level
@@ -420,11 +415,18 @@ bool found_per_view_globals = false;
 // Whether the rendering resolution was scaled in this frame (different from the ouput resolution)
 bool prey_drs_active = false;
 bool force_reset_dlss = false;
+bool prey_drs_detected = false;
+float dlss_sr_render_resolution = 1.f;
+bool prey_taa_enabled = false;
+// Index 0 is one frame ago, index 1 is two frames ago
+bool previous_prey_taa_enabled[2] = { false, false };
+bool prey_taa_detected = false;
 // Directly from cbuffer (so these are transposed)
 Matrix44A projection_matrix;
 Matrix44A nearest_projection_matrix;
 Matrix44A previous_projection_matrix;
 Matrix44A previous_nearest_projection_matrix;
+Matrix44A reprojection_matrix;
 float2 previous_projection_jitters = { 0, 0 };
 float2 projection_jitters = { 0, 0 };
 float2 render_resolution = { 1, 1 };
@@ -437,9 +439,9 @@ CBPerViewGlobal cb_per_view_global = { };
 CBPerViewGlobal cb_per_view_global_previous = cb_per_view_global;
 #if DEVELOPMENT //TODOFT3: delete once not needed anymore?
 std::string last_drawn_shader = "";
+std::vector<std::string> cb_per_view_globals_last_drawn_shader;
 std::vector<ID3D11Buffer*> cb_per_view_global_buffer_pending_verification;
 std::vector<CBPerViewGlobal> cb_per_view_globals;
-std::vector<std::string> cb_per_view_globals_last_drawn_shader;
 std::vector<CBPerViewGlobal> cb_per_view_globals_previous;
 #endif // DEVELOPMENT
 LumaFrameSettings cb_luma_frame_settings = { };
@@ -473,7 +475,7 @@ std::vector<ShaderDefineData> shader_defines_data = {
   {"FORCE_NEUTRAL_COLOR_GRADING_LUT_TYPE", '0', false, false, "Can force a neutral LUT in different ways (color grading is still applied)"},
   {"DRAW_LUT", '0', false, (DEVELOPMENT || TEST) ? false : true},
 #endif
-  {"SSAO_TYPE", '1', false, false, "0 - Vanilla\n1 - Luma GTAO"},
+  {"SSAO_TYPE", '1', false, false, "0 - Vanilla\n1 - Luma GTAO\nIn case GTAO is too performance intensive, go into the official game graphics settings and set \"Screen Space Directional Occlusion\" to half resolution"},
   {"SSAO_QUALITY", '1', false, false, "0 - Vanilla\n1 - High\n2 - Extreme (slow)"},
   {"BLOOM_QUALITY", '1', false, false, "0 - Vanilla\n1 - High"},
 #if DEVELOPMENT || TEST
@@ -541,7 +543,7 @@ static constexpr unsigned int crc_table[256] = {
 };
 
 constexpr uint32_t string_view_crc32(std::string_view str) {
-#if 0
+#if 0 //TODOFT: delete
     if (!std::is_constant_evaluated())
         assert(false);
 #endif
@@ -551,10 +553,6 @@ constexpr uint32_t string_view_crc32(std::string_view str) {
     return crc ^ 0xffffffff;
 }
 constexpr uint32_t char_ptr_crc32(const char* char_ptr) {
-#if 0
-    if (!std::is_constant_evaluated())
-        assert(false);
-#endif
     uint32_t crc = 0xffffffff;
     size_t i = 0;
     while (char_ptr[i] != '\0') {
@@ -570,7 +568,7 @@ constexpr uint32_t POST_PROCESS_SPACE_TYPE_HASH = char_ptr_crc32("POST_PROCESS_S
 constexpr uint32_t GAMMA_CORRECTION_TYPE_HASH = char_ptr_crc32("GAMMA_CORRECTION_TYPE");
 constexpr uint32_t AUTO_HDR_VIDEOS_HASH = char_ptr_crc32("AUTO_HDR_VIDEOS");
 constexpr uint32_t SSAO_TYPE_HASH = char_ptr_crc32("SSAO_TYPE");
-constexpr uint32_t DLSS_RELATIVE_PRE_EXPOSURE_HASH = char_ptr_crc32("DLSS_RELATIVE_PRE_EXPOSURE");
+constexpr uint32_t DLSS_RELATIVE_PRE_EXPOSURE_HASH = char_ptr_crc32("DLSS_RELATIVE_PRE_EXPOSURE"); // "DEVELOPMENT" only
 
 // Resources:
 
@@ -603,8 +601,6 @@ com_ptr<ID3D11ShaderResourceView> gtao_edges_srv;
 
 com_ptr<ID3D11BlendState> default_blend_state;
 
-// For "native_swapchain3" and "global_native_device"
-std::recursive_mutex s_mutex_device;
 // There's only one swapchain in Prey, but the game chances its configuration from different threads
 IDXGISwapChain3* native_swapchain3 = nullptr;
 ID3D11Device* global_native_device = nullptr;
@@ -720,6 +716,7 @@ struct DrawStateStack {
 #endif
     D3D11_PRIMITIVE_TOPOLOGY primitive_topology;
     ID3D11RenderTargetView* render_target_views[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
+
     com_ptr<ID3D11DepthStencilView> depth_stencil_view;
     com_ptr<ID3D11ShaderResourceView> shader_resource_view;
     com_ptr<ID3D11Buffer> constant_buffer;
@@ -875,7 +872,9 @@ void UnloadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = 
       // Clear their compilation state, we might not have any other way of doing it.
       // Disable testing etc here, otherwise we might not always have a way to do it
       if (clean_custom_shader) {
+#if DEVELOPMENT
         cached_pipeline->test = false;
+#endif
         for (auto shader_hash : cached_pipeline->shader_hashes) {
           ClearCustomShader(shader_hash);
         }
@@ -2138,13 +2137,16 @@ void OnBindPipeline(
 
   auto* cached_pipeline = pair->second;
 
+#if DEVELOPMENT
   if (cached_pipeline->test) {
     // This will make the shader output black, or skip drawing, so we can easily detect it. This might not be very safe but seems to work in DX11.
     // TODO: replace the pipeline with a shader that outputs all "SV_Target" as purple for more visiblity,
     // or return false in "reshade::addon_event::draw_or_dispatch_indirect" and similar draw calls to prevent them from being drawn.
     cmd_list->bind_pipeline(stages, reshade::api::pipeline{0});
   }
-  else if (cached_pipeline->cloned && cached_pipeline->ready_for_binding) {
+  else
+#endif
+  if (cached_pipeline->cloned && cached_pipeline->ready_for_binding) {
     cmd_list->bind_pipeline(stages, cached_pipeline->pipeline_clone);
   }
 
@@ -2495,7 +2497,6 @@ void OnPresent(
 //TODOFT5: Add "UpdateSubresource" to check whether they map buffers with that (it's not optimized so probably it's unused by CryEngine)? Also make sure that our CopyTexture() func works!
 //TODOFT5: merge all the shader permutations that use the same code (and then move shader binaries to bin folder?)
 //TODOFT5: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project?
-//TODOFT5: remove sharpening from custom menu settings? And fix TAA not appearing set correctly (duplicate)?
 //TODOFT5: investigate why some effects don't scale properly with dynamic res, simply look at the sun in the first scene
 //TODOFT: add a new RT to draw UI on top (pre-multiplied alpha everywhere), so we could compose it smartly, possibly in the final linearization pass.
 
@@ -2864,7 +2865,6 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch = fals
       // Don't even try to run DLSS if we have no custom shaders loaded, we need them for DLSS to work properly (it might somewhat work even without them, but it's untested and unneeded)
       if (is_custom_pass && dlss_sr && cloned_pipeline_count != 0) {
           //TODOFT (TODO): make sure DLSS lets scRGB colors pass through...
-          //TODOFT3: skip SMAA edge detection and edge AA passes, or just disable SMAA in menu settings (make sure the game defaults to TAA from config)
 
           // TODO: add DLSS transparency mask (e.g. glass, decals, emissive) by caching the g-buffers before and after transparent stuff draws near the end?
           // TODO: add DLSS bias mask (to ignore animated textures) by marking up some shaders(materials)/textures hashes with it?
@@ -3639,6 +3639,7 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
         cb_per_view_global.CV_HPosScale.z = cb_per_view_global.CV_HPosScale.x;
         cb_per_view_global.CV_HPosScale.w = cb_per_view_global.CV_HPosScale.y;
 
+        // Clamp at the last texel center (half pixel offset) at the bottom right of the rendering (which is now equal to output) resolution area
         cb_per_view_global.CV_HPosClamp.x = 1.f - cb_per_view_global.CV_ScreenSize.z;
         cb_per_view_global.CV_HPosClamp.y = 1.f - cb_per_view_global.CV_ScreenSize.w;
         cb_per_view_global.CV_HPosClamp.z = cb_per_view_global.CV_HPosClamp.x;
@@ -3741,7 +3742,7 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
                 if (dlss_sr && prey_taa_detected) {
                     texture_mip_lod_bias_offset = std::log2(render_resolution.y / output_resolution.y) - 1.f; // This results in -1 at output res
                 }
-                else { //TODOFT3: does this actually look better if TAA/DRS as disabled?
+                else { //TODOFT3: does this actually look better if TAA is disabled?
                     texture_mip_lod_bias_offset = -1.f; // Reset to default value
                 }
 
@@ -4584,7 +4585,8 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             const std::lock_guard<std::recursive_mutex> lock(s_mutex_generic);
             for (auto index = 0; index < trace_count; index++) {
               auto pipeline_handle = trace_pipeline_handles.at(index);
-              const bool is_selected = (selected_index == index);
+              const bool is_selected = selected_index == index;
+              // Note that the pipelines can be run more than once so this will return the first one matching (there's only one actually, we don't have separate settings for their running instance, as that's runtime stuff)
               const auto pipeline_pair = pipeline_cache_by_pipeline_handle.find(pipeline_handle);
               const bool is_valid = pipeline_pair != pipeline_cache_by_pipeline_handle.end() && pipeline_pair->second != nullptr;
               std::stringstream name;
@@ -4652,8 +4654,9 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
               }
             }
           } else {
-            selected_index = max(selected_index, trace_count - 1);
+            selected_index = -1;
           }
+          selected_index = min(selected_index, trace_count - 1); // Extra safety
           ImGui::EndListBox();
         }
       }
@@ -5497,7 +5500,7 @@ void Init(bool async) {
   shader_hashes_DirOccPass.pixel_shaders = { std::stoul("944B65F0", nullptr, 16), std::stoul("DB98D83F", nullptr, 16) };
   // ShadowBlur - SSDO Blur
   shader_hashes_SSDO_Blur.pixel_shaders.emplace(std::stoul("1023CD1B", nullptr, 16));
-  //TODOFT: once we have collected 100% of the game shaders, update these hashes lists
+  //TODOFT: once we have collected 100% of the game shaders, update these hashes lists, and make global functions to convert hashes between string and int
 
   cb_luma_frame_settings.ScenePeakWhite = default_peak_white;
   cb_luma_frame_settings.ScenePaperWhite = default_paper_white;
