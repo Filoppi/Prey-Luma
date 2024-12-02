@@ -2570,7 +2570,7 @@ void OnPresent(
   if (dlss_sr && prey_taa_detected && cloned_pipeline_count != 0) {
       NativePlugin::SetHaltonSequencePhases(render_resolution.y, output_resolution.y);
   }
-  // Restore the default value for the game's native TAA, though instead of going to "16" as "r_AntialiasingTAAPattern" "10" would do, we set the phase to 8, which is actually the game's default for TAA/SMAA 2TX, and more appropriate for its short history (4 would probably work too)
+  // Restore the default value for the game's native TAA, though instead of going to "16" as "r_AntialiasingTAAPattern" "10" would do, we set the phase to 8, which is actually the game's default for TAA/SMAA 2TX, and more appropriate for its short history (4 works too and looks about the same, maybe better, as it's what SMAA defaulted to in CryEngine)
   else {
       NativePlugin::SetHaltonSequencePhases(8);
   }
@@ -3917,7 +3917,9 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
             projection_jitters.x = current_projection_matrix(0, 2);
             projection_jitters.y = current_projection_matrix(1, 2);
 
-            ASSERT_ONCE((projection_jitters_copy.x == 0 && projection_jitters_copy.y == 0) || (projection_jitters.x != 0 || projection_jitters.y != 0)); // Once we found jitters, we should never cache matrices that don't have jitters anymore
+#if DEVELOPMENT
+            ASSERT_ONCE(disable_taa_jitters || (projection_jitters_copy.x == 0 && projection_jitters_copy.y == 0) || (projection_jitters.x != 0 || projection_jitters.y != 0)); // Once we found jitters, we should never cache matrices that don't have jitters anymore
+#endif
 
             bool prey_taa_enabled_copy = prey_taa_enabled;
             // This is a reliable check to tell whether TAA is enabled. Jitters are "never" zero if they are enabled:
@@ -5191,7 +5193,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
                 }
             }
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-                ImGui::SetTooltip("Set this to the brightest nits value your display (TV/Monitor) can get to.\nDirectly calibrating in Windows is suggested.");
+                ImGui::SetTooltip("Set this to the brightest nits value your display (TV/Monitor) can emit.\nDirectly calibrating in Windows is suggested.");
             }
             ImGui::SameLine();
             if (cb_luma_frame_settings.ScenePeakWhite != default_user_peak_white) {
