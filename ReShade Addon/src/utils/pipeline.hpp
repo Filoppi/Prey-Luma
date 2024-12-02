@@ -8,14 +8,14 @@
 #include <include/reshade.hpp>
 #include "./format.hpp"
 
-namespace renodx::utils::pipeline {
+namespace utils::pipeline {
 
 static reshade::api::pipeline_subobject* ClonePipelineSubObjects(uint32_t subobject_count, const reshade::api::pipeline_subobject* subobjects) {
   auto* new_subobjects = new reshade::api::pipeline_subobject[subobject_count];
   memcpy(new_subobjects, subobjects, sizeof(reshade::api::pipeline_subobject) * subobject_count);
   for (uint32_t i = 0; i < subobject_count; ++i) {
     const auto& subobject = subobjects[i];
-#ifdef DEBUG_LEVEL_2
+#if DEVELOPMENT
     {
       std::stringstream s;
       s << "utils::pipeline::ClonePipelineSubObjects(cloning " << subobjects[i].type << "[" << i << "]";
@@ -47,7 +47,7 @@ static reshade::api::pipeline_subobject* ClonePipelineSubObjects(uint32_t subobj
           new_desc->code = code_copy;
         }
 
-#ifdef DEBUG_LEVEL_1
+#if DEVELOPMENT
         std::stringstream s;
         s << "utils::pipeline::ClonePipelineSubObjects(cloning ";
         s << subobject.type;
@@ -126,4 +126,4 @@ static reshade::api::pipeline_subobject* ClonePipelineSubObjects(uint32_t subobj
   return new_subobjects;
 }
 
-}  // namespace renodx::utils::pipeline
+}  // namespace utils::pipeline

@@ -178,6 +178,7 @@
     <ClInclude Include="..\src\includes\globals.h" />
     <ClInclude Include="..\src\includes\math.h" />
     <ClInclude Include="..\src\includes\matrix.h" />
+    <ClInclude Include="..\src\includes\recursive_shared_mutex.h" />
     <ClInclude Include="..\src\includes\shader_define.h" />
     <ClInclude Include="..\src\native plugin\Hooks.h" />
     <ClInclude Include="..\src\native plugin\includes\SharedBegin.h" />

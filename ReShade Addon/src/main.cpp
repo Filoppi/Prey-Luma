@@ -51,6 +51,7 @@
 #include "includes/cbuffers.h"
 #include "includes/math.h"
 #include "includes/matrix.h"
+#include "includes/recursive_shared_mutex.h"
 
 #include "utils/format.hpp"
 #include "utils/pipeline.hpp"
@@ -74,11 +75,14 @@
 #define ImTextureID ImU64
 
 // Depends on "DEVELOPMENT"
-#define TEST_DLSS 0
+#define TEST_DLSS (DEVELOPMENT && 0)
 
 #define DLSS_KEEP_DLL_LOADED 1
 
 #define FORCE_KEEP_CUSTOM_SHADERS_LOADED 1
+
+// This might not disable all shaders dumping related code, but it disables enough to remove any performance cost
+#define ALLOW_SHADERS_DUMPING (DEVELOPMENT || TEST)
 
 // NOLINTBEGIN(readability-identifier-naming)
 
@@ -159,6 +163,7 @@ namespace {
 struct CachedPipeline {
   // Orignal pipeline
   reshade::api::pipeline pipeline;
+  // Cached device (makes it easier to access, even if there's only a global one in Prey)
   reshade::api::device* device;
   reshade::api::pipeline_layout layout;
   // Cloned subojects from the orignal pipeline
@@ -210,22 +215,26 @@ struct CachedCustomShader {
   std::string compilation_error; // Compilation error and warning log
 };
 
-// For "pipeline_cache_by_pipeline_handle", "pipeline_caches_by_shader_hash", "shader_cache", "pipelines_to_destroy"
-std::recursive_mutex s_mutex_generic;
+// For "pipeline_cache_by_pipeline_handle", "pipeline_cache_by_pipeline_clone_handle", "pipeline_caches_by_shader_hash", "pipelines_to_destroy"
+recursive_shared_mutex s_mutex_generic;
 // For "shaders_to_dump", "dumped_shaders", "shader_cache". In general for dumping shaders to disk
 std::recursive_mutex s_mutex_dumping;
 // For "custom_shaders_cache", "pipelines_to_reload". In general for loading shaders from disk and compiling them
-std::recursive_mutex s_mutex_loading;
+recursive_shared_mutex s_mutex_loading;
 // Mutex for created shader DX objects
-std::recursive_mutex s_mutex_shader_objects;
-// Mutex for shader defines ("shader_defines_data")
-std::recursive_mutex s_mutex_shader_defines;
+std::shared_mutex s_mutex_shader_objects;
+// Mutex for shader defines ("shader_defines_data", "code_shaders_defines")
+std::shared_mutex s_mutex_shader_defines;
 // Mutex to deal with data shader with ReShade, like ini/config saving and loading
-std::recursive_mutex s_mutex_reshade;
+std::shared_mutex s_mutex_reshade;
 // For "custom_sampler_by_original_sampler"
-std::recursive_mutex s_mutex_samplers;
+std::shared_mutex s_mutex_samplers;
 // For "native_swapchain3" and "global_native_device"
-std::recursive_mutex s_mutex_device;
+std::shared_mutex s_mutex_device;
+#if DEVELOPMENT
+// for "trace_shader_hashes" and "trace_pipeline_handles" (writing only, reading is already safe)
+std::shared_mutex s_mutex_trace;
+#endif
 
 bool asi_loaded = true;
 std::thread thread_auto_dumping;
@@ -233,17 +242,16 @@ std::atomic<bool> thread_auto_dumping_running = false;
 std::thread thread_auto_loading;
 std::atomic<bool> thread_auto_loading_running = false;
 
-//TODOFT: clean up all unused stuff
 struct __declspec(uuid("cfebf6d4-d184-4e1a-ac14-09d088e560ca")) DeviceData {
   std::shared_mutex mutex;
 
 #if DEVELOPMENT
+  //TODOFT: clean up this unused stuff?
   std::unordered_map<uint64_t, uint64_t> resource_views; // <resource.handle, resource_view.handle>
   std::unordered_map<uint64_t, std::string> resource_names;
   std::unordered_set<uint64_t> resources;
 #endif
 
-  //TODOFT3: are these pointers safe? they are not com pointers so theoretically DX could null them at any time, making them a stale pointer, though in reality we'd probably get a swapchain resize event first? (same stuff for other ptrs, like pipeline ptrs). It seems safe (as long it's made safe, at least for pipelines (which are shaders etc in DX11), see "register_destruction_callback_d3dx" in ReShade.
   std::unordered_set<reshade::api::swapchain*> swapchains;
   std::unordered_set<uint64_t> back_buffers;
 
@@ -254,6 +262,7 @@ struct __declspec(uuid("cfebf6d4-d184-4e1a-ac14-09d088e560ca")) DeviceData {
 
 struct __declspec(uuid("c5805458-2c02-4ebf-b139-38b85118d971")) SwapchainData {
   std::shared_mutex mutex;
+
   std::unordered_set<uint64_t> back_buffers;
 };
 
@@ -270,7 +279,7 @@ std::unordered_map<uint64_t, CachedPipeline*> pipeline_cache_by_pipeline_handle;
 std::unordered_map<uint64_t, CachedPipeline*> pipeline_cache_by_pipeline_clone_handle;
 // All the pipelines linked to a shader. By shader hash.
 std::unordered_map<uint32_t, std::unordered_set<CachedPipeline*>> pipeline_caches_by_shader_hash;
-// All the shaders the game ever loaded (including the ones that have been unloaded). By shader hash.
+// All the shaders the game ever loaded (including the ones that have been unloaded). Only used by shader dumping or to see their binary code in the ImGUI view. By shader hash.
 std::unordered_map<uint32_t, CachedShader*> shader_cache;
 // All the shaders the user has (and has had) as custom in the live folder. By shader hash.
 std::unordered_map<uint32_t, CachedCustomShader*> custom_shaders_cache;
@@ -287,8 +296,10 @@ std::unordered_set<uint32_t> shaders_to_dump;
 // All the shaders we have already dumped
 std::unordered_set<uint32_t> dumped_shaders;
 
+#if DEVELOPMENT
 std::vector<uint32_t> trace_shader_hashes;
 std::vector<uint64_t> trace_pipeline_handles;
+#endif
 
 const uint32_t HASH_CHARACTERS_LENGTH = 8;
 const std::string NAME_ADVANCED_SETTINGS = std::string(NAME) + " Advanced";
@@ -338,11 +349,7 @@ struct ShaderHashesList {
 };
 
 // Settings
-#if DEVELOPMENT || TEST
-bool auto_dump = true;
-#else // !DEVELOPMENT && !TEST
-bool auto_dump = false;
-#endif // DEVELOPMENT || TEST
+bool auto_dump = (bool)ALLOW_SHADERS_DUMPING;
 bool auto_load = true;
 bool live_reload = false;
 #if DEVELOPMENT
@@ -752,10 +759,10 @@ bool needs_live_reload_update = live_reload;
 bool trace_names = false;
 std::atomic<bool> cloned_pipelines_changed = false;
 uint32_t cloned_pipeline_count = 0;
+#if DEVELOPMENT
 uint32_t shader_cache_count = 0;
-uint32_t resource_count = 0;
-uint32_t resource_view_count = 0;
 uint32_t trace_count = 0;
+#endif
 
 // Forward declares:
 void ToggleLiveWatching();
@@ -766,11 +773,14 @@ void AutoLoadShaders();
 // Quick and unsafe. Passing in the hash instead of the string is the only way make sure strings hashes are calculate them at compile time.
 __forceinline ShaderDefineData& GetShaderDefineData(uint32_t hash)
 {
+#if 0 // We don't lock "s_mutex_shader_defines" here as it wouldn't be particularly relevant (it won't lead to crashes, as generaly they are not edited in random threads, though having it enabled could lead to deadlocks if there's nested locks!).
+    const std::shared_lock lock(s_mutex_shader_defines);
+#endif
     return shader_defines_data[shader_defines_data_index[hash]];
 }
 __forceinline uint8_t GetShaderDefineCompiledNumericalValue(uint32_t hash)
 {
-    return shader_defines_data[shader_defines_data_index[hash]].GetCompiledNumericalValue();
+    return GetShaderDefineData(hash).GetCompiledNumericalValue();
 }
 #if DEVELOPMENT
 std::optional<std::string> GetD3DName(ID3D11DeviceChild* obj) {
@@ -865,7 +875,7 @@ void DestroyPipelineSubojects(reshade::api::pipeline_subobject* subojects, uint3
 }
 
 void ClearCustomShader(uint32_t shader_hash) {
-  const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
+  const std::unique_lock lock(s_mutex_loading);
   auto custom_shader = custom_shaders_cache.find(shader_hash);
   if (custom_shader != custom_shaders_cache.end() && custom_shader->second != nullptr) {
     custom_shader->second->code.clear();
@@ -877,7 +887,7 @@ void ClearCustomShader(uint32_t shader_hash) {
 }
 
 void UnloadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = std::unordered_set<uint64_t>(), bool immediate = false, bool clean_custom_shader = true) {
-  const std::lock_guard<std::recursive_mutex> lock(s_mutex_generic);
+  const std::unique_lock lock(s_mutex_generic);
   for (auto& pair : pipeline_cache_by_pipeline_handle) {
     auto& cached_pipeline = pair.second;
     if (cached_pipeline == nullptr || (!pipelines_filter.empty() && !pipelines_filter.contains(cached_pipeline->pipeline.handle))) continue;
@@ -911,13 +921,12 @@ void UnloadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = 
   }
 }
 
+// Expects "s_mutex_loading" to make sure we don't try to compile/load any other files we are currently deleting
 void CleanShadersCache() {
     const auto directory = GetShaderPath();
     if (!std::filesystem::exists(directory)) {
         return;
     }
-
-    const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
 
     for (const auto& entry : std::filesystem::directory_iterator(directory)) {
         if (!entry.is_regular_file()) {
@@ -944,8 +953,9 @@ void CleanShadersCache() {
 // Compiles all the "custom" shaders we have in our shaders folder
 void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = std::unordered_set<uint64_t>()) {
   std::vector<std::string> shader_defines;
+  // Cache them for consistency and to avoid threads from halting
   {
-      const std::lock_guard<std::recursive_mutex> lock(s_mutex_shader_defines);
+      const std::shared_lock lock(s_mutex_shader_defines);
       shader_defines.assign(shader_defines_data.size() * 2, "");
       for (uint32_t i = 0; i < shader_defines_data.size(); i++) {
           shader_defines[(i * 2)] = shader_defines_data[i].compiled_data.name;
@@ -955,26 +965,26 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
 
   // We need to clear this every time "CompileCustomShaders()" is called as we can't clear previous logs from it. We do this even if we have some "pipelines_filter"
   {
-      const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
+      const std::unique_lock lock(s_mutex_loading);
       shaders_compilation_errors.clear();
   }
 
   const auto directory = GetShaderPath();
   if (!std::filesystem::exists(directory)) {
       if (!std::filesystem::create_directory(directory)) {
-          const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
+          const std::unique_lock lock(s_mutex_loading);
           shaders_compilation_errors = "Cannot find nor create shaders directory";
           return;
       }
   }
   else if (!std::filesystem::is_directory(directory)) {
-      const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
+      const std::unique_lock lock(s_mutex_loading);
       shaders_compilation_errors = "The shaders path is already taken by a file";
       return;
   }
 
   if (pipelines_filter.empty()) {
-      const std::lock_guard<std::recursive_mutex> lock_shader_defines(s_mutex_shader_defines);
+      const std::unique_lock lock_shader_defines(s_mutex_shader_defines);
 
       code_shaders_defines.clear();
 #if DEVELOPMENT
@@ -1082,6 +1092,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
 #if DEVELOPMENT
           // Re-apply the default settings if they changed
           if (memcmp(&cb_luma_frame_dev_settings_default_value, &prev_cb_luma_frame_dev_settings_default_value, sizeof(cb_luma_frame_dev_settings_default_value)) != 0) {
+              const std::unique_lock lock_reshade(s_mutex_reshade);
               cb_luma_frame_settings.DevSettings = cb_luma_frame_dev_settings_default_value;
           }
 #endif
@@ -1164,7 +1175,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
 
           // Early out before compiling
           if (!pipelines_filter.empty()) {
-              const std::lock_guard<std::recursive_mutex> lock(s_mutex_generic);
+              const std::shared_lock lock(s_mutex_generic);
               bool pipeline_found = false;
               for (const auto& pipeline_pair : pipeline_cache_by_pipeline_handle) {
                   if (std::find(pipeline_pair.second->shader_hashes.begin(), pipeline_pair.second->shader_hashes.end(), shader_hash) == pipeline_pair.second->shader_hashes.end()) continue;
@@ -1186,7 +1197,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
           char config_name[std::string_view("Shader#").size() + HASH_CHARACTERS_LENGTH + 1] = "";
           sprintf(&config_name[0], "Shader#%s", hash_string.c_str());
 
-          const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading); // Don't lock until now as we didn't access any shared data
+          const std::unique_lock lock(s_mutex_loading); // Don't lock until now as we didn't access any shared data
           auto& custom_shader = custom_shaders_cache[shader_hash]; // Add default initialized shader
           const bool has_custom_shader = (custom_shaders_cache.find(shader_hash) != custom_shaders_cache.end()) && (custom_shader != nullptr);
           std::wstring original_file_path_cso; // Only valid for hlsl files
@@ -1230,7 +1241,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
                   // TODO: move these to a sub folder called "cache"? It'd make everything cleaner (and the "CompileCustomShaders()" could simply nuke a directory then, and we could remove the restriction where hlsl files need to have a name in front of the hash),
                   // but it would make it harder to manually remove a single specific shader cso we wanted to nuke for test reasons (especially if we exclusively put the hash in their cso name).
                   // Also it would be a problem due to the custom "native" shaders we have (e.g. "copy") that don't have a target hash they are replacing.
-                  if (renodx::utils::shader::compiler::LoadCompiledShaderFromFile(custom_shader->code, trimmed_file_path_cso.c_str())) {
+                  if (utils::shader::compiler::LoadCompiledShaderFromFile(custom_shader->code, trimmed_file_path_cso.c_str())) {
                       // If both reading the pre-processor hash from config and the compiled shader from disk succeeded, then we are free to continue as if this shader was working
                       custom_shader->file_path = entry_path;
                       custom_shader->is_hlsl = is_hlsl;
@@ -1258,7 +1269,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
               // Note that this won't replace "custom_shader->compilation_error" unless there was any new error/warning, and that's kind of what we want
               // Note that this will not try to build the shader again if the last compilation failed and its files haven't changed
               bool error = false;
-              const bool needs_compilation = renodx::utils::shader::compiler::PreprocessShaderFromFile(entry_path.c_str(), compile_from_current_path ? entry_path.filename().c_str() : entry_path.c_str(), shader_target.c_str(), custom_shader->preprocessed_hash, uncompiled_code_blob, local_shader_defines, error, &compilation_error);
+              const bool needs_compilation = utils::shader::compiler::PreprocessShaderFromFile(entry_path.c_str(), compile_from_current_path ? entry_path.filename().c_str() : entry_path.c_str(), shader_target.c_str(), custom_shader->preprocessed_hash, uncompiled_code_blob, local_shader_defines, error, &compilation_error);
 
               // Only overwrite the previous compilation error if we have any preprocessor errors
               if (!compilation_error.empty() || error) {
@@ -1324,7 +1335,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
 
               bool error = false;
               // TODO: specify the name of the function to compile (e.g. "main" or HDRTonemapPS) so we could unify more shaders into a single file with multiple techniques?
-              renodx::utils::shader::compiler::CompileShaderFromFile(
+              utils::shader::compiler::CompileShaderFromFile(
                   custom_shader->code,
                   uncompiled_code_blob,
                   entry_path.c_str(),
@@ -1401,7 +1412,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
 
   // TODO: theoretically if "prevent_shader_cache_saving" is true, we should clean all the shader hashes and defines from the config, though hopefully it's fine without
   if (pipelines_filter.empty() && !prevent_shader_cache_saving) {
-      const std::lock_guard<std::recursive_mutex> lock(s_mutex_shader_defines);
+      const std::shared_lock lock(s_mutex_shader_defines);
       // Only save after compiling, to make sure the config data aligns with the serialized compiled shaders data (blobs)
       ShaderDefineData::Save(shader_defines_data);
   }
@@ -1418,20 +1429,20 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
                   shader_object = nullptr;
               }
 
-              const CachedCustomShader* shader_cache = custom_shaders_cache[shader_hash];
+              const CachedCustomShader* custom_shader_cache = custom_shaders_cache[shader_hash];
 
-              const std::lock_guard<std::recursive_mutex> lock(s_mutex_device);
+              const std::shared_lock lock(s_mutex_device);
 
               if constexpr (typeid(T) == typeid(ID3D11VertexShader)) {
-                  HRESULT hr = global_native_device->CreateVertexShader(shader_cache->code.data(), shader_cache->code.size(), nullptr, &shader_object);
+                  HRESULT hr = global_native_device->CreateVertexShader(custom_shader_cache->code.data(), custom_shader_cache->code.size(), nullptr, &shader_object);
                   assert(SUCCEEDED(hr));
               }
               else if constexpr (typeid(T) == typeid(ID3D11PixelShader)) {
-                  HRESULT hr = global_native_device->CreatePixelShader(shader_cache->code.data(), shader_cache->code.size(), nullptr, &shader_object);
+                  HRESULT hr = global_native_device->CreatePixelShader(custom_shader_cache->code.data(), custom_shader_cache->code.size(), nullptr, &shader_object);
                   assert(SUCCEEDED(hr));
               }
               else if constexpr (typeid(T) == typeid(ID3D11ComputeShader)) {
-                  HRESULT hr = global_native_device->CreateComputeShader(shader_cache->code.data(), shader_cache->code.size(), nullptr, &shader_object);
+                  HRESULT hr = global_native_device->CreateComputeShader(custom_shader_cache->code.data(), custom_shader_cache->code.size(), nullptr, &shader_object);
                   assert(SUCCEEDED(hr));
               }
               else {
@@ -1444,7 +1455,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
   // Refresh the persistent custom shaders we have.
   // Note that the hash can be "fake" on custom shaders, as we decide it trough the file names.
   {
-      const std::lock_guard<std::recursive_mutex> lock(s_mutex_shader_objects);
+      const std::unique_lock lock(s_mutex_shader_objects);
       CreateShaderObject(shader_hash_copy_vertex, copy_vertex_shader, !(bool)FORCE_KEEP_CUSTOM_SHADERS_LOADED);
       CreateShaderObject(shader_hash_copy_pixel, copy_pixel_shader, !(bool)FORCE_KEEP_CUSTOM_SHADERS_LOADED);
       CreateShaderObject(shader_hash_transform_function_copy_pixel, transfer_function_copy_pixel_shader, !(bool)FORCE_KEEP_CUSTOM_SHADERS_LOADED);
@@ -1460,15 +1471,15 @@ void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = st
     CompileCustomShaders(pipelines_filter);
   }
 
-  // We can, and should, only lock this after compiling new shaders
-  const std::lock_guard<std::recursive_mutex> lock(s_mutex_generic);
+  // We can, and should, only lock this after compiling new shaders (above)
+  const std::unique_lock lock(s_mutex_generic);
 
   // Clear all previously loaded custom shaders
   UnloadCustomShaders(pipelines_filter, immediate_unload, false);
 
   std::unordered_set<uint64_t> cloned_pipelines;
 
-  const std::lock_guard<std::recursive_mutex> lock_loading(s_mutex_loading);
+  const std::unique_lock lock_loading(s_mutex_loading);
   for (const auto& custom_shader_pair : custom_shaders_cache) {
     uint32_t shader_hash = custom_shader_pair.first;
     const auto custom_shader = custom_shaders_cache[shader_hash];
@@ -1505,10 +1516,9 @@ void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = st
       }
 
       // DX12 can use PSO objects that need to be cloned
-
       const uint32_t subobject_count = cached_pipeline->subobject_count;
       reshade::api::pipeline_subobject* subobjects = cached_pipeline->subobjects_cache;
-      reshade::api::pipeline_subobject* new_subobjects = renodx::utils::pipeline::ClonePipelineSubObjects(subobject_count, subobjects);
+      reshade::api::pipeline_subobject* new_subobjects = utils::pipeline::ClonePipelineSubObjects(subobject_count, subobjects);
 
       {
         std::stringstream s;
@@ -1713,6 +1723,7 @@ void ToggleLiveWatching() {
 
 void OnDisplayModeChanged()
 {
+  // s_mutex_reshade should already be locked here, it's not necessary anyway
   GetShaderDefineData(GAMMA_CORRECTION_TYPE_HASH).editable = cb_luma_frame_settings.DisplayMode != 0;
   GetShaderDefineData(AUTO_HDR_VIDEOS_HASH).editable = cb_luma_frame_settings.DisplayMode != 0;
 }
@@ -1721,23 +1732,26 @@ void OnInitDevice(reshade::api::device* device) {
   auto& device_data = device->create_private_data<DeviceData>();
   ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
   {
-      const std::lock_guard<std::recursive_mutex> lock(s_mutex_device);
+      const std::unique_lock lock(s_mutex_device);
       assert(!global_native_device);
       global_native_device = native_device;
   }
 
-  reshade::api::pipeline_layout_param pipeline_layout_param = reshade::api::pipeline_layout_param();
-  pipeline_layout_param.type = reshade::api::pipeline_layout_param_type::push_constants;  // We could be using "reshade::api::pipeline_layout_param_type::push_descriptors" in cbuffer mode too but this is simpler
-  pipeline_layout_param.push_constants.count = 1;
-  pipeline_layout_param.push_constants.dx_register_index = shader_cbuffers_index;
-  pipeline_layout_param.push_constants.visibility = reshade::api::shader_stage::vertex | reshade::api::shader_stage::pixel | reshade::api::shader_stage::compute;
-  auto result = device->create_pipeline_layout(1, &pipeline_layout_param, &device_data.settings_pipeline_layout);
+  {
+      const std::shared_lock lock(device_data.mutex); // Not much need to lock this on its own creation, but let's do it anyway...
+      reshade::api::pipeline_layout_param pipeline_layout_param = reshade::api::pipeline_layout_param();
+      pipeline_layout_param.type = reshade::api::pipeline_layout_param_type::push_constants;  // We could be using "reshade::api::pipeline_layout_param_type::push_descriptors" in cbuffer mode too but this is simpler
+      pipeline_layout_param.push_constants.count = 1;
+      pipeline_layout_param.push_constants.dx_register_index = shader_cbuffers_index;
+      pipeline_layout_param.push_constants.visibility = reshade::api::shader_stage::vertex | reshade::api::shader_stage::pixel | reshade::api::shader_stage::compute;
+      auto result = device->create_pipeline_layout(1, &pipeline_layout_param, &device_data.settings_pipeline_layout);
 
-  pipeline_layout_param.push_constants.count = 1;
-  pipeline_layout_param.push_constants.dx_register_index = ui_cbuffer_index + 1;
-  result = device->create_pipeline_layout(1, &pipeline_layout_param, &device_data.shared_data_pipeline_layout);
-  pipeline_layout_param.push_constants.dx_register_index = ui_cbuffer_index;
-  result = device->create_pipeline_layout(1, &pipeline_layout_param, &device_data.ui_pipeline_layout);
+      pipeline_layout_param.push_constants.count = 1;
+      pipeline_layout_param.push_constants.dx_register_index = ui_cbuffer_index + 1;
+      result = device->create_pipeline_layout(1, &pipeline_layout_param, &device_data.shared_data_pipeline_layout);
+      pipeline_layout_param.push_constants.dx_register_index = ui_cbuffer_index;
+      result = device->create_pipeline_layout(1, &pipeline_layout_param, &device_data.ui_pipeline_layout);
+  }
 
   D3D11_BLEND_DESC blend_state_desc;
   blend_state_desc.AlphaToCoverageEnable = FALSE;
@@ -1791,15 +1805,18 @@ void OnInitDevice(reshade::api::device* device) {
 void OnDestroyDevice(reshade::api::device* device) {
   auto& device_data = device->get_private_data<DeviceData>(); // No need to lock the data mutex here, it could be concurrently used at this point
 
-  device->destroy_pipeline_layout(device_data.ui_pipeline_layout);
-  device->destroy_pipeline_layout(device_data.shared_data_pipeline_layout);
-  device->destroy_pipeline_layout(device_data.settings_pipeline_layout);
+  {
+      const std::shared_lock lock(device_data.mutex);
+      device->destroy_pipeline_layout(device_data.ui_pipeline_layout);
+      device->destroy_pipeline_layout(device_data.shared_data_pipeline_layout);
+      device->destroy_pipeline_layout(device_data.settings_pipeline_layout);
+  }
 
   assert(cb_per_view_global_buffer_map_data == nullptr);
   cb_per_view_global_buffer = nullptr;
 
   {
-      const std::lock_guard<std::recursive_mutex> lock_samplers(s_mutex_samplers);
+      const std::unique_lock lock_samplers(s_mutex_samplers);
       ASSERT_ONCE(custom_sampler_by_original_sampler.empty()); // Is this guaranteed in DX? Maybe not, but probably is!
       custom_sampler_by_original_sampler.clear();
   }
@@ -1820,7 +1837,7 @@ void OnDestroyDevice(reshade::api::device* device) {
   transfer_function_copy_texture = nullptr;
   transfer_function_copy_shader_resource_view = nullptr;
   {
-      const std::lock_guard<std::recursive_mutex> lock(s_mutex_shader_objects);
+      const std::unique_lock lock(s_mutex_shader_objects);
       copy_vertex_shader = nullptr;
       copy_pixel_shader = nullptr;
       transfer_function_copy_pixel_shader = nullptr;
@@ -1830,7 +1847,7 @@ void OnDestroyDevice(reshade::api::device* device) {
   default_blend_state = nullptr;
 
   {
-      const std::lock_guard<std::recursive_mutex> lock(s_mutex_device);
+      const std::unique_lock lock(s_mutex_device);
       assert(!native_swapchain3);
       assert(global_native_device);
       global_native_device = nullptr;
@@ -1842,9 +1859,12 @@ void OnDestroyDevice(reshade::api::device* device) {
 void OnInitSwapchain(reshade::api::swapchain* swapchain) {
   const size_t back_buffer_count = swapchain->get_back_buffer_count();
   auto& swapchain_data = swapchain->create_private_data<SwapchainData>();
-  for (uint32_t index = 0; index < back_buffer_count; index++) {
-    auto buffer = swapchain->get_back_buffer(index);
-    swapchain_data.back_buffers.emplace(buffer.handle);
+  {
+    const std::unique_lock lock(swapchain_data.mutex); // Not much need to lock this on its own creation, but let's do it anyway...
+    for (uint32_t index = 0; index < back_buffer_count; index++) {
+      auto buffer = swapchain->get_back_buffer(index);
+      swapchain_data.back_buffers.emplace(buffer.handle);
+    }
   }
   auto* device = swapchain->get_device();
   if (device != nullptr) {
@@ -1871,7 +1891,7 @@ void OnInitSwapchain(reshade::api::swapchain* swapchain) {
 
   IDXGISwapChain3* local_native_swapchain3;
   {
-      const std::lock_guard<std::recursive_mutex> lock(s_mutex_device);
+      const std::unique_lock lock(s_mutex_device);
       ASSERT_ONCE(native_swapchain3 == nullptr);
       native_swapchain3 = nullptr;
       // The cast pointer is actually the same, we are just making sure the type is right.
@@ -1881,7 +1901,7 @@ void OnInitSwapchain(reshade::api::swapchain* swapchain) {
   }
   // This is basically where we verify and update the user display settings
   if (local_native_swapchain3 != nullptr) {
-      const std::lock_guard<std::recursive_mutex> lock_reshade(s_mutex_reshade);
+      const std::unique_lock lock_reshade(s_mutex_reshade);
       GetHDRMaxLuminance(local_native_swapchain3, default_user_peak_white, srgb_white_level);
       IsHDRSupportedAndEnabled(swapchain_desc.OutputWindow, hdr_supported_display, hdr_enabled_display, local_native_swapchain3);
       game_window = swapchain_desc.OutputWindow; // This shouldn't really need any thread safety protection
@@ -1905,7 +1925,7 @@ void OnInitSwapchain(reshade::api::swapchain* swapchain) {
 
 void OnDestroySwapchain(reshade::api::swapchain* swapchain) {
   {
-      const std::lock_guard<std::recursive_mutex> lock(s_mutex_device);
+      const std::unique_lock lock(s_mutex_device);
       assert(native_swapchain3 != nullptr);
       if ((IDXGISwapChain*)(swapchain->get_native()) == native_swapchain3) {
           native_swapchain3 = nullptr;
@@ -1973,9 +1993,22 @@ void OnInitPipeline(
     uint32_t subobject_count,
     const reshade::api::pipeline_subobject* subobjects,
     reshade::api::pipeline pipeline) {
-  const std::lock_guard<std::recursive_mutex> lock(s_mutex_generic);
-
-  reshade::api::pipeline_subobject* subobjects_cache = renodx::utils::pipeline::ClonePipelineSubObjects(subobject_count, subobjects);
+    // In DX11 each pipeline should only have one subobject (e.g. a shader)
+    for (uint32_t i = 0; i < subobject_count; ++i) {
+        const auto& subobject = subobjects[i];
+        for (uint32_t j = 0; j < subobject.count; ++j) {
+            switch (subobject.type) {
+            case reshade::api::pipeline_subobject_type::vertex_shader:
+            case reshade::api::pipeline_subobject_type::compute_shader:
+            case reshade::api::pipeline_subobject_type::pixel_shader: {
+                break;
+            default:
+                return; // Nothing to do here, we don't want to clone the pipeline
+            }
+            }
+        }
+    }
+  reshade::api::pipeline_subobject* subobjects_cache = utils::pipeline::ClonePipelineSubObjects(subobject_count, subobjects);
 
   auto* cached_pipeline = new CachedPipeline{
       pipeline,
@@ -1987,31 +2020,31 @@ void OnInitPipeline(
   bool found_replaceable_shader = false;
   bool found_custom_shader_file = false;
 
+  const std::unique_lock lock(s_mutex_generic);
   for (uint32_t i = 0; i < subobject_count; ++i) {
     const auto& subobject = subobjects[i];
     for (uint32_t j = 0; j < subobject.count; ++j) {
       switch (subobject.type) {
-        case reshade::api::pipeline_subobject_type::hull_shader:
-        case reshade::api::pipeline_subobject_type::domain_shader:
-        case reshade::api::pipeline_subobject_type::geometry_shader:
-        case reshade::api::pipeline_subobject_type::blend_state:
-          break;
         case reshade::api::pipeline_subobject_type::vertex_shader:
         case reshade::api::pipeline_subobject_type::compute_shader:
         case reshade::api::pipeline_subobject_type::pixel_shader: {
           auto* new_desc = static_cast<reshade::api::shader_desc*>(subobjects_cache[i].data);
           if (new_desc->code_size == 0) break;
+          found_replaceable_shader = true;
           auto shader_hash = compute_crc32(static_cast<const uint8_t*>(new_desc->code), new_desc->code_size);
 
+#if ALLOW_SHADERS_DUMPING
           {
-            const std::lock_guard<std::recursive_mutex> lock_dumping(s_mutex_dumping);
+            const std::unique_lock lock_dumping(s_mutex_dumping);
 
             // Delete any previous shader with the same hash (unlikely to happen, but safer nonetheless)
             if (auto previous_shader_pair = shader_cache.find(shader_hash); previous_shader_pair != shader_cache.end() && previous_shader_pair->second != nullptr) {
               auto& previous_shader = previous_shader_pair->second;
               // Make sure that two shaders have the same hash, their code size also matches (theoretically we could check even more, but the chances hashes overlapping is extremely small)
               assert(previous_shader->size == new_desc->code_size);
+#if DEVELOPMENT
               shader_cache_count--;
+#endif
               delete previous_shader->data;
               delete previous_shader;
             }
@@ -2022,10 +2055,13 @@ void OnInitPipeline(
                 new_desc->code_size,
                 subobject.type};
             std::memcpy(cache->data, new_desc->code, cache->size);
+#if DEVELOPMENT
             shader_cache_count++;
+#endif
             shader_cache[shader_hash] = cache;
             shaders_to_dump.emplace(shader_hash);
           }
+#endif // ALLOW_SHADERS_DUMPING
 
           // Indexes
           assert(std::find(cached_pipeline->shader_hashes.begin(), cached_pipeline->shader_hashes.end(), shader_hash) == cached_pipeline->shader_hashes.end());
@@ -2039,9 +2075,8 @@ void OnInitPipeline(
           } else {
             pipeline_caches_by_shader_hash[shader_hash] = { cached_pipeline };
           }
-          found_replaceable_shader = true;
           {
-            const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
+            const std::shared_lock lock(s_mutex_loading);
             found_custom_shader_file |= custom_shaders_cache.contains(shader_hash);
           }
 
@@ -2059,8 +2094,6 @@ void OnInitPipeline(
 #endif // DEVELOPMENT
           break;
         }
-        default:
-          break;
       }
     }
   }
@@ -2076,7 +2109,7 @@ void OnInitPipeline(
   // Automatically load any custom shaders that might have been bound to this pipeline.
   // To avoid this slowing down everything, we only do it if we detect the user already had a matching shader in its custom shaders folder.
   if (auto_load && !last_pressed_unload && found_custom_shader_file) {
-    const std::lock_guard<std::recursive_mutex> lock_loading(s_mutex_loading);
+    const std::unique_lock lock_loading(s_mutex_loading);
     // Immediately cloning and replacing the pipeline might be unsafe, we need to delay it to the next frame.
     pipelines_to_reload.emplace(pipeline.handle);
     if (precompile_custom_shaders) {
@@ -2092,16 +2125,13 @@ void OnInitPipeline(
 void OnDestroyPipeline(
     reshade::api::device* device,
     reshade::api::pipeline pipeline) {
-  const std::lock_guard<std::recursive_mutex> lock(s_mutex_generic);
-
   {
-    const std::lock_guard<std::recursive_mutex> lock_loading(s_mutex_loading);
+    const std::unique_lock lock_loading(s_mutex_loading);
     pipelines_to_reload.erase(pipeline.handle);
   }
 
-  if (
-      auto pipeline_cache_pair = pipeline_cache_by_pipeline_handle.find(pipeline.handle);
-      pipeline_cache_pair != pipeline_cache_by_pipeline_handle.end()) {
+  const std::unique_lock lock(s_mutex_generic);
+  if (auto pipeline_cache_pair = pipeline_cache_by_pipeline_handle.find(pipeline.handle); pipeline_cache_pair != pipeline_cache_by_pipeline_handle.end()) {
     auto& cached_pipeline = pipeline_cache_pair->second;
 
     if (cached_pipeline != nullptr) {
@@ -2135,23 +2165,22 @@ void OnBindPipeline(
     reshade::api::command_list* cmd_list,
     reshade::api::pipeline_stage stages,
     reshade::api::pipeline pipeline) {
-  const std::lock_guard<std::recursive_mutex> lock(s_mutex_generic);
-
   auto& cmd_list_data = cmd_list->get_private_data<CommandListData>();
 
   if ((stages & reshade::api::pipeline_stage::compute_shader) != 0) {
-      ASSERT_ONCE(stages == reshade::api::pipeline_stage::compute_shader || stages == reshade::api::pipeline_stage::all); // Make sure only one stage happens at a time
+      ASSERT_ONCE(stages == reshade::api::pipeline_stage::compute_shader || stages == reshade::api::pipeline_stage::all); // Make sure only one stage happens at a time (it does in DX11)
       cmd_list_data.pipeline_state_original_compute_shader = pipeline;
   }
   if ((stages & reshade::api::pipeline_stage::vertex_shader) != 0) {
-      ASSERT_ONCE(stages == reshade::api::pipeline_stage::vertex_shader || stages == reshade::api::pipeline_stage::all); // Make sure only one stage happens at a time
+      ASSERT_ONCE(stages == reshade::api::pipeline_stage::vertex_shader || stages == reshade::api::pipeline_stage::all); // Make sure only one stage happens at a time (it does in DX11)
       cmd_list_data.pipeline_state_original_vertex_shader = pipeline;
   }
   if ((stages & reshade::api::pipeline_stage::pixel_shader) != 0) {
-      ASSERT_ONCE(stages == reshade::api::pipeline_stage::pixel_shader || stages == reshade::api::pipeline_stage::all); // Make sure only one stage happens at a time
+      ASSERT_ONCE(stages == reshade::api::pipeline_stage::pixel_shader || stages == reshade::api::pipeline_stage::all); // Make sure only one stage happens at a time (it does in DX11)
       cmd_list_data.pipeline_state_original_pixel_shader = pipeline;
   }
 
+  const std::shared_lock lock(s_mutex_generic);
   auto pair = pipeline_cache_by_pipeline_handle.find(pipeline.handle);
   if (pair == pipeline_cache_by_pipeline_handle.end() || pair->second == nullptr) return;
 
@@ -2172,6 +2201,8 @@ void OnBindPipeline(
 
 #if DEVELOPMENT
   if (!trace_running) return;
+
+  const std::unique_lock lock_trace(s_mutex_trace);
 
   bool add_pipeline_trace = true;
   if (trace_list_unique_shaders_only) {
@@ -2212,7 +2243,7 @@ enum LumaConstantBufferType {
 void SetPreyLumaConstantBuffers(reshade::api::command_list* cmd_list, reshade::api::shader_stage stages, reshade::api::pipeline_layout layout, LumaConstantBufferType type, uint32_t custom_data = 0) {
     switch (type) {
     case LumaConstantBufferType::LumaSettings: {
-        const std::lock_guard<std::recursive_mutex> lock_reshade(s_mutex_reshade);
+        const std::shared_lock lock_reshade(s_mutex_reshade);
         cmd_list->push_constants(
             stages,
             layout,
@@ -2305,8 +2336,6 @@ void OnPresent(
     // If there are no shaders being currently replaced in the game (cloned_pipeline_count),
     // we can assume that we either missed replacing some shaders, or that we have unloaded all of our shaders.
     // Both cases need linearization at the end, as the game would be drawing in gamma space (during post process).
-    // 
-    // We don't always lock "s_mutex_shader_defines" here as it wouldn't be particularly relevant.
     bool shader_defines_need_linearization = GetShaderDefineCompiledNumericalValue(POST_PROCESS_SPACE_TYPE_HASH) != 1;
     bool shader_defines_need_gamma_correction = GetShaderDefineCompiledNumericalValue(POST_PROCESS_SPACE_TYPE_HASH) == 1 && GetShaderDefineCompiledNumericalValue(GAMMA_CORRECTION_TYPE_HASH) >= 2;
     bool display_mode_needs_gamma_correction = cb_luma_frame_settings.DisplayMode == 0; // SDR on SDR Display on scRGB HDR Swapchain needs Gamma 2.2/sRGB mismatch correction
@@ -2316,7 +2345,7 @@ void OnPresent(
     constexpr bool needs_draw_debug_texture = false;
 #endif
     if (shader_defines_need_linearization || shader_defines_need_gamma_correction || display_mode_needs_gamma_correction || cloned_pipeline_count == 0 || needs_draw_debug_texture) {
-        const std::lock_guard<std::recursive_mutex> lock_shader_objects(s_mutex_shader_objects);
+        const std::shared_lock lock_shader_objects(s_mutex_shader_objects);
         if (copy_vertex_shader && transfer_function_copy_pixel_shader) {
             IDXGISwapChain* native_swapchain = (IDXGISwapChain*)(swapchain->get_native());
             com_ptr<ID3D11Texture2D> back_buffer;
@@ -2407,16 +2436,20 @@ void OnPresent(
             // Push our settings cbuffer in case where no other custom shader run this frame
             {
                 auto& device_data = queue->get_device()->get_private_data<DeviceData>();
-                const std::unique_lock lock(device_data.mutex);
+                const std::shared_lock lock(device_data.mutex);
                 const auto cb_luma_frame_settings_copy = cb_luma_frame_settings;
                 // Force a custom display mode in case we have no game custom shaders loaded, so the custom linearization shader can linearize anyway, independently of "POST_PROCESS_SPACE_TYPE"
                 bool force_linearize = cloned_pipeline_count == 0;
                 if (force_linearize) {
+                    // No need for "s_mutex_reshade" here, given that they are generally only also changed by the user manually changing the settings in ImGUI, which runs at the very end of the frame
                     cb_luma_frame_settings.DisplayMode = -1;
                 }
                 SetPreyLumaConstantBuffers(queue->get_immediate_command_list(), reshade::api::shader_stage::pixel, device_data.settings_pipeline_layout, LumaConstantBufferType::LumaSettings);
                 if (force_linearize) {
                     cb_luma_frame_settings.DisplayMode = cb_luma_frame_settings_copy.DisplayMode;
+                }
+                if (cloned_pipeline_count == 0) {
+                    SetPreyLumaConstantBuffers(queue->get_immediate_command_list(), reshade::api::shader_stage::pixel, device_data.shared_data_pipeline_layout, LumaConstantBufferType::LumaData);
                 }
             }
 
@@ -2448,7 +2481,7 @@ void OnPresent(
       prey_taa_detected = false;
       // Theoretically we turn this flag off one frame late (or well, at the end of the frame),
       // but then again, if no scene rendered, this flag wouldn't have been used for anything.
-      cb_luma_frame_settings.DLSS = 0;
+      cb_luma_frame_settings.DLSS = 0; // No need for "s_mutex_reshade" here, given that they are generally only also changed by the user manually changing the settings in ImGUI, which runs at the very end of the frame
       // Reset DRS related values if there's a scene cut or loading screen or a menu, we have no way of telling if it's actually still enabled in the user settings
       if (!prey_drs_active) {
         dlss_sr_render_resolution = 1.f;
@@ -2575,7 +2608,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
 
   // Lock for the shortest amount possible
   {
-    const std::unique_lock lock(device_data.mutex);
+    const std::shared_lock lock(device_data.mutex);
     settings_pipeline_layout = device_data.settings_pipeline_layout;
     ui_pipeline_layout = device_data.ui_pipeline_layout;
     shared_data_pipeline_layout = device_data.shared_data_pipeline_layout;
@@ -2737,7 +2770,11 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
 #if DEVELOPMENT || TEST
               bool dlss_relative_pre_exposure = GetShaderDefineCompiledNumericalValue(DLSS_RELATIVE_PRE_EXPOSURE_HASH) >= 1;
 #else
-              bool dlss_relative_pre_exposure = code_shaders_defines.contains("DLSS_RELATIVE_PRE_EXPOSURE") && code_shaders_defines["DLSS_RELATIVE_PRE_EXPOSURE"] >= 1;
+              bool dlss_relative_pre_exposure;
+              {
+                  const std::shared_lock lock(s_mutex_shader_defines);
+                  dlss_relative_pre_exposure = code_shaders_defines.contains("DLSS_RELATIVE_PRE_EXPOSURE") && code_shaders_defines["DLSS_RELATIVE_PRE_EXPOSURE"] >= 1;
+              }
 #endif
               if (dlss_relative_pre_exposure) {
                   // With this design, the pre-exposure is set to the relative exposure and the exposure texture is set to 1 (see the shader for more).
@@ -3208,7 +3245,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
 
   LumaUIData ui_data;
 
-  // No need to lock "s_mutex_reshade" for "cb_luma_frame_settings" here
+  // No need to lock "s_mutex_reshade" for "cb_luma_frame_settings" here, it's not relevant
   ui_data.background_tonemapping_amount = (cb_luma_frame_settings.DisplayMode == 1 && tonemap_ui_background && has_drawn_main_post_processing) ? tonemap_ui_background_amount : 0.0;
 
   com_ptr<ID3D11RenderTargetView> render_target_view;
@@ -3345,7 +3382,7 @@ void CopyDebugDrawTexture(reshade::api::command_list* cmd_list) {
             texture_desc.CPUAccessFlags = 0;
             texture_desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS; // Just do all of them
             debug_draw_texture = nullptr;
-            HRESULT hr = native_device->CreateTexture2D(&texture_desc, nullptr, &debug_draw_texture); //TODOFT: figure out error
+            HRESULT hr = native_device->CreateTexture2D(&texture_desc, nullptr, &debug_draw_texture); //TODOFT: figure out error, happens sometimes. And make thread safe!
             ASSERT_ONCE(SUCCEEDED(hr));
 
             // Back it up as it gets immediately overwritten or re-used later
@@ -3560,6 +3597,8 @@ void OnInitSampler(reshade::api::device* device, const reshade::api::sampler_des
 
     ID3D11SamplerState* native_sampler = reinterpret_cast<ID3D11SamplerState*>(sampler.handle);
 
+    std::shared_lock shared_lock_samplers(s_mutex_samplers);
+
     // Custom samplers lifetime should never be tracked by ReShade, otherwise we'd recursively create custom samplers out of custom samplers
     // (it's unclear if CryEngine somehow does anything with these samplers or if ReShade captures our own samplers creation events (it probably does as we create them directly through the DX native funcs))
     for (const auto& samplers_handle : custom_sampler_by_original_sampler) {
@@ -3573,14 +3612,15 @@ void OnInitSampler(reshade::api::device* device, const reshade::api::sampler_des
 
     D3D11_SAMPLER_DESC native_desc;
     native_sampler->GetDesc(&native_desc);
-    const std::lock_guard<std::recursive_mutex> lock_samplers(s_mutex_samplers);
+    shared_lock_samplers.unlock(); // This is fine!
+    std::unique_lock unique_lock_samplers(s_mutex_samplers);
     custom_sampler_by_original_sampler[sampler.handle][texture_mip_lod_bias_offset] = CreateCustomSampler((ID3D11Device*)device->get_native(), native_desc);
 }
 
 void OnDestroySampler(reshade::api::device* device, reshade::api::sampler sampler) {
     //TODOFT: can this actually be called by a separate thread? probably
     // This only seems to happen when the game shuts down in Prey
-    const std::lock_guard<std::recursive_mutex> lock_samplers(s_mutex_samplers);
+    const std::unique_lock lock_samplers(s_mutex_samplers);
 
 #if DEVELOPMENT //TODOFT: delete, already in "OnInitSampler()", so this shouldn't be able to ever happen
     ID3D11SamplerState* native_sampler = reinterpret_cast<ID3D11SamplerState*>(sampler.handle);
@@ -3734,6 +3774,7 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
         //or should we use the current projection matrix with the previous frame's jitters?
         //Test this by seeing if zooming in and out of with the camera in game causes ghosting.
         //UPDATE: we've fixed it in shaders, like this "velocity /= LumaData.RenderResolutionScale"
+        //TODOFT: should we do stuff like this if we have no shaders loaded?
         cb_per_view_global.CV_PrevViewProjMatr = previous_projection_matrix;
         cb_per_view_global.CV_PrevViewProjNearestMatr = previous_nearest_projection_matrix;
         if (fix_prev_matrix_mode == 2) {
@@ -3898,7 +3939,7 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
             }
             bool drew_dlss = cb_luma_frame_settings.DLSS;
             prey_taa_detected = prey_taa_enabled || previous_prey_taa_enabled[0]; // This one has a two frames tolerance. We let it persist even if the game stopped drawing the 3D scene.
-            cb_luma_frame_settings.DLSS = (dlss_sr && prey_taa_detected) ? 1 : 0;
+            cb_luma_frame_settings.DLSS = (dlss_sr && prey_taa_detected) ? 1 : 0; // No need for "s_mutex_reshade" here, given that they are generally only also changed by the user manually changing the settings in ImGUI, which runs at the very end of the frame
             if (cb_luma_frame_settings.DLSS && !drew_dlss) {
                 // Reset DLSS history when we toggle DLSS on and off manually, or when the user in the game changes the AA mode,
                 // otherwise the history from the last time DLSS was active will be kept (DLSS doesn't know time passes since it was last used).
@@ -3914,7 +3955,7 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
             if (!custom_texture_mip_lod_bias_offset)
 #endif
             {
-                const std::lock_guard<std::recursive_mutex> lock_samplers(s_mutex_samplers);
+                std::shared_lock shared_lock_samplers(s_mutex_samplers);
 
                 const auto prev_texture_mip_lod_bias_offset = texture_mip_lod_bias_offset;
                 // We do this even when DLSS is not on, to help with the game's native TAA and DRS implementations
@@ -3924,19 +3965,25 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
                 else { //TODOFT3: does this actually look better if TAA is disabled?
                     texture_mip_lod_bias_offset = prey_taa_detected ? -1.f : 0.f; // Reset to default value
                 }
+                const auto new_texture_mip_lod_bias_offset = texture_mip_lod_bias_offset;
 
-                bool texture_mip_lod_bias_offset_changed = prev_texture_mip_lod_bias_offset != texture_mip_lod_bias_offset;
+                bool texture_mip_lod_bias_offset_changed = prev_texture_mip_lod_bias_offset != new_texture_mip_lod_bias_offset;
                 //TODOFT: verify that this doesn't happen a billion times per frame with random resolutions that might be set by non primary render paths (e.g. shadow maps), if so, safely move this to compute once at the end of the frame (tested, it seems fine?)
                 // Re-create all samplers immediately here instead of doing it at the end of the frame.
                 // This allows us to avoid possible (but very unlikely) hitches that could happen if we re-created a new sampler for a new resolution later on when samplers descriptors are set.
                 // It also allows us to use the right samplers for this frame's resolution.
                 if (texture_mip_lod_bias_offset_changed) {
                     for (auto& samplers_handle : custom_sampler_by_original_sampler) {
-                        if (samplers_handle.second.contains(texture_mip_lod_bias_offset)) continue; // Skip "resolutions" that already got their custom samplers created
+                        if (samplers_handle.second.contains(new_texture_mip_lod_bias_offset)) continue; // Skip "resolutions" that already got their custom samplers created
                         ID3D11SamplerState* native_sampler = reinterpret_cast<ID3D11SamplerState*>(samplers_handle.first);
                         D3D11_SAMPLER_DESC native_desc;
                         native_sampler->GetDesc(&native_desc);
-                        samplers_handle.second[texture_mip_lod_bias_offset] = CreateCustomSampler(global_native_device, native_desc);
+                        shared_lock_samplers.unlock(); // This is fine!
+                        {
+                            std::unique_lock unique_lock_samplers(s_mutex_samplers);
+                            samplers_handle.second[new_texture_mip_lod_bias_offset] = CreateCustomSampler(global_native_device, native_desc);
+                        }
+                        shared_lock_samplers.lock();
                     }
                 }
             }
@@ -4082,7 +4129,7 @@ void OnPushDescriptors(
     case reshade::api::descriptor_type::sampler: {
         reshade::api::descriptor_table_update custom_update = update;
         bool any_modified = false;
-        const std::lock_guard<std::recursive_mutex> lock_samplers(s_mutex_samplers);
+        std::shared_lock shared_lock_samplers(s_mutex_samplers);
         for (uint32_t i = 0; i < update.count; i++) {
             const reshade::api::sampler& sampler = static_cast<const reshade::api::sampler*>(update.descriptors)[i];
             if (custom_sampler_by_original_sampler.contains(sampler.handle)) {
@@ -4091,7 +4138,13 @@ void OnPushDescriptors(
                 if (!custom_sampler_by_original_sampler[sampler.handle].contains(texture_mip_lod_bias_offset)) {
                     D3D11_SAMPLER_DESC native_desc;
                     native_sampler->GetDesc(&native_desc);
-                    custom_sampler_by_original_sampler[sampler.handle][texture_mip_lod_bias_offset] = CreateCustomSampler((ID3D11Device*)device->get_native(), native_desc);
+                    const auto last_texture_mip_lod_bias_offset = texture_mip_lod_bias_offset;
+                    shared_lock_samplers.unlock();
+                    {
+                        std::unique_lock unique_lock_samplers(s_mutex_samplers); // Only lock for reading if necessary. It doesn't matter if we released the shared lock above for a tiny amount of time, it's safe anyway
+                        custom_sampler_by_original_sampler[sampler.handle][last_texture_mip_lod_bias_offset] = CreateCustomSampler((ID3D11Device*)device->get_native(), native_desc);
+                    }
+                    shared_lock_samplers.lock();
                 }
                 // Update the customized descriptor data
                 uint64_t custom_sampler_handle = (uint64_t)(custom_sampler_by_original_sampler[sampler.handle][texture_mip_lod_bias_offset].get());
@@ -4266,7 +4319,7 @@ bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource
             // do the copy in shader
             if (((isUnorm8(target_desc.Format) || isFloat11(target_desc.Format)) && isFloat16(source_desc.Format))
                 || ((isUnorm8(source_desc.Format) || isFloat11(source_desc.Format)) && isFloat16(target_desc.Format))) {
-                const std::lock_guard<std::recursive_mutex> lock(s_mutex_shader_objects);
+                const std::shared_lock lock(s_mutex_shader_objects);
                 if (copy_vertex_shader == nullptr || copy_pixel_shader == nullptr) {
                     ASSERT_ONCE(false); // The custom shaders failed to be found (they have either been unloaded or failed to compile, or simply missing in the files)
                     // We can't continue, drawing with emtpy shaders would crash or skip the call
@@ -4402,8 +4455,11 @@ void OnReshadePresent(reshade::api::effect_runtime* runtime) {
     trace_running = false;
   } else if (trace_scheduled) {
     trace_scheduled = false;
-    trace_shader_hashes.clear();
-    trace_pipeline_handles.clear();
+    {
+        const std::unique_lock lock_trace(s_mutex_trace);
+        trace_shader_hashes.clear();
+        trace_pipeline_handles.clear();
+    }
     trace_running = true;
     reshade::log::message(reshade::log::level::info, "--- Frame ---");
   }
@@ -4411,7 +4467,7 @@ void OnReshadePresent(reshade::api::effect_runtime* runtime) {
 
   // TODO: verify this delayed behaviour is actually ever needed and delete it if not
   {
-    const std::lock_guard<std::recursive_mutex> lock(s_mutex_generic);
+    const std::unique_lock lock(s_mutex_generic);
     for (auto& pipeline_pair : pipeline_cache_by_pipeline_handle) {
       // Force waiting a frame as replacing the pipeline the first frame it was created could cause hangs
       pipeline_pair.second->ready_for_binding = true;
@@ -4438,7 +4494,7 @@ void OnReshadePresent(reshade::api::effect_runtime* runtime) {
 
   // Destroy the cloned pipelines in the following frame to avoid crashes
   {
-    const std::lock_guard<std::recursive_mutex> lock(s_mutex_generic);
+    const std::unique_lock lock(s_mutex_generic);
     for (auto pair : pipelines_to_destroy) {
       pair.second->destroy_pipeline(reshade::api::pipeline{pair.first});
     }
@@ -4447,13 +4503,13 @@ void OnReshadePresent(reshade::api::effect_runtime* runtime) {
 
   if (needs_unload_shaders) {
     {
-        const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
+        const std::unique_lock lock(s_mutex_loading);
         shaders_compilation_errors.clear();
     }
     UnloadCustomShaders();
 #if 1 // Optionally unload all custom shaders data
     {
-        const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
+        const std::unique_lock lock(s_mutex_loading);
         custom_shaders_cache.clear();
     }
 #endif
@@ -4463,7 +4519,7 @@ void OnReshadePresent(reshade::api::effect_runtime* runtime) {
     // Unload customly created shader objects (from the shader code/binaries above),
     // to make sure they will re-create
     {
-        const std::lock_guard<std::recursive_mutex> lock(s_mutex_shader_objects);
+        const std::unique_lock lock(s_mutex_shader_objects);
         copy_vertex_shader = nullptr;
         copy_pixel_shader = nullptr;
         transfer_function_copy_pixel_shader = nullptr;
@@ -4474,7 +4530,7 @@ void OnReshadePresent(reshade::api::effect_runtime* runtime) {
   if (needs_load_shaders) {
     // Cache the defines at compilation time
     {
-        const std::lock_guard<std::recursive_mutex> lock(s_mutex_shader_defines);
+        const std::unique_lock lock(s_mutex_shader_defines);
         ShaderDefineData::OnCompilation(shader_defines_data);
         for (int i = 0; i < shader_defines_data.size(); i++) {
             shader_defines_data_index[string_view_crc32(std::string_view(shader_defines_data[i].compiled_data.GetName()))] = i;
@@ -4491,6 +4547,7 @@ void OnReshadePresent(reshade::api::effect_runtime* runtime) {
   CheckForLiveUpdate();
 }
 
+// Expects "s_mutex_dumping"
 void DumpShader(uint32_t shader_hash, bool auto_detect_type = true) {
   auto dump_path = GetShaderPath();
   if (!std::filesystem::exists(dump_path)) {
@@ -4516,7 +4573,7 @@ void DumpShader(uint32_t shader_hash, bool auto_detect_type = true) {
   // Automatically find the shader type and append it to the name (a bit hacky). This can make dumping relevantly slower.
   if (auto_detect_type) {
     if (cached_shader->disasm.empty()) {
-      auto disasm_code = renodx::utils::shader::compiler::DisassembleShader(cached_shader->data, cached_shader->size);
+      auto disasm_code = utils::shader::compiler::DisassembleShader(cached_shader->data, cached_shader->size);
       if (disasm_code.has_value()) {
         cached_shader->disasm.assign(disasm_code.value());
       } else {
@@ -4603,7 +4660,7 @@ void AutoLoadShaders() {
   // Copy the "pipelines_to_reload_copy" so we don't have to lock "s_mutex_loading" all the times
   std::unordered_set<uint64_t> pipelines_to_reload_copy;
   {
-    const std::lock_guard<std::recursive_mutex> lock_loading(s_mutex_loading);
+    const std::unique_lock lock_loading(s_mutex_loading);
     if (pipelines_to_reload.empty()) {
       thread_auto_loading_running = false;
       return;
@@ -4672,7 +4729,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
       }
     }
 #endif
-    const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
+    const std::unique_lock lock(s_mutex_loading);
     pipelines_to_reload.clear();
   }
   ImGui::SameLine();
@@ -4680,7 +4737,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 
   bool needs_compilation = false;
   {
-    const std::lock_guard<std::recursive_mutex> lock(s_mutex_shader_defines);
+    const std::shared_lock lock(s_mutex_shader_defines);
     needs_compilation = defines_need_recompilation;
     for (uint32_t i = 0; i < shader_defines_data.size() && !needs_compilation; i++) {
       needs_compilation |= shader_defines_data[i].NeedsCompilation();
@@ -4697,11 +4754,11 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
     needs_unload_shaders = false;
     last_pressed_unload = false;
     needs_load_shaders = true;
-    const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
+    const std::unique_lock lock(s_mutex_loading);
     pipelines_to_reload.clear();
   }
   if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-      const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
+      const std::shared_lock lock(s_mutex_loading);
 #if !DEVELOPMENT
       if (shaders_compilation_errors.empty()) {
           ImGui::SetTooltip((cloned_pipeline_count && needs_compilation) ? "Shaders recompilation is needed for the changed settings to apply" : "(Re)Compiles shaders");
@@ -4718,7 +4775,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 #if DEVELOPMENT || TEST
   ImGui::SameLine();
   if (ImGui::Button("Clean Shaders Cache")) {
-      const std::lock_guard<std::recursive_mutex> lock_loading(s_mutex_loading);
+      const std::unique_lock lock_loading(s_mutex_loading);
       CleanShadersCache();
       // Force recompile all shaders the next time
       for (const auto& custom_shader_pair : custom_shaders_cache) {
@@ -4736,7 +4793,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
     if (!auto_load && thread_auto_loading.joinable()) {
       thread_auto_loading.join();
     }
-    const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
+    const std::unique_lock lock(s_mutex_loading);
     pipelines_to_reload.clear();
   }
   ImGui::PopID();
@@ -4745,7 +4802,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
   ImGui::PushID("##LiveReloadCheckBox");
   if (ImGui::Checkbox("Live Reload", &live_reload)) {
     needs_live_reload_update = true;
-    const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
+    const std::unique_lock lock(s_mutex_loading);
     pipelines_to_reload.clear();
   }
   ImGui::PopID();
@@ -4762,7 +4819,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
       if (ImGui::BeginChild("HashList", ImVec2(100, -FLT_MIN), ImGuiChildFlags_ResizeX)) {
         if (ImGui::BeginListBox("##HashesListbox", ImVec2(-FLT_MIN, -FLT_MIN))) {
           if (!trace_running) {
-            const std::lock_guard<std::recursive_mutex> lock(s_mutex_generic);
+            const std::shared_lock lock(s_mutex_generic);
             for (auto index = 0; index < trace_count; index++) {
               auto pipeline_handle = trace_pipeline_handles.at(index);
               const bool is_selected = selected_index == index;
@@ -4788,7 +4845,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
                   text_color = IM_COL32(128, 0, 128, 255); // Purple
                 }
 
-                const std::lock_guard<std::recursive_mutex> lock_loading(s_mutex_loading);
+                const std::shared_lock lock_loading(s_mutex_loading);
                 const auto custom_shader = !pipeline->shader_hashes.empty() ? custom_shaders_cache[pipeline->shader_hashes[0]] : nullptr;
 
                 // Find if the shader has been modified
@@ -4852,12 +4909,12 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             static std::string disasm_string;
             if (selected_index >= 0 && trace_pipeline_handles.size() >= selected_index + 1 && (changed_selected || opened_disassembly_tab_item != open_disassembly_tab_item)) {
               const auto pipeline_handle = trace_pipeline_handles.at(selected_index);
-              const std::lock_guard<std::recursive_mutex> lock(s_mutex_generic);
+              const std::unique_lock lock(s_mutex_generic);
               if (auto pipeline_pair = pipeline_cache_by_pipeline_handle.find(pipeline_handle); pipeline_pair != pipeline_cache_by_pipeline_handle.end() && pipeline_pair->second != nullptr) {
                 const std::lock_guard<std::recursive_mutex> lock_dumping(s_mutex_dumping);
                 auto* cache = (!pipeline_pair->second->shader_hashes.empty() && shader_cache.contains(pipeline_pair->second->shader_hashes[0])) ? shader_cache[pipeline_pair->second->shader_hashes[0]] : nullptr;
                 if (cache && cache->disasm.empty()) {
-                  auto disasm_code = renodx::utils::shader::compiler::DisassembleShader(cache->data, cache->size);
+                  auto disasm_code = utils::shader::compiler::DisassembleShader(cache->data, cache->size);
                   if (disasm_code.has_value()) {
                     cache->disasm.assign(disasm_code.value());
                   } else {
@@ -4892,12 +4949,12 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
               bool hlsl_set = false;
               auto pipeline_handle = trace_pipeline_handles.at(selected_index);
 
-              const std::lock_guard<std::recursive_mutex> lock(s_mutex_generic);
+              const std::shared_lock lock(s_mutex_generic);
               if (auto pipeline_pair = pipeline_cache_by_pipeline_handle.find(pipeline_handle);
                   pipeline_pair != pipeline_cache_by_pipeline_handle.end() && pipeline_pair->second != nullptr) {
 
                 const auto pipeline = pipeline_pair->second;
-                const std::lock_guard<std::recursive_mutex> lock_loading(s_mutex_loading);
+                const std::shared_lock lock_loading(s_mutex_loading);
                 const auto custom_shader = !pipeline->shader_hashes.empty() ? custom_shaders_cache[pipeline->shader_hashes[0]] : nullptr;
                 // If the custom shader has a compilation error, print that, otherwise read the file text
                 if (custom_shader != nullptr && !custom_shader->compilation_error.empty()) {
@@ -4943,7 +5000,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
           if (open_settings_tab_item) {
             if (selected_index >= 0 && trace_pipeline_handles.size() >= selected_index + 1) {
               auto pipeline_handle = trace_pipeline_handles.at(selected_index);
-              const std::lock_guard<std::recursive_mutex> lock(s_mutex_generic);
+              const std::unique_lock lock(s_mutex_generic);
               if (auto pipeline_pair = pipeline_cache_by_pipeline_handle.find(pipeline_handle); pipeline_pair != pipeline_cache_by_pipeline_handle.end() && pipeline_pair->second != nullptr) {
                 bool test_pipeline = pipeline_pair->second->test;
                 if (ImGui::BeginChild("Settings")) {
@@ -4988,7 +5045,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 #endif // DEVELOPMENT
 
     if (ImGui::BeginTabItem("Settings")) {
-        const std::lock_guard<std::recursive_mutex> lock_reshade(s_mutex_reshade); // Lock the entire scope for extra safety, though we are mainly only interested in keeping "cb_luma_frame_settings" safe
+        const std::unique_lock lock_reshade(s_mutex_reshade); // Lock the entire scope for extra safety, though we are mainly only interested in keeping "cb_luma_frame_settings" safe
 
         ImGui::BeginDisabled(!dlss_sr_supported);
         if (ImGui::Checkbox("DLSS Super Resolution", &dlss_sr)) {
@@ -5078,7 +5135,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             };
 
         {
-            const std::lock_guard<std::recursive_mutex> lock(s_mutex_device);
+            const std::shared_lock lock(s_mutex_device);
             // Note: this is fast enough that we can check it every frame.
             // There's probably no need for thread safety checks on "native_swapchain3", but we have a mutex anyway.
             IsHDRSupportedAndEnabled(game_window, hdr_supported_display, hdr_enabled_display, native_swapchain3);
@@ -5098,7 +5155,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         };
         ImGui::BeginDisabled(!hdr_supported_display);
         if (ImGui::SliderInt("Display Mode", &display_mode, 0, display_mode_max, preset_strings[display_mode], ImGuiSliderFlags_NoInput)) {
-            const std::lock_guard<std::recursive_mutex> lock(s_mutex_device);
+            const std::shared_lock lock(s_mutex_device);
             ChangeDisplayMode(display_mode, true, native_swapchain3);
         }
         ImGui::EndDisabled();
@@ -5111,7 +5168,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             ImGui::PushID("Display Mode");
             if (ImGui::SmallButton(ICON_FK_UNDO)) {
                 display_mode = hdr_enabled_display ? 1 : 0;
-                const std::lock_guard<std::recursive_mutex> lock(s_mutex_device);
+                const std::shared_lock lock(s_mutex_device);
                 ChangeDisplayMode(display_mode, false, native_swapchain3);
             }
             ImGui::PopID();
@@ -5329,11 +5386,11 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         samplers_changed |= ImGui::SliderInt("Texture Samplers Upgrade Mode - 2", &samplers_upgrade_mode_2, 0, 6);
         ImGui::Checkbox("Custom Texture Samplers Mip LOD Bias", &custom_texture_mip_lod_bias_offset);
         if (samplers_upgrade_mode > 0 && custom_texture_mip_lod_bias_offset) {
-            const std::lock_guard<std::recursive_mutex> lock_samplers(s_mutex_samplers);
+            const std::unique_lock lock_samplers(s_mutex_samplers);
             samplers_changed |= ImGui::SliderFloat("Texture Samplers Mip LOD Bias", &texture_mip_lod_bias_offset, -8.f, +8.f);
         }
         if (samplers_changed) {
-            const std::lock_guard<std::recursive_mutex> lock_samplers(s_mutex_samplers);
+            const std::unique_lock lock_samplers(s_mutex_samplers);
             for (auto& samplers_handle : custom_sampler_by_original_sampler) {
                 ID3D11SamplerState* native_sampler = reinterpret_cast<ID3D11SamplerState*>(samplers_handle.first);
                 D3D11_SAMPLER_DESC native_desc;
@@ -5351,7 +5408,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
           ImGui::SetTooltip("Shader Defines: reload shaders after changing these for the changes to apply (and save).\nSome settings are only editable in debug modes, and only apply if the \"DEVELOPMENT\" flag is turned on.\nDo not change unless you know what you are doing.");
       }
 
-      const std::lock_guard<std::recursive_mutex> lock_shader_defines(s_mutex_shader_defines);
+      const std::unique_lock lock_shader_defines(s_mutex_shader_defines);
 
       // Show reset button
       {
@@ -5765,13 +5822,14 @@ void Init(bool async) {
 
   // Load settings
   {
-      const std::lock_guard<std::recursive_mutex> lock_reshade(s_mutex_reshade);
+      const std::unique_lock lock_reshade(s_mutex_reshade);
 
       reshade::api::effect_runtime* runtime = nullptr;
       uint32_t config_version = Globals::VERSION;
       reshade::get_config_value(runtime, NAME, "Version", config_version);
       if (config_version != Globals::VERSION) {
           if (config_version < Globals::VERSION) {
+              const std::unique_lock lock_loading(s_mutex_loading);
               // NOTE: put behaviour to load previous versions into new ones here
               CleanShadersCache(); // Force recompile shaders, just for extra safety (theoretically changes are auto detected through the preprocessor, but we can't be certain)
           }
@@ -5806,12 +5864,12 @@ void Init(bool async) {
           cb_luma_frame_settings.ScenePeakWhite = cb_luma_frame_settings.ScenePaperWhite;
       }
 
-      const std::lock_guard<std::recursive_mutex> lock_shader_defines(s_mutex_shader_defines);
+      const std::unique_lock lock_shader_defines(s_mutex_shader_defines);
       ShaderDefineData::Load(shader_defines_data, runtime);
   }
 
   {
-      const std::lock_guard<std::recursive_mutex> lock_shader_defines(s_mutex_shader_defines);
+      const std::unique_lock lock_shader_defines(s_mutex_shader_defines);
       ShaderDefineData::OnCompilation(shader_defines_data);
       for (int i = 0; i < shader_defines_data.size(); i++) {
           shader_defines_data_index[string_view_crc32(std::string_view(shader_defines_data[i].compiled_data.GetName()))] = i;
@@ -5827,8 +5885,8 @@ void Init(bool async) {
     thread_auto_loading_running = true;
     static std::binary_semaphore async_shader_compilation_semaphore{0};
     thread_auto_loading = std::thread([] {
-      // We need to lock this mutex for the whole async shader loading, so that if the game starts loading shaders, we can already see if we have a custom version and live load it ("live_load"), otherwise the "custom_shaders_cache" list would be incomplete
-      const std::lock_guard<std::recursive_mutex> lock(s_mutex_loading);
+      // We need to lock this mutex for the whole async shader loading, so that if the game starts loading shaders (from another thread), we can already see if we have a custom version and live load it ("live_load"), otherwise the "custom_shaders_cache" list would be incomplete
+      const std::unique_lock lock(s_mutex_loading);
       // This is needed to make sure this thread locks "s_mutex_loading" before any other function could
       async_shader_compilation_semaphore.release();
       CompileCustomShaders();

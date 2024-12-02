@@ -81,6 +81,9 @@
     <ClInclude Include="..\src\native plugin\includes\SharedEnd.h">
       <Filter>Native Plugin\Includes</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\includes\recursive_shared_mutex.h">
+      <Filter>Includes</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="vcpkg.json" />

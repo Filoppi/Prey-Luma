@@ -17,7 +17,7 @@
 
 #include <include/reshade.hpp>
 
-namespace renodx::utils::shader::compiler {
+namespace utils::shader::compiler {
 
 static std::mutex s_mutex_shader_compiler;
 
@@ -572,4 +572,4 @@ void CompileShaderFromFile(std::vector<uint8_t>& output, const CComPtr<ID3DBlob>
   CompileShaderFromFileDXC(output, file_path, shader_target, local_defines.data(), error, func_name, out_error);
 }
 
-}  // namespace renodx::utils::shader::compiler
+}  // namespace utils::shader::compiler
