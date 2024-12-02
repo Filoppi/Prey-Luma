@@ -109,7 +109,7 @@ float3 DICETonemap(
           float3 Color_BT2020 = BT709_To_BT2020(Color);
           if (any(Color_BT2020 > PeakWhite)) // Optional "optimization" branch
           {
-            float colorLuminance = GetLuminance(Color_BT2020);
+            float colorLuminance = GetLuminance(Color);
             float colorLuminanceInExcess = colorLuminance - PeakWhite;
             float maxColorInExcess = max3(Color_BT2020) - PeakWhite; // This is guaranteed to be >= "colorLuminanceInExcess"
             float brightnessReduction = saturate(safeDivision(PeakWhite, max3(Color_BT2020), 1)); // Fall back to one in case of division by zero
