@@ -9,142 +9,238 @@ cbuffer CBSSRRaytrace : register(b0)
   } cbRefl : packoffset(c0);
 }
 
+#include "include/Common.hlsl"
 #include "include/CBuffer_PerViewGlobal.hlsl"
 
-SamplerState ssReflectionPoint_s : register(s0);
-SamplerState ssReflectionLinear_s : register(s1);
-SamplerState ssReflectionLinearBorder_s : register(s2);
+SamplerState ssReflectionPoint : register(s0);
+SamplerState ssReflectionLinear : register(s1);
+SamplerState ssReflectionLinearBorder : register(s2);
 Texture2D<float> reflectionDepthTex : register(t0); // Device depth
 Texture2D<float4> reflectionNormalsTex : register(t1);
 Texture2D<float4> reflectionSpecularTex : register(t2);
 Texture2D<float4> reflectionDepthScaledTex : register(t3); // Half res 4 channel depth (each channel is slightly different)
-Texture2D<float4> reflectionPreviousSceneTex : register(t4);
-Texture2D<float2> reflectionLuminanceTex : register(t5);
+Texture2D<float4> reflectionPreviousSceneTex : register(t4); // Pre-tonemapping HDR scene from the previous frame
+Texture2D<float2> reflectionLuminanceTex : register(t5); // Scene exposure (probably from the previous frame)
 
-#define cmp -
+float GetLinearDepth(float fLinearDepth, bool bScaled = false)
+{
+    return fLinearDepth * (bScaled ? CV_NearFarClipDist.y : 1.0f);
+}
+
+float LinearDepthFromDeviceDepth(float _device)
+{
+	return CV_ProjRatio.y / (_device - CV_ProjRatio.x);
+}
+
+struct MaterialAttribsCommon
+{
+	half3  NormalWorld;
+	half3  Albedo;
+	half3  Reflectance;
+	half3  Transmittance;
+	half   Smoothness;
+	half   ScatteringIndex;
+	half   SelfShadowingSun;
+	int    LightingModel;
+};
+
+#define MAX_FRACTIONAL_8_BIT        (255.0f / 256.0f)
+#define MIDPOINT_8_BIT              (127.0f / 255.0f)
+#define TWO_BITS_EXTRACTION_FACTOR  (3.0f + MAX_FRACTIONAL_8_BIT)
+#define LIGHTINGMODEL_STANDARD       0
+#define LIGHTINGMODEL_TRANSMITTANCE  1
+#define LIGHTINGMODEL_POM_SS         2
+#define LIGHTINGMODEL_ALIEN          3
+
+half3 DecodeColorYCC( half3 encodedCol, const bool useChrominance = true )
+{
+	encodedCol = half3(encodedCol.x, encodedCol.y / MIDPOINT_8_BIT - 1, encodedCol.z / MIDPOINT_8_BIT - 1);
+	if (!useChrominance) encodedCol.yz = 0;
+	
+	// Y'Cb'Cr'
+	half3 col;
+	col.r = encodedCol.x + 1.402 * encodedCol.z;
+	col.g = dot( half3( 1, -0.3441, -0.7141 ), encodedCol.xyz );
+	col.b = encodedCol.x + 1.772 * encodedCol.y;
+
+	return col * col;
+}
+
+MaterialAttribsCommon DecodeGBuffer( half4 bufferA, half4 bufferB, half4 bufferC )
+{
+	MaterialAttribsCommon attribs;
+	
+	attribs.LightingModel = (int)floor(bufferA.w * TWO_BITS_EXTRACTION_FACTOR);
+	
+	attribs.NormalWorld = normalize( bufferA.xyz * 2 - 1 );
+	attribs.Albedo = bufferB.xyz * bufferB.xyz;
+	attribs.Reflectance = DecodeColorYCC( bufferC.yzw, attribs.LightingModel == LIGHTINGMODEL_STANDARD );
+	attribs.Smoothness = bufferC.x;
+	attribs.ScatteringIndex = bufferB.w * TWO_BITS_EXTRACTION_FACTOR;
+	
+	attribs.Transmittance = half3( 0, 0, 0 );
+	if (attribs.LightingModel == LIGHTINGMODEL_TRANSMITTANCE)
+	{
+		attribs.Transmittance = DecodeColorYCC( half3( frac(bufferA.w * TWO_BITS_EXTRACTION_FACTOR), bufferC.z, bufferC.w ) );
+	}
+	
+	attribs.SelfShadowingSun = 0;
+	if (attribs.LightingModel == LIGHTINGMODEL_POM_SS)
+	{
+		attribs.SelfShadowingSun = saturate(bufferC.z / MIDPOINT_8_BIT - 1);
+	}
+	
+	return attribs;
+}
+
+float3 GetWorldViewPos()
+{
+	return CV_ScreenToWorldBasis._m03_m13_m23;
+}
+
+float3 ReconstructWorldPos(int2 WPos, float linearDepth, bool bRelativeToCamera = false)
+{
+	float4 wposScaled = float4(WPos * linearDepth, linearDepth, bRelativeToCamera ? 0.0 : 1.0);
+	return mul(CV_ScreenToWorldBasis, wposScaled);
+}
+
+float2 ClampScreenTC(float2 TC, float2 maxTC)
+{
+	return clamp(TC, 0, maxTC.xy);
+}
+
+float2 ClampScreenTC(float2 TC)
+{
+	return ClampScreenTC(TC, CV_HPosClamp.xy);
+}
 
 void main(
-  float4 v0 : SV_Position0,
-  float4 v1 : TEXCOORD0,
-  out float4 o0 : SV_Target0)
+  float4 inWPos : SV_Position0,
+  float4 inBaseTC : TEXCOORD0,
+  out float4 outColor : SV_Target0)
 {
-  float4 r0,r1,r2,r3,r4,r5,r6,r7;
+	outColor = 0;
 
-  r0.xy = CV_ScreenSize.zw + v1.xy; // LUMA FT: unclear why this is done, it seems a bit wrong
+	// Random values for jittering a ray marching step
+	const half jitterOffsets[16] = {
+		0.215168h, -0.243968h, 0.625509h, -0.623349h,
+		0.247428h, -0.224435h, -0.355875h, -0.00792976h,
+		-0.619941h, -0.00287403h, 0.238996h, 0.344431h,
+		0.627993h, -0.772384h, -0.212489h, 0.769486h
+	};
+
+	const float2 halfTexel = CV_ScreenSize.zw;
+
 	// LUMA FT: the uv doesn't need to be scaled by "CV_HPosScale.xy" here (it already is in the vertex shader)
 	// LUMA FT: fixed missing clamps to "CV_HPosClamp.xy"
-	v1.xy = min(v1.xy, CV_HPosClamp.xy);
-	r0.xy = min(r0.xy, CV_HPosClamp.xy);
-  r1.z = reflectionDepthTex.SampleLevel(ssReflectionPoint_s, v1.xy, 0).x;
-  r2.xyz = reflectionNormalsTex.SampleLevel(ssReflectionLinear_s, r0.xy, 0).xyz;
-  r2.xyz = r2.xyz * float3(2,2,2) + float3(-1,-1,-1);
-  r0.z = dot(r2.xyz, r2.xyz);
-  r0.z = rsqrt(r0.z);
-  r2.xyz = r2.xyz * r0.zzz;
-  r0.zw = trunc(v0.xy);
-  r1.xy = r0.zw * r1.zz;
-  r3.x = dot(CV_ScreenToWorldBasis._m00_m01_m02, r1.xyz);
-  r3.y = dot(CV_ScreenToWorldBasis._m10_m11_m12, r1.xyz);
-  r3.z = dot(CV_ScreenToWorldBasis._m20_m21_m22, r1.xyz);
-  r0.z = dot(r3.xyz, r3.xyz);
-  r0.z = rsqrt(r0.z);
-  r4.xyz = r3.xyz * r0.zzz;
-  r0.z = CV_NearFarClipDist.y * r1.z;
-  r0.z = 1.5 * r0.z;
-  r0.w = dot(r4.xyz, r2.xyz);
-  r0.w = r0.w + r0.w;
-  r2.xyz = r2.xyz * -r0.www + r4.xyz;
-  r0.w = dot(r2.xyz, r2.xyz);
-  r0.w = rsqrt(r0.w);
-  r2.xyz = r2.xyz * r0.www;
-  r5.xyz = r2.xyz * r0.zzz;
-  r0.w = dot(r4.xyz, r5.xyz);
-  r0.w = saturate(0.5 + r0.w);
-  r2.w = cmp(r0.w < 0.00999999978);
+	inBaseTC.xy = min(inBaseTC.xy, CV_HPosClamp.xy);
+
+	const float2 baseTC    = inBaseTC.xy;
+	const float2 gbufferTC = baseTC + halfTexel; // LUMA FT: unclear why this is done, it seems a bit wrong
+	
+	const float fDepth = GetLinearDepth( reflectionDepthTex.SampleLevel(ssReflectionPoint, baseTC, 0) );
+
+	// Make sure we do linear half pixel offset samples since we're rendering at half res
+	float4 GBufferA = reflectionNormalsTex.SampleLevel(ssReflectionLinear, gbufferTC, 0);
+	float4 GBufferC = reflectionSpecularTex.SampleLevel(ssReflectionLinear, gbufferTC, 0);
+	MaterialAttribsCommon attribs = DecodeGBuffer(GBufferA, 0, GBufferC);
+	
+	float3 vPositionWS = ReconstructWorldPos(inWPos.xy, fDepth, true);
+	float3 viewVec = normalize( vPositionWS );
+	vPositionWS += GetWorldViewPos();
+		
+	const float maxReflDist = 1.5 * fDepth * CV_NearFarClipDist.y;
+	float3 reflVec = normalize( reflect( viewVec, attribs.NormalWorld ) ) * maxReflDist;
+	
+	float dirAtten = saturate( dot( viewVec, reflVec ) + 0.5);
+  
   // Ignore sky (draw black, no alpha) (there's no alternative apparently, we can't reflect it (or at least, the game always tried not to))
-  r3.w = cmp(r1.z >= 0.9999999 && r1.z <= 1.0000001); // LUMA FT: change sky comparison from ==1 to >=0.9999999 as there was some precision loss in there, which made the SSR have garbage in the sky (trailed behind from the last drawn edge)
-  r2.w = (int)r2.w | (int)r3.w;
-  if (r2.w != 0) {
-    o0.xyzw = float4(0,0,0,0);
-    return;
-  }
-  r0.x = reflectionSpecularTex.SampleLevel(ssReflectionLinear_s, r0.xy, 0).x;
-  r4.x = CV_ScreenToWorldBasis._m03 + r3.x;
-  r4.y = CV_ScreenToWorldBasis._m13 + r3.y;
-  r4.z = CV_ScreenToWorldBasis._m23 + r3.z;
-  r4.w = 1;
-  r1.x = dot(cbRefl.mViewProj._m00_m01_m02_m03, r4.xyzw);
-  r1.y = dot(cbRefl.mViewProj._m10_m11_m12_m13, r4.xyzw);
-  r1.w = dot(cbRefl.mViewProj._m30_m31_m32_m33, r4.xyzw);
-  r2.xyz = r2.xyz * r0.zzz + r4.xyz;
-  r2.w = 1;
-  r3.x = dot(cbRefl.mViewProj._m00_m01_m02_m03, r2.xyzw);
-  r3.y = dot(cbRefl.mViewProj._m10_m11_m12_m13, r2.xyzw);
-  r0.y = dot(cbRefl.mViewProj._m20_m21_m22_m23, r2.xyzw);
-  r3.w = dot(cbRefl.mViewProj._m30_m31_m32_m33, r2.xyzw);
-  r0.y = r0.y / r3.w;
-  r0.y = -CV_ProjRatio.x + r0.y;
-  r3.z = CV_ProjRatio.y / r0.y;
-  r2.xyzw = r3.xyzw + -r1.xyzw;
-  r0.x = r0.x * 28 + 4;
-  r0.y = (int)r0.x;
-  r0.x = trunc(r0.x);
-  r3.x = 1 / r0.x;
-  r0.x = 1.60000002 * r0.x;
-  r0.x = r0.z / r0.x;
-  r0.x = r0.x / CV_NearFarClipDist.y;
-  r6.y = 0;
-  r3.z = r3.x;
-  r3.y = 0;
-  r0.z = 0;
+  // LUMA FT: change sky comparison from ==1 to >=0.9999999 as there was some precision loss in there, which made the SSR have garbage in the sky (trailed behind from the last drawn edge)
+	if (dirAtten < 0.01 || (fDepth >= 0.9999999 && fDepth <= 1.0000001))  return;
+	
+	float4 rayStart = mul(cbRefl.mViewProj, float4( vPositionWS, 1 ));
+	rayStart.z = fDepth;
+
+	float4 rayEnd = mul(cbRefl.mViewProj, float4( vPositionWS + reflVec, 1 ));
+	rayEnd.z = LinearDepthFromDeviceDepth(rayEnd.z / rayEnd.w);
+
+	float4 ray = rayEnd - rayStart;
+	
+	const int numSamples = 4 + attribs.Smoothness * 28;
+	
+#if 0 // LUMA FT: this was disabled, it doesn't seem to help
+	const int jitterIndex = (int)dot( frac( inBaseTC.zw ), float2( 4, 16 ) );
+	const float jitter = jitterOffsets[jitterIndex] * 0.002;
+#else
+	const float jitter = 0;
+#endif
+	
+	const float stepSize = 1.0 / numSamples + jitter;
+	const float intervalSize = maxReflDist / (numSamples * 1.6) / CV_NearFarClipDist.y;
+	
+	// Perform raymarching
+	float4 color = 0;
+	float len = stepSize;
+	float bestLen = 0;
   float2 sampleUVClamp = CV_HPosScale.xy - (CV_ScreenSize.zw * 2.0);
-  while (true) {
-    r3.w = cmp((int)r0.z >= (int)r0.y);
-    if (r3.w != 0) break;
-    r7.xyzw = r2.xyzw * r3.zzzz + r1.xyzw;
-    r6.zw = r7.xy / r7.ww;
-    r6.zw = max(float2(0,0), r6.zw);
-    r6.zw = min(sampleUVClamp, r6.zw); // LUMA FT: Fixed clamp, it was using "CV_HPosClamp" here but "reflectionDepthScaledTex" is half resolution, so we need to clamp it differently
-    r3.w = reflectionDepthScaledTex.SampleLevel(ssReflectionPoint_s, r6.zw, 0).x;
-    r3.w = r3.w + -r7.z;
-    r3.w = cmp(abs(r3.w) < r0.x);
-    if (r3.w != 0) {
-      r3.y = r3.z;
-      break;
+	[loop]
+	for (int i = 0; i < numSamples; ++i)
+	{
+		float4 projPos = rayStart + ray * len;
+		float2 depthTC = ClampScreenTC(projPos.xy / projPos.w, sampleUVClamp); // LUMA FT: Fixed clamp, it was using "CV_HPosClamp" here but "reflectionDepthScaledTex" is half resolution, so we need to clamp it differently
+
+		float fLinearDepthTap = reflectionDepthScaledTex.SampleLevel(ssReflectionPoint, depthTC, 0).x; // half res R16F
+		if (abs(fLinearDepthTap - projPos.z) < intervalSize)
+		{
+			bestLen = len;
+			break;
+		}
+
+		len += stepSize;
+	}
+
+	[branch]
+	if (bestLen > 0)
+	{
+		const float curAvgLum = reflectionLuminanceTex.SampleLevel(ssReflectionPoint, baseTC, 0).x;
+    //TODOFT: review this clamp, does it actually help?
+		const float maxLum = curAvgLum * 100;  // Limit brightness to reduce aliasing of specular highlights
+
+		float4 bestSample = float4( vPositionWS + reflVec * bestLen, 1 );
+
+		// Reprojection
+		float4 reprojPos = mul(cbRefl.mViewProjPrev, bestSample);
+		float2 prevTC = saturate(reprojPos.xy / reprojPos.w);
+
+		const float borderSize = 0.070;  // Fade out at borders
+    float screenAspectRatio = CV_ScreenSize.w / CV_ScreenSize.z;
+    float remappedPrevTCX = prevTC.x * (screenAspectRatio / NativeAspectRatio); // LUMA FT: fixed border checks not accounting for wider aspect ratios and FOVs
+		float borderDist = min(remappedPrevTCX, prevTC.y);
+    remappedPrevTCX = 1.f - ((1.f - prevTC.x) * (screenAspectRatio / NativeAspectRatio));
+		borderDist = min( 1 - max(remappedPrevTCX, prevTC.y), borderDist );
+		float edgeWeight = borderDist > borderSize ? 1 : sqrt(borderDist / borderSize);
+
+    prevTC *= cbRefl.screenScalePrev;
+    // LUMA FT: this smapler had a border color (black), though given that we scaled the resolution clamped UVs, we never got that.
+    // We fixed it by branching on samples that wouldn't touch any texel within the render resolution area.
+    // It's unclear whether this actually is correct and helps visually, and whether the alpha should be forced to zero in that case too.
+    sampleUVClamp = cbRefl.screenScalePrevClamp + (CV_ScreenSize.zw * 2.0);
+    if (prevTC.x < sampleUVClamp.x && prevTC.y < sampleUVClamp.y)
+    {
+		  prevTC = ClampScreenTC(prevTC, cbRefl.screenScalePrevClamp);
+      // LUMA FT: this sampler has a border color (black?), though we clamp the UV so we never get that
+		  color.rgb = min( reflectionPreviousSceneTex.SampleLevel(ssReflectionLinearBorder, prevTC, 0).rgb, maxLum.xxx );
+      
+      // Filter out NANs that we still have sometimes, otherwise they get propagated and remain in the view
+      color.rgb = isfinite( color.rgb ) ? color.rgb: 0;
     }
-    r6.x = r3.z + r3.x;
-    r0.z = (int)r0.z + 1;
-    r3.yz = r6.yx;
-  }
-  r0.x = cmp(0 < r3.y);
-  if (r0.x != 0) {
-    r0.x = reflectionLuminanceTex.SampleLevel(ssReflectionPoint_s, v1.xy, 0).x;
-    r0.x = 100 * r0.x;
-    r1.xyz = r5.xyz * r3.yyy + r4.xyz;
-    r1.w = 1;
-    r2.x = dot(cbRefl.mViewProjPrev._m00_m01_m02_m03, r1.xyzw);
-    r2.y = dot(cbRefl.mViewProjPrev._m10_m11_m12_m13, r1.xyzw);
-    r0.y = dot(cbRefl.mViewProjPrev._m30_m31_m32_m33, r1.xyzw);
-    r0.yz = saturate(r2.xy / r0.yy);
-    r1.x = min(r0.y, r0.z);
-    r1.y = max(r0.y, r0.z);
-    r1.y = 1 + -r1.y;
-    r1.x = min(r1.y, r1.x);
-    r1.y = cmp(0.0700000003 < r1.x);
-    r1.x = 14.2857141 * r1.x;
-    r1.x = sqrt(r1.x);
-    r1.x = r1.y ? 1 : r1.x;
-    r0.yz = cbRefl.screenScalePrev.xy * r0.yz;
-    r0.yz = max(float2(0,0), r0.yz);
-    r0.yz = min(cbRefl.screenScalePrevClamp.xy, r0.yz);
-    // LUMA FT: this sampler has a border color (black?), though we clamp the UV so we never get that
-    r1.yzw = reflectionPreviousSceneTex.SampleLevel(ssReflectionLinearBorder_s, r0.yz, 0).xyz;
-    r0.xyz = min(r1.yzw, r0.xxx);
-    r1.yzw = (int3)r0.xyz & int3(0x7f800000,0x7f800000,0x7f800000);
-    r1.yzw = cmp((int3)r1.yzw != int3(0x7f800000,0x7f800000,0x7f800000));
-    o0.xyz = r1.yzw ? r0.xyz : 0;
-    o0.w = r1.x * r0.w;
-  } else {
-    o0.xyzw = float4(0,0,0,0);
-  }
+    else
+    {
+      color.rgb = 0; //TODOFT: test more. It seems fine
+    }
+
+		color.a = edgeWeight * dirAtten;  // Fade out where less information available
+	}
+
+	outColor = color;
 }
