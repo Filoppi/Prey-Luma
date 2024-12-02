@@ -15,7 +15,7 @@ static reshade::api::pipeline_subobject* ClonePipelineSubObjects(uint32_t subobj
   memcpy(new_subobjects, subobjects, sizeof(reshade::api::pipeline_subobject) * subobject_count);
   for (uint32_t i = 0; i < subobject_count; ++i) {
     const auto& subobject = subobjects[i];
-#if DEVELOPMENT
+#if _DEBUG && LOG_VERBOSE
     {
       std::stringstream s;
       s << "utils::pipeline::ClonePipelineSubObjects(cloning " << subobjects[i].type << "[" << i << "]";
@@ -47,7 +47,7 @@ static reshade::api::pipeline_subobject* ClonePipelineSubObjects(uint32_t subobj
           new_desc->code = code_copy;
         }
 
-#if DEVELOPMENT
+#if _DEBUG && LOG_VERBOSE
         std::stringstream s;
         s << "utils::pipeline::ClonePipelineSubObjects(cloning ";
         s << subobject.type;

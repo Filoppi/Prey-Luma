@@ -16,6 +16,8 @@
 #define _DEBUG 1
 #endif // !NDEBUG
 
+#define LOG_VERBOSE ((DEVELOPMENT || TEST) && 0)
+
 // Disables loading the ReShade Addon code (useful to test the mod without any ReShade dependencies)
 #define DISABLE_RESHADE 0
 
@@ -1323,6 +1325,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
           custom_shader->compilation_error.clear();
 
           if (is_hlsl) {
+#if _DEBUG && LOG_VERBOSE
               {
                   std::stringstream s;
                   s << "LoadCustomShaders(Compiling file: ";
@@ -1332,6 +1335,7 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
                   s << ")";
                   reshade::log::message(reshade::log::level::debug, s.str().c_str());
               }
+#endif
 
               bool error = false;
               // TODO: specify the name of the function to compile (e.g. "main" or HDRTonemapPS) so we could unify more shaders into a single file with multiple techniques?
@@ -1381,11 +1385,13 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
                   reshade::set_config_value(nullptr, NAME_ADVANCED_SETTINGS.c_str(), &config_name[0], custom_shader->preprocessed_hash);
               }
 
+#if _DEBUG && LOG_VERBOSE
               {
                   std::stringstream s;
                   s << "LoadCustomShaders(Shader built with size: " << custom_shader->code.size() << ")";
                   reshade::log::message(reshade::log::level::debug, s.str().c_str());
               }
+#endif
           }
           else if (is_cso) {
               try {
@@ -1394,11 +1400,13 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
                   file.open(entry_path, std::ios::binary);
                   file.seekg(0, std::ios::end);
                   custom_shader->code.resize(file.tellg());
+#if _DEBUG && LOG_VERBOSE
                   {
                       std::stringstream s;
                       s << "LoadCustomShaders(Reading " << custom_shader->code.size() << " from " << filename_no_extension_string << ")";
                       reshade::log::message(reshade::log::level::debug, s.str().c_str());
                   }
+#endif
                   if (!custom_shader->code.empty()) {
                       file.seekg(0, std::ios::beg);
                       file.read(reinterpret_cast<char*>(custom_shader->code.data()), custom_shader->code.size());
@@ -1465,7 +1473,9 @@ void CompileCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter =
 
 // Optionally compiles all the shaders we have in our data folder and links them with the game rendering pipelines
 void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = std::unordered_set<uint64_t>(), bool recompile_shaders = true, bool immediate_load = true, bool immediate_unload = false) {
-  reshade::log::message(reshade::log::level::debug, "LoadCustomShaders()");
+#if _DEBUG && LOG_VERBOSE
+  reshade::log::message(reshade::log::level::info, "LoadCustomShaders()");
+#endif
 
   if (recompile_shaders) {
     CompileCustomShaders(pipelines_filter);
@@ -1506,6 +1516,7 @@ void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = st
       // Force destroy this pipeline in case it was already cloned
       UnloadCustomShaders({cached_pipeline->pipeline.handle}, immediate_unload, false);
 
+#if _DEBUG && LOG_VERBOSE
       {
         std::stringstream s;
         s << "LoadCustomShaders(Read ";
@@ -1514,12 +1525,14 @@ void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = st
         s << ")";
         reshade::log::message(reshade::log::level::debug, s.str().c_str());
       }
+#endif
 
       // DX12 can use PSO objects that need to be cloned
       const uint32_t subobject_count = cached_pipeline->subobject_count;
       reshade::api::pipeline_subobject* subobjects = cached_pipeline->subobjects_cache;
       reshade::api::pipeline_subobject* new_subobjects = utils::pipeline::ClonePipelineSubObjects(subobject_count, subobjects);
 
+#if _DEBUG && LOG_VERBOSE
       {
         std::stringstream s;
         s << "LoadCustomShaders(Cloning pipeline ";
@@ -1529,6 +1542,7 @@ void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = st
         reshade::log::message(reshade::log::level::debug, s.str().c_str());
       }
       reshade::log::message(reshade::log::level::debug, "Iterating pipeline...");
+#endif
 
       for (uint32_t i = 0; i < subobject_count; ++i) {
         const auto& subobject = subobjects[i];
@@ -1553,14 +1567,19 @@ void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = st
 
         const auto new_hash = compute_crc32(static_cast<const uint8_t*>(new_desc->code), new_desc->code_size);
 
-        std::stringstream s;
-        s << "LoadCustomShaders(Injected pipeline data";
-        s << " with " << PRINT_CRC32(new_hash);
-        s << " (" << custom_shader->code.size() << " bytes)";
-        s << ")";
-        reshade::log::message(reshade::log::level::debug, s.str().c_str());
+#if _DEBUG && LOG_VERBOSE
+        {
+            std::stringstream s;
+            s << "LoadCustomShaders(Injected pipeline data";
+            s << " with " << PRINT_CRC32(new_hash);
+            s << " (" << custom_shader->code.size() << " bytes)";
+            s << ")";
+            reshade::log::message(reshade::log::level::debug, s.str().c_str());
+        }
+#endif
       }
 
+#if _DEBUG && LOG_VERBOSE
       {
         std::stringstream s;
         s << "Creating pipeline clone (";
@@ -1570,6 +1589,7 @@ void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = st
         s << ")";
         reshade::log::message(reshade::log::level::debug, s.str().c_str());
       }
+#endif
 
       reshade::api::pipeline pipeline_clone;
       const bool built_pipeline_ok = cached_pipeline->device->create_pipeline(
@@ -1577,15 +1597,20 @@ void LoadCustomShaders(const std::unordered_set<uint64_t>& pipelines_filter = st
           subobject_count,
           new_subobjects,
           &pipeline_clone);
-      std::stringstream s;
-      s << "LoadCustomShaders(cloned ";
-      s << reinterpret_cast<void*>(cached_pipeline->pipeline.handle);
-      s << " => " << reinterpret_cast<void*>(pipeline_clone.handle);
-      s << ", layout: " << reinterpret_cast<void*>(cached_pipeline->layout.handle);
-      s << ", size: " << subobject_count;
-      s << ", " << (built_pipeline_ok ? "OK" : "FAILED!");
-      s << ")";
-      reshade::log::message(built_pipeline_ok ? reshade::log::level::info : reshade::log::level::error, s.str().c_str());
+#if !_DEBUG || !LOG_VERBOSE
+      if (!built_pipeline_ok)
+#endif
+      {
+          std::stringstream s;
+          s << "LoadCustomShaders(cloned ";
+          s << reinterpret_cast<void*>(cached_pipeline->pipeline.handle);
+          s << " => " << reinterpret_cast<void*>(pipeline_clone.handle);
+          s << ", layout: " << reinterpret_cast<void*>(cached_pipeline->layout.handle);
+          s << ", size: " << subobject_count;
+          s << ", " << (built_pipeline_ok ? "OK" : "FAILED!");
+          s << ")";
+          reshade::log::message(built_pipeline_ok ? reshade::log::level::info : reshade::log::level::error, s.str().c_str());
+      }
 
       if (built_pipeline_ok) {
         assert(!cached_pipeline->cloned && cached_pipeline->pipeline_clone.handle == 0);
@@ -1629,7 +1654,9 @@ bool needs_watcher_init = true;
 std::aligned_storage_t<1U << 18, std::max<size_t>(alignof(FILE_NOTIFY_EXTENDED_INFORMATION), alignof(FILE_NOTIFY_INFORMATION))> watch_buffer;
 
 void CALLBACK HandleEventCallback(DWORD error_code, DWORD bytes_transferred, LPOVERLAPPED overlapped) {
-  reshade::log::message(reshade::log::level::info, "Live callback.");
+#if _DEBUG && LOG_VERBOSE
+  reshade::log::message(reshade::log::level::info, "Live editing callback");
+#endif
   // TODO: verify this is safe. Replacing shaders from another thread at a random time could break as we need to wait one frame or the pipeline binding could hang.
   LoadCustomShaders();
   // Trigger the watch again as the event is only triggered once
@@ -1655,7 +1682,9 @@ void ToggleLiveWatching() {
         return;
     }
 
+#if _DEBUG && LOG_VERBOSE
     reshade::log::message(reshade::log::level::info, "Watching live");
+#endif
 
 #if 0
     // Clean up any previous handle for safety
@@ -1677,12 +1706,14 @@ void ToggleLiveWatching() {
       reshade::log::message(reshade::log::level::error, "ToggleLiveWatching(targetHandle: invalid)");
       return;
     }
+#if _DEBUG && LOG_VERBOSE
     {
       std::stringstream s;
       s << "ToggleLiveWatching(targetHandle: ";
       s << reinterpret_cast<void*>(m_target_dir_handle);
       reshade::log::message(reshade::log::level::info, s.str().c_str());
     }
+#endif
 
     memset(&watch_buffer, 0, sizeof(watch_buffer));
     overlapped = {0};
@@ -1705,7 +1736,9 @@ void ToggleLiveWatching() {
         ReadDirectoryNotifyExtendedInformation);
 
     if (success == S_OK) {
+#if _DEBUG && LOG_VERBOSE
       reshade::log::message(reshade::log::level::info, "ToggleLiveWatching(ReadDirectoryChangesExW: Listening.)");
+#endif
     } else {
       std::stringstream s;
       s << "ToggleLiveWatching(ReadDirectoryChangesExW: Failed: ";
@@ -1716,7 +1749,9 @@ void ToggleLiveWatching() {
 
     LoadCustomShaders();
   } else {
+#if _DEBUG && LOG_VERBOSE
     reshade::log::message(reshade::log::level::info, "Cancelling live");
+#endif
     CancelIoEx(m_target_dir_handle, &overlapped);
   }
 }
@@ -2080,7 +2115,7 @@ void OnInitPipeline(
             found_custom_shader_file |= custom_shaders_cache.contains(shader_hash);
           }
 
-#if DEVELOPMENT
+#if _DEBUG && LOG_VERBOSE
           // Metrics
           {
             std::stringstream s2;
@@ -4452,8 +4487,10 @@ bool OnCopyTextureRegion(reshade::api::command_list* cmd_list, reshade::api::res
 void OnReshadePresent(reshade::api::effect_runtime* runtime) {
 #if DEVELOPMENT
   if (trace_running) {
+#if _DEBUG && LOG_VERBOSE
     reshade::log::message(reshade::log::level::info, "present()");
     reshade::log::message(reshade::log::level::info, "--- End Frame ---");
+#endif
     trace_count = trace_pipeline_handles.size();
     trace_running = false;
   } else if (trace_scheduled) {
@@ -4464,7 +4501,9 @@ void OnReshadePresent(reshade::api::effect_runtime* runtime) {
         trace_pipeline_handles.clear();
     }
     trace_running = true;
+#if _DEBUG && LOG_VERBOSE
     reshade::log::message(reshade::log::level::info, "--- Frame ---");
+#endif
   }
 #endif // DEVELOPMENT
 
