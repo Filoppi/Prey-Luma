@@ -30,7 +30,7 @@ cbuffer CBPerViewGlobal : register(b13)
   float4 CV_CameraFrontVector : packoffset(c30);
   float4 CV_CameraUpVector : packoffset(c31);
   // xy is current viewport resolution, so before and during uspcaling/downscaling to the final/output resolution, it's the rendering resolution, and after it's the output resolution.
-  // zw is the half of the inverse of the final/output resolution (no rendering resolution scaling acknowledged by it).
+  // zw is the half of the inverse of the final/output resolution (no rendering resolution scaling acknowledged by it) (half texel size).
   // Note that this is not always the actual "swapchain" resolution, in most passes it's adapted to actually represent the render target texture resolution.
   float4 CV_ScreenSize : packoffset(c32);
   // "CV_ScreenSize.xy" divided by "CV_HPosScale.xy" gives the final output resolution (so this has values < 1 for a rendering resolution lower than the output one) (basically it's the rendering res scale). zw are the values from the previous frame.

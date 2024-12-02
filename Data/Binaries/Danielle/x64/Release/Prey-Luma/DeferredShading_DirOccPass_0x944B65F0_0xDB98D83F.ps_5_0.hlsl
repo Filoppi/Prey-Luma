@@ -129,7 +129,7 @@ float4 GTAO(float4 WPos, float4 inBaseTC, out float edges)
 #endif
 	consts.DenoiseBlurBeta = (denoisePasses==0) ? 1e4f : 1.2f; 
 	consts.NoiseIndex = (denoisePasses>0) ? (frameCounter % 64) : 0;
-	consts.FinalValuePower = 0.4125 / (stepsPerSlice ? sqrt(stepsPerSlice / 3.0) : 1); // Higher values make AO darker. We modulate by "stepsPerSlice" to keep the intensity consistent.
+	consts.FinalValuePower = 0.4125 / (stepsPerSlice ? sqrt(stepsPerSlice / 3.0) : 1); // The most important value. Higher values make AO darker. We modulate by "stepsPerSlice" to keep the intensity consistent.
 	consts.DepthMIPSamplingOffset = XE_GTAO_DEFAULT_DEPTH_MIP_SAMPLING_OFFSET;
 	consts.ThinOccluderCompensation = XE_GTAO_DEFAULT_THIN_OCCLUDER_COMPENSATION; // XeGTAO default is zero (none). We found that to be fine for Prey too.
 	consts.SampleDistributionPower = XE_GTAO_DEFAULT_SAMPLE_DISTRIBUTION_POWER;
@@ -139,6 +139,7 @@ float4 GTAO(float4 WPos, float4 inBaseTC, out float edges)
 	consts.EffectRadius = 0.5f * CV_HPosScale.y; // Default copied from GTAO code
 #else // We found that using the game's native radius looks best and more in line with SSDO
 	consts.RadiusMultiplier = 1.0f;
+	// The second most important value. 
 	// Retrieve back the original radius given it was pre-multiplied by these factors ("r_ssdoRadius" cvar, defaulted to ~1.2).
 	// Note that SSDO also multiplied the radius by 0.15 for some bands.
 	float2 radius = (cbSSDO.ssdoParams.xy / float2(projectionMatrix[0][0], projectionMatrix[1][1])) * 2.0 * CV_NearFarClipDist.y;

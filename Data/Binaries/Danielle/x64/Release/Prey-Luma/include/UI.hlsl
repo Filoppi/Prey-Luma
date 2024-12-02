@@ -72,7 +72,8 @@ float4 ConditionalLinearizeUI(float4 UIColor, bool PreMultipliedAlphaByAlpha = f
 		float3 UIColorLinearSpace = game_gamma_to_linear(UIColor.rgb);
 
 #if EMPYRICAL_UI_BLENDING_1
-		// This looks better on average in the inventory menu (the blends with the background)
+		// This looks better on average in the inventory menu (the blends with the background).
+		// Further lowering the value helps white text on darkish background to not have a darker edge around them, but makes the inventory menu looks worse.
 		float targetUIAlpha = safePow(UIColor.a, pow(DefaultGamma, 0.75));
 #else
 		float targetUIAlpha = safePow(UIColor.a, DefaultGamma); // Same as "gamma_to_linear(GCT_MIRROR)", we can't modulate alpha with sRGB encoding)

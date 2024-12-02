@@ -5,12 +5,12 @@ The second, by Pumbo, leverages the ReShade Addon system to add or modify render
 It'd be possible to achieve the same without ReShade and game specific code hooks, by only using generic DirectX hooks, but it'd be exponentially more complicated (CryEngine re-uses render target textures for different purposes, so we couldn't easily tell which ones to upgrade, and ReShade offers settings serialization and a bunch of other features).
 The quality of the code is not that great (the code itself should be good, but it's almost all dumped in a single file), the focus has been on getting things to work.
 
-# Development requirements:
+# Development requirements
 Windows 11 (Windows 10 probably works fine too)
 Visual Studio 2022 (older versions might work too)
 Windows 11 SDK 10.0.26100.0 (older versions work, but don't support HDR as good)
 
-# Instructions:
+# Instructions
 - Run "setup.ps1" to add the game installation environment variables.
 - Set "VCPKG_ROOT" environment variable to your vcpkg installation folder if it wasn't already (download it from here "https://github.com/microsoft/vcpkg", the version integrated with Visual Studio doesn't seem to be as reliable).
 - Open "Prey-Luma.sln" and build it. Note that "Edit and Continue" build settings (\ZI) should not be used as they break the code patches generation.
