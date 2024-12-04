@@ -5,6 +5,17 @@
 
 namespace
 {
+    struct uint2
+    {
+        UINT x;
+        UINT y;
+
+        friend bool operator==(const uint2& lhs, const uint2& rhs)
+        {
+            return lhs.x == rhs.x && lhs.y == rhs.y;
+        }
+    };
+
     struct float2
     {
         float x;

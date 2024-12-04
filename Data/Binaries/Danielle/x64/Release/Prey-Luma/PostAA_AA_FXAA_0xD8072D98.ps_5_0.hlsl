@@ -3,6 +3,7 @@
 #define _RT_SAMPLE4 1
 
 // PostAA_PS
+// LUMA FT: FXAA is mostly deprecated through Luma, given that it's ugly and the implementation is broken in the game (objects highlights disappear)
 void main(
   float4 inWPos : SV_Position0,
   float2 inBaseTC : TEXCOORD0,

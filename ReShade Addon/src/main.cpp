@@ -389,8 +389,8 @@ constexpr bool prevent_shader_cache_loading = false;
 bool prevent_shader_cache_saving = false;
 
 //TODOFT3: clean up
-constexpr bool prey_taa_jittered = false; //TODOFT4: test with "FORCE_MOTION_VECTORS_JITTERED" and enable? Right now this looks bad because Prey's native TAA isn't made for it (seemengly)
-int fix_prev_matrix_mode = 1; // NOTE: referenced in shader's code
+constexpr bool force_motion_vectors_jittered = true;
+int fix_prev_matrix_mode = 1; // NOTE: referenced in shader's code //TODOFT: delete!
 int matrix_calculation_mode = 0;
 int matrix_calculation_mode_2 = 1;
 float texture_mip_lod_bias_offset = -1.0f;
@@ -503,7 +503,7 @@ std::vector<ShaderDefineData> shader_defines_data = {
   {"SSAO_QUALITY", '1', false, false, "0 - Vanilla\n1 - High\n2 - Extreme (slow)"},
   {"BLOOM_QUALITY", '1', false, false, "0 - Vanilla\n1 - High"},
 #if DEVELOPMENT || TEST
-  {"FORCE_MOTION_VECTORS_JITTERED", prey_taa_jittered ? '1' : '0', false, false},
+  {"FORCE_MOTION_VECTORS_JITTERED", force_motion_vectors_jittered ? '0' : '0', false, false, "Forces Motion Vectors generation to include the jitters from the previous frame too, as DLSS needs\nEnabling this forces the native TAA to work as when we have DLSS enabled, making it look a little bit better (less shimmery)"},
 #endif
   {"ENABLE_POST_PROCESS", '1', false, false, "Allows you to disable all post processing (at once)"},
   {"ENABLE_CAMERA_MOTION_BLUR", '0', false, false, "Camera Motion Blur can look pretty botched in Prey, and can mess with DLSS/TAA, it's turned off by default in Luma"},
@@ -593,6 +593,7 @@ constexpr uint32_t GAMMA_CORRECTION_TYPE_HASH = char_ptr_crc32("GAMMA_CORRECTION
 constexpr uint32_t AUTO_HDR_VIDEOS_HASH = char_ptr_crc32("AUTO_HDR_VIDEOS");
 constexpr uint32_t SSAO_TYPE_HASH = char_ptr_crc32("SSAO_TYPE");
 constexpr uint32_t DLSS_RELATIVE_PRE_EXPOSURE_HASH = char_ptr_crc32("DLSS_RELATIVE_PRE_EXPOSURE"); // "DEVELOPMENT" only
+constexpr uint32_t FORCE_MOTION_VECTORS_JITTERED_HASH = char_ptr_crc32("FORCE_MOTION_VECTORS_JITTERED"); // "DEVELOPMENT" only
 
 // Resources:
 
@@ -2503,7 +2504,7 @@ void OnPresent(
     }
 
   // Update all variables as this is on the only thing guaranteed to run once per frame:
-  ASSERT_ONCE(!has_drawn_main_post_processing || found_per_view_globals); // We failed to find and assign global cbuffer 13 this frame //TODOFT4: this can trigger once when enabling/disabling dynamic resolution. Just ignore it for 1 frame or find a hook for it? (there's another identical TODO somewhere). It probably fails the threshold checks we have for the cbuffer 13 values (fixed?)
+  ASSERT_ONCE(!has_drawn_main_post_processing || found_per_view_globals); // We failed to find and assign global cbuffer 13 this frame (could it be that the scene is empty if this triggers?)
   ASSERT_ONCE(has_drawn_composed_gbuffers == has_drawn_main_post_processing); // Why is g-buffer composition drawing but post processing isn't?
   //TODOFT3: replace some instances of "has_drawn_main_post_processing" and "has_drawn_main_post_processing_previous" with "has_drawn_composed_gbuffers" (and its previous state)?
   if (has_drawn_main_post_processing) {
@@ -2622,6 +2623,7 @@ void OnPresent(
 //TODOFT5: merge all the shader permutations that use the same code (and then move shader binaries to bin folder?)
 //TODOFT5: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project?
 //TODOFT (TODO): make sure DLSS lets scRGB colors pass through...
+//TODOFT@ do one last test on all jitters with DLSS to see if motion vectors are right in motion with DRS (it seems to be?)
 //TODOFT: add a new RT to draw UI on top (pre-multiplied alpha everywhere), so we could compose it smartly, possibly in the final linearization pass.
 
 // Return false to prevent the original draw call from running (e.g. if you replaced it or just want to skip it)
@@ -2835,20 +2837,37 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
       }
       if (!has_drawn_ssao && original_shader_hashes.Contains(shader_hashes_DirOccPass)) {
             if (cloned_pipeline_count != 0 && GetShaderDefineCompiledNumericalValue(SSAO_TYPE_HASH) >= 1) { // If using GTAO
-#if 0
-                com_ptr<ID3D11RenderTargetView> render_target_view;
-                native_device_context->OMGetRenderTargets(1, &render_target_view, nullptr);
-                com_ptr<ID3D11Resource> render_target_resource;
-                render_target_view->GetResource(&render_target_resource);
-                com_ptr<ID3D11Texture2D> render_target_texture_2d;
-                render_target_resource->QueryInterface(&render_target_texture_2d);
-                D3D11_TEXTURE2D_DESC texture_desc;
-                render_target_texture_2d->GetDesc(&texture_desc);
-#else
-                //TODOFT: make sure the output res always matches! (branch above)
-                if (!gtao_edges_texture.get() || gtao_edges_texture_width != output_resolution.x || gtao_edges_texture_height != output_resolution.y) {
-                    gtao_edges_texture_width = output_resolution.x;
-                    gtao_edges_texture_height = output_resolution.y;
+                uint2 gtao_edges_target_resolution = { (UINT)output_resolution.x, (UINT)output_resolution.y };
+
+                ID3D11RenderTargetView* rtvs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
+                ID3D11DepthStencilView* dsvs;
+                native_device_context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &rtvs[0], &dsvs);
+
+// This is an optional extra check we can make to properly determine the resolution of our edges texture.
+// Unless "r_ssdoHalfRes" has a value of 3, then the RT would always have the same resolution as the final swapchain output.
+// Unfortunately this texture is sampled with a bilinear sampler by 0-1 UV coordinates, and also because DX11 doesn't allow two render targets to have a different resolution,
+// we'd either need to make this a UAV RW texture or to make sure it matches the original RT in resolution.
+// Given that that cvar isn't exposed to the official game settings and doesn't seem to be enableable even through config, this is disabled to save performance.
+#if DEVELOPMENT
+                if (rtvs[0]) {
+                    com_ptr<ID3D11Resource> render_target_resource;
+                    rtvs[0]->GetResource(&render_target_resource);
+                    if (render_target_resource) {
+                        com_ptr<ID3D11Texture2D> render_target_texture_2d;
+                        render_target_resource->QueryInterface(&render_target_texture_2d);
+                        if (render_target_texture_2d) {
+                            D3D11_TEXTURE2D_DESC render_target_texture_2d_desc;
+                            render_target_texture_2d->GetDesc(&render_target_texture_2d_desc);
+                            ASSERT_ONCE(gtao_edges_target_resolution.x == render_target_texture_2d_desc.Width && gtao_edges_target_resolution.y == render_target_texture_2d_desc.Height);
+                            gtao_edges_target_resolution.x = render_target_texture_2d_desc.Width;
+                            gtao_edges_target_resolution.y = render_target_texture_2d_desc.Height;
+                        }
+                    }
+                }
+#endif
+                if (!gtao_edges_texture.get() || gtao_edges_texture_width != gtao_edges_target_resolution.x || gtao_edges_texture_height != gtao_edges_target_resolution.y) {
+                    gtao_edges_texture_width = gtao_edges_target_resolution.x;
+                    gtao_edges_texture_height = gtao_edges_target_resolution.y;
 
                     D3D11_TEXTURE2D_DESC texture_desc;
                     texture_desc.Width = gtao_edges_texture_width;
@@ -2886,13 +2905,9 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
                     hr = native_device->CreateShaderResourceView(gtao_edges_texture.get(), &srv_desc, &gtao_edges_srv);
                     assert(SUCCEEDED(hr));
                 }
-#endif
 
                 // Add a second render target (the depth edges) as it's needed by GTAO.
                 // We need to cache and restore all the RTs as the game uses a push and pop mechanism that tracks them closely, so any changes in state can break them.
-                ID3D11RenderTargetView* rtvs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
-                ID3D11DepthStencilView* dsvs;
-                native_device_context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &rtvs[0], &dsvs);
                 ID3D11RenderTargetView* rtv1 = rtvs[1];
                 rtvs[1] = gtao_edges_rtv.get();
                 native_device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &rtvs[0], dsvs);
@@ -3796,6 +3811,14 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
     auto current_projection_matrix = cb_per_view_global.CV_PrevViewProjMatr;
     auto current_nearest_projection_matrix = cb_per_view_global.CV_PrevViewProjNearestMatr;
 
+    bool replace_prev_projection_matrix = cloned_pipeline_count != 0 && (dlss_sr
+#if DEVELOPMENT || TEST
+    || GetShaderDefineCompiledNumericalValue(FORCE_MOTION_VECTORS_JITTERED_HASH) >= 1
+#else
+    || force_motion_vectors_jittered
+#endif
+    );
+
     // Fix up the "previous view projection matrices" as they had wrong data in Prey,
     // first of all, their name was "wrong", because it was meant to have the value of the previous projection matrix,
     // not the camera/view projection matrix, and second, it was actually always based on the current one,
@@ -3804,69 +3827,42 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
     // If in the previous frame we didn't render, we don't replace the matrix with the one from the last frame that was rendered,
     // because there's no guaranteed that it would match.
     // If AA is disabled, or if the current form of AA doesn't used jittered rendering, this doesn't really make a difference (but it's still better because it creates motion vectors based on the previous view matrix).
-    if ((fix_prev_matrix_mode == 1 || fix_prev_matrix_mode == 2) && (prey_taa_jittered || dlss_sr) && !has_drawn_tonemapping && has_drawn_main_post_processing_previous) {
+    if ((fix_prev_matrix_mode >= 1 && fix_prev_matrix_mode <= 4) && replace_prev_projection_matrix && !has_drawn_tonemapping && has_drawn_main_post_processing_previous) {
         //TODOFT4: investigate whether it's actually good that we are using the previous projection matrix FOV,
         //or should we use the current projection matrix with the previous frame's jitters?
         //Test this by seeing if zooming in and out of with the camera in game causes ghosting.
         //UPDATE: we've fixed it in shaders, like this "velocity /= LumaData.RenderResolutionScale"
-        //TODOFT: should we do stuff like this if we have no shaders loaded?
         cb_per_view_global.CV_PrevViewProjMatr = previous_projection_matrix;
         cb_per_view_global.CV_PrevViewProjNearestMatr = previous_nearest_projection_matrix;
-        if (fix_prev_matrix_mode == 2) {
+        if (fix_prev_matrix_mode >= 2) {
             cb_per_view_global.CV_PrevViewProjMatr.m02 *= 0.5;
             cb_per_view_global.CV_PrevViewProjMatr.m12 *= 0.5;
             cb_per_view_global.CV_PrevViewProjNearestMatr.m02 *= 0.5;
             cb_per_view_global.CV_PrevViewProjNearestMatr.m12 *= 0.5;
         }
+#if DEVELOPMENT
+        // We've already fixes this in shaders (in better ways?)
+        if (fix_prev_matrix_mode == 3) {
+            cb_per_view_global.CV_PrevViewProjMatr.m02 *= cb_per_view_global.CV_HPosScale.x;
+            cb_per_view_global.CV_PrevViewProjMatr.m12 *= cb_per_view_global.CV_HPosScale.y;
+            cb_per_view_global.CV_PrevViewProjNearestMatr.m02 *= cb_per_view_global.CV_HPosScale.x;
+            cb_per_view_global.CV_PrevViewProjNearestMatr.m12 *= cb_per_view_global.CV_HPosScale.y;
+        }
+        else if (fix_prev_matrix_mode == 4) {
+            cb_per_view_global.CV_PrevViewProjMatr.m02 /= cb_per_view_global.CV_HPosScale.x;
+            cb_per_view_global.CV_PrevViewProjMatr.m12 /= cb_per_view_global.CV_HPosScale.y;
+            cb_per_view_global.CV_PrevViewProjNearestMatr.m02 /= cb_per_view_global.CV_HPosScale.x;
+            cb_per_view_global.CV_PrevViewProjNearestMatr.m12 /= cb_per_view_global.CV_HPosScale.y;
+        }
+#endif // DEVELOPMENT
     }
 #if DEVELOPMENT
-    else if (fix_prev_matrix_mode == 3 && (prey_taa_jittered || dlss_sr) && !has_drawn_tonemapping && has_drawn_main_post_processing_previous) {
+    else if (fix_prev_matrix_mode >= 5 && replace_prev_projection_matrix && !has_drawn_tonemapping && has_drawn_main_post_processing_previous) {
         // Use old jitters with new view matrix (this might match how they calculate MVs based on this matrix)
         cb_per_view_global.CV_PrevViewProjMatr.m02 = previous_projection_matrix.m02;
         cb_per_view_global.CV_PrevViewProjMatr.m12 = previous_projection_matrix.m12;
         cb_per_view_global.CV_PrevViewProjNearestMatr.m02 = previous_nearest_projection_matrix.m02;
         cb_per_view_global.CV_PrevViewProjNearestMatr.m12 = previous_nearest_projection_matrix.m12;
-    }
-    else if (fix_prev_matrix_mode == 4 && (prey_taa_jittered || dlss_sr) && !has_drawn_tonemapping && has_drawn_main_post_processing_previous) {
-        // Remove jitters (test)
-        cb_per_view_global.CV_PrevViewProjMatr.m02 = 0.f;
-        cb_per_view_global.CV_PrevViewProjMatr.m12 = 0.f;
-        cb_per_view_global.CV_PrevViewProjNearestMatr.m02 = 0.f;
-        cb_per_view_global.CV_PrevViewProjNearestMatr.m12 = 0.f;
-    }
-    else if (fix_prev_matrix_mode == 5 && (prey_taa_jittered || dlss_sr) && !has_drawn_tonemapping && has_drawn_main_post_processing_previous) {
-        // Flip jitters (test)
-        cb_per_view_global.CV_PrevViewProjMatr.m02 = -cb_per_view_global.CV_PrevViewProjMatr.m02;
-        cb_per_view_global.CV_PrevViewProjMatr.m12 = -cb_per_view_global.CV_PrevViewProjMatr.m12;
-        cb_per_view_global.CV_PrevViewProjNearestMatr.m02 = -cb_per_view_global.CV_PrevViewProjNearestMatr.m02;
-        cb_per_view_global.CV_PrevViewProjNearestMatr.m12 = -cb_per_view_global.CV_PrevViewProjNearestMatr.m12;
-    }
-    else if (fix_prev_matrix_mode == 6 && (prey_taa_jittered || dlss_sr) && !has_drawn_tonemapping && has_drawn_main_post_processing_previous) {
-        // Remove half of the new jitters
-        cb_per_view_global.CV_PrevViewProjMatr = previous_projection_matrix;
-        cb_per_view_global.CV_PrevViewProjNearestMatr = previous_nearest_projection_matrix;
-        cb_per_view_global.CV_PrevViewProjMatr.m02 -= current_projection_matrix.m02 * 0.5;
-        cb_per_view_global.CV_PrevViewProjMatr.m12 -= current_projection_matrix.m12 * 0.5;
-        cb_per_view_global.CV_PrevViewProjNearestMatr.m02 -= current_nearest_projection_matrix.m02 * 0.5;
-        cb_per_view_global.CV_PrevViewProjNearestMatr.m12 -= current_nearest_projection_matrix.m12 * 0.5;
-    }
-    else if (fix_prev_matrix_mode == 7 && (prey_taa_jittered || dlss_sr) && !has_drawn_tonemapping && has_drawn_main_post_processing_previous) {
-        // Remove new jitters based on (current???) render res (random, but might work...), because the problem with dynamic objects MVs only seem to be when we are using DRS
-        cb_per_view_global.CV_PrevViewProjMatr = previous_projection_matrix;
-        cb_per_view_global.CV_PrevViewProjNearestMatr = previous_nearest_projection_matrix;
-        cb_per_view_global.CV_PrevViewProjMatr.m02 -= current_projection_matrix.m02 * (1.0 - cb_per_view_global.CV_HPosScale.x);
-        cb_per_view_global.CV_PrevViewProjMatr.m12 -= current_projection_matrix.m12 * (1.0 - cb_per_view_global.CV_HPosScale.y);
-        cb_per_view_global.CV_PrevViewProjNearestMatr.m02 -= current_nearest_projection_matrix.m02 * (1.0 - cb_per_view_global.CV_HPosScale.x);
-        cb_per_view_global.CV_PrevViewProjNearestMatr.m12 -= current_nearest_projection_matrix.m12 * (1.0 - cb_per_view_global.CV_HPosScale.y);
-    }
-    else if (fix_prev_matrix_mode == 8 && (prey_taa_jittered || dlss_sr) && !has_drawn_tonemapping && has_drawn_main_post_processing_previous) {
-        // ...
-        cb_per_view_global.CV_PrevViewProjMatr = previous_projection_matrix;
-        cb_per_view_global.CV_PrevViewProjNearestMatr = previous_nearest_projection_matrix;
-        cb_per_view_global.CV_PrevViewProjMatr.m02 *= cb_per_view_global.CV_HPosScale.x;
-        cb_per_view_global.CV_PrevViewProjMatr.m12 *= cb_per_view_global.CV_HPosScale.y;
-        cb_per_view_global.CV_PrevViewProjNearestMatr.m02 *= cb_per_view_global.CV_HPosScale.x;
-        cb_per_view_global.CV_PrevViewProjNearestMatr.m12 *= cb_per_view_global.CV_HPosScale.y;
     }
 
     // Just for test.
@@ -3883,7 +3879,7 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
 #endif // DEVELOPMENT
 
     // Fix up the rendering scale for all passes after DLSS SR, as we upscaled before the game expected,
-    // there's only post processing passes after it anyway (and lens optics shaders don't really read cbuffer 13, but still, some of their passes use custom resolutions).
+    // there's only post processing passes after it anyway (and lens optics shaders don't really read cbuffer 13 (we made sure of that), but still, some of their passes use custom resolutions).
     if (has_drawn_dlss_sr && prey_drs_active && !has_drawn_upscaling) {
         cb_per_view_global.CV_ScreenSize.x = cb_output_resolution_x;
         cb_per_view_global.CV_ScreenSize.y = cb_output_resolution_y;
@@ -3901,239 +3897,236 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
         cb_per_view_global.CV_HPosClamp.w = cb_per_view_global.CV_HPosClamp.y;
     }
 
-    // Update our cached data with information from the cbuffer
-    {
-        // After vanilla tonemapping (as soon as AA starts),
-        // camera jitters are removed from the cbuffer projection matrices, and the render resolution is also set to 100% (after the upscaling pass),
-        // so we want to ignore these cases. We stop at the gbuffer compositions draw, because that's the last know cbuffer 13 to have the perfect values we are looking for (that shader is always run, so it's reliable)!
-        if (output_resolution_matches && (/*!found_per_view_globals ||*/ (!has_drawn_composed_gbuffers && !has_drawn_tonemapping && !has_drawn_main_post_processing)) /*&& !prey_drs_active*/) {
+    // Update our cached data with information from the cbuffer.
+    // After vanilla tonemapping (as soon as AA starts),
+    // camera jitters are removed from the cbuffer projection matrices, and the render resolution is also set to 100% (after the upscaling pass),
+    // so we want to ignore these cases. We stop at the gbuffer compositions draw, because that's the last know cbuffer 13 to have the perfect values we are looking for (that shader is always run, so it's reliable)!
+    if (output_resolution_matches && (/*!found_per_view_globals ||*/ (!has_drawn_composed_gbuffers && !has_drawn_tonemapping && !has_drawn_main_post_processing)) /*&& !prey_drs_active*/) {
 #if DEVELOPMENT
-            static float2 local_previous_render_resolution;
-            if (!found_per_view_globals) {
-                local_previous_render_resolution.x = cb_per_view_global.CV_ScreenSize.x;
-                local_previous_render_resolution.y = cb_per_view_global.CV_ScreenSize.y;
-            }
+        static float2 local_previous_render_resolution;
+        if (!found_per_view_globals) {
+            local_previous_render_resolution.x = cb_per_view_global.CV_ScreenSize.x;
+            local_previous_render_resolution.y = cb_per_view_global.CV_ScreenSize.y;
+        }
 #endif // DEVELOPMENT
 
-            render_resolution.x = cb_per_view_global.CV_ScreenSize.x;
-            render_resolution.y = cb_per_view_global.CV_ScreenSize.y;
-            output_resolution.x = cb_output_resolution_x; // Round here already as it would always meant to be integer
-            output_resolution.y = cb_output_resolution_y;
+        render_resolution.x = cb_per_view_global.CV_ScreenSize.x;
+        render_resolution.y = cb_per_view_global.CV_ScreenSize.y;
+        output_resolution.x = cb_output_resolution_x; // Round here already as it would always meant to be integer
+        output_resolution.y = cb_output_resolution_y;
 
-            auto previous_prey_drs_active = prey_drs_active;
-            prey_drs_active = std::abs(render_resolution.x - output_resolution.x) >= 0.5f || std::abs(render_resolution.y - output_resolution.y) >= 0.5f;
-            // Make sure this doesn't change within a frame (once we found DRS in a frame, we should never "lose" it again for that frame.
-            // Ignore this when we have no shaders loaded as it would always break due to the "has_drawn_tonemapping" check failing.
-            ASSERT_ONCE(cloned_pipeline_count == 0 || !found_per_view_globals || !previous_prey_drs_active || (previous_prey_drs_active == prey_drs_active));
+        auto previous_prey_drs_active = prey_drs_active;
+        prey_drs_active = std::abs(render_resolution.x - output_resolution.x) >= 0.5f || std::abs(render_resolution.y - output_resolution.y) >= 0.5f;
+        // Make sure this doesn't change within a frame (once we found DRS in a frame, we should never "lose" it again for that frame.
+        // Ignore this when we have no shaders loaded as it would always break due to the "has_drawn_tonemapping" check failing.
+        ASSERT_ONCE(cloned_pipeline_count == 0 || !found_per_view_globals || !previous_prey_drs_active || (previous_prey_drs_active == prey_drs_active));
 
 #if DEVELOPMENT
-            // Make sure that our rendering resolution doesn't change randomly within the pipeline (it probably will!)
-            assert(!found_per_view_globals || !prey_drs_detected || (AlmostEqual(render_resolution.x, local_previous_render_resolution.x, 0.25f) && AlmostEqual(render_resolution.y, local_previous_render_resolution.y, 0.25f)));
+        // Make sure that our rendering resolution doesn't change randomly within the pipeline (it probably will!)
+        assert(!found_per_view_globals || !prey_drs_detected || (AlmostEqual(render_resolution.x, local_previous_render_resolution.x, 0.25f) && AlmostEqual(render_resolution.y, local_previous_render_resolution.y, 0.25f)));
 #endif // DEVELOPMENT
 
-            // Once we detect the user enabled DRS, we can't ever know it's been disabled because the game only occasionally drops to lower rendering resolutions, so we couldn't know if it was ever disabled
-            if (prey_drs_active) {
-                prey_drs_detected = true;
-                // Lower the DLSS quality mode (which might introduce a stutter, or a slight blurring of the image as it resets the history),
-                // but this will make DLSS not use DLAA and instead fall back on a quality mode that allows for a dynamic range of resolutions.
-                // This isn't the exact rend resolution DLSS will be forced to use, but the center of a range it's gonna expect.
-                // See CryEngine "osm_fbMinScale" cvar, it should ideally be set to the same value.
-                dlss_sr_render_resolution = 1.f / 1.5f;
-            }
+        // Once we detect the user enabled DRS, we can't ever know it's been disabled because the game only occasionally drops to lower rendering resolutions, so we couldn't know if it was ever disabled
+        if (prey_drs_active) {
+            prey_drs_detected = true;
+            // Lower the DLSS quality mode (which might introduce a stutter, or a slight blurring of the image as it resets the history),
+            // but this will make DLSS not use DLAA and instead fall back on a quality mode that allows for a dynamic range of resolutions.
+            // This isn't the exact rend resolution DLSS will be forced to use, but the center of a range it's gonna expect.
+            // See CryEngine "osm_fbMinScale" cvar, it should ideally be set to the same value, but this value is fine if above it, given it's the target "average" dynamic resolution.
+            dlss_sr_render_resolution = 1.f / 1.5f;
+        }
 
-            // NOTE: we could just save the first one we found, it should always be jittered and "correct".
-            projection_matrix = current_projection_matrix;
-            nearest_projection_matrix = current_nearest_projection_matrix;
+        // NOTE: we could just save the first one we found, it should always be jittered and "correct".
+        projection_matrix = current_projection_matrix;
+        nearest_projection_matrix = current_nearest_projection_matrix;
 
-            const auto projection_jitters_copy = projection_jitters;
+        const auto projection_jitters_copy = projection_jitters;
 
-            // These are called "m_vProjMatrixSubPixoffset" in CryEngine.
-            // The matrix is transposed so we flip the matrix x and y indices.
-            projection_jitters.x = current_projection_matrix(0, 2);
-            projection_jitters.y = current_projection_matrix(1, 2);
+        // These are called "m_vProjMatrixSubPixoffset" in CryEngine.
+        // The matrix is transposed so we flip the matrix x and y indices.
+        projection_jitters.x = current_projection_matrix(0, 2);
+        projection_jitters.y = current_projection_matrix(1, 2);
 
 #if DEVELOPMENT
-            ASSERT_ONCE(disable_taa_jitters || (projection_jitters_copy.x == 0 && projection_jitters_copy.y == 0) || (projection_jitters.x != 0 || projection_jitters.y != 0)); // Once we found jitters, we should never cache matrices that don't have jitters anymore
+        ASSERT_ONCE(disable_taa_jitters || (projection_jitters_copy.x == 0 && projection_jitters_copy.y == 0) || (projection_jitters.x != 0 || projection_jitters.y != 0)); // Once we found jitters, we should never cache matrices that don't have jitters anymore
 #endif
 
-            bool prey_taa_enabled_copy = prey_taa_enabled;
-            // This is a reliable check to tell whether TAA is enabled. Jitters are "never" zero if they are enabled:
-            // they can be if we use the "srand" method, but it would happen one in a billion years;
-            // they could also be zero with Halton if the frame index was reset to zero (it is every x frames), but that happens very rarely, and for one frame only.
-            prey_taa_enabled = (std::abs(projection_jitters.x * render_resolution.x) >= 0.00075) || (std::abs(projection_jitters.y * render_resolution.y) >= 0.00075); //TODOFT: make calculations more accurate (the threshold)
+        bool prey_taa_enabled_copy = prey_taa_enabled;
+        // This is a reliable check to tell whether TAA is enabled. Jitters are "never" zero if they are enabled:
+        // they can be if we use the "srand" method, but it would happen one in a billion years;
+        // they could also be zero with Halton if the frame index was reset to zero (it is every x frames), but that happens very rarely, and for one frame only.
+        prey_taa_enabled = (std::abs(projection_jitters.x * render_resolution.x) >= 0.00075) || (std::abs(projection_jitters.y * render_resolution.y) >= 0.00075); //TODOFT: make calculations more accurate (the threshold)
 #if DEVELOPMENT
-            prey_taa_enabled |= disable_taa_jitters;
+        prey_taa_enabled |= disable_taa_jitters;
 #endif // DEVELOPMENT
-            // Make sure that once we detect that TAA was active within a frame, then it should never be detected as off in the same frame (it would mean we are reading a bad cbuffer 13 that we should have discarded).
-            // Ignore this when we have no shaders loaded as it would always break due to the "has_drawn_tonemapping" check failing.
-            ASSERT_ONCE(cloned_pipeline_count == 0 || !found_per_view_globals || !prey_taa_enabled_copy || (prey_taa_enabled_copy == prey_taa_enabled));
-            if (prey_taa_enabled_copy != prey_taa_enabled && has_drawn_main_post_processing_previous) { // TAA changed
-                // Detect if TAA was ever detected as on/off/on or off/on/off over 3 frames, because if that was so, our jitter "length" detection method isn't solid enough and we should do more (or add more tolernace to it),
-                // this might even happen every x hours once the randomization triggers specific enough values, though all TAA modes have a pretty short cycle with fixed jitters,
-                // so it should either happen quickly or never.
-                bool middle_value_different = (prey_taa_enabled == previous_prey_taa_enabled[0]) != (prey_taa_enabled == previous_prey_taa_enabled[1]);
-                ASSERT_ONCE(!middle_value_different);
-            }
-            bool drew_dlss = cb_luma_frame_settings.DLSS;
-            prey_taa_detected = prey_taa_enabled || previous_prey_taa_enabled[0]; // This one has a two frames tolerance. We let it persist even if the game stopped drawing the 3D scene.
-            cb_luma_frame_settings.DLSS = (dlss_sr && prey_taa_detected) ? 1 : 0; // No need for "s_mutex_reshade" here, given that they are generally only also changed by the user manually changing the settings in ImGUI, which runs at the very end of the frame
-            if (cb_luma_frame_settings.DLSS && !drew_dlss) {
-                // Reset DLSS history when we toggle DLSS on and off manually, or when the user in the game changes the AA mode,
-                // otherwise the history from the last time DLSS was active will be kept (DLSS doesn't know time passes since it was last used).
-                // We could also clear DLSS resources here when we know it's unused for a while, but it would possibly lead to stutters.
-                force_reset_dlss = true;
-            }
+        // Make sure that once we detect that TAA was active within a frame, then it should never be detected as off in the same frame (it would mean we are reading a bad cbuffer 13 that we should have discarded).
+        // Ignore this when we have no shaders loaded as it would always break due to the "has_drawn_tonemapping" check failing.
+        ASSERT_ONCE(cloned_pipeline_count == 0 || !found_per_view_globals || !prey_taa_enabled_copy || (prey_taa_enabled_copy == prey_taa_enabled));
+        if (prey_taa_enabled_copy != prey_taa_enabled && has_drawn_main_post_processing_previous) { // TAA changed
+            // Detect if TAA was ever detected as on/off/on or off/on/off over 3 frames, because if that was so, our jitter "length" detection method isn't solid enough and we should do more (or add more tolernace to it),
+            // this might even happen every x hours once the randomization triggers specific enough values, though all TAA modes have a pretty short cycle with fixed jitters,
+            // so it should either happen quickly or never.
+            bool middle_value_different = (prey_taa_enabled == previous_prey_taa_enabled[0]) != (prey_taa_enabled == previous_prey_taa_enabled[1]);
+            ASSERT_ONCE(!middle_value_different);
+        }
+        bool drew_dlss = cb_luma_frame_settings.DLSS;
+        prey_taa_detected = prey_taa_enabled || previous_prey_taa_enabled[0]; // This one has a two frames tolerance. We let it persist even if the game stopped drawing the 3D scene.
+        cb_luma_frame_settings.DLSS = (dlss_sr && prey_taa_detected) ? 1 : 0; // No need for "s_mutex_reshade" here, given that they are generally only also changed by the user manually changing the settings in ImGUI, which runs at the very end of the frame
+        if (cb_luma_frame_settings.DLSS && !drew_dlss) {
+            // Reset DLSS history when we toggle DLSS on and off manually, or when the user in the game changes the AA mode,
+            // otherwise the history from the last time DLSS was active will be kept (DLSS doesn't know time passes since it was last used).
+            // We could also clear DLSS resources here when we know it's unused for a while, but it would possibly lead to stutters.
+            force_reset_dlss = true;
+        }
 
-            //TODOFT: note that by default the game has a lod bias of 0 on most samplers (it seems),
-            //but when enabling TAA (the "hidden" setting), some samplers go to -1, but while using SMAA 2TX, even if it includes TAA, that's not set (at least not the first time it's used, maybe they persist after first ever using TAA),
-            //so should we bias by -1 again by default when the game uses TAA? It remains to be seen how many samplers they change when enabling TAA, if it's most of them, then we should avoid re-biasing by -1
-            //by checking whether any SMAA edge AA shaders are running (the ones before TAA).
+        //TODOFT: note that by default the game has a lod bias of 0 on most samplers (it seems),
+        //but when enabling TAA (the "hidden" setting), some samplers go to -1, but while using SMAA 2TX, even if it includes TAA, that's not set (at least not the first time it's used, maybe they persist after first ever using TAA),
+        //so should we bias by -1 again by default when the game uses TAA? It remains to be seen how many samplers they change when enabling TAA, if it's most of them, then we should avoid re-biasing by -1
+        //by checking whether any SMAA edge AA shaders are running (the ones before TAA).
 #if DEVELOPMENT
-            if (!custom_texture_mip_lod_bias_offset)
+        if (!custom_texture_mip_lod_bias_offset)
 #endif
-            {
-                std::shared_lock shared_lock_samplers(s_mutex_samplers);
+        {
+            std::shared_lock shared_lock_samplers(s_mutex_samplers);
 
-                const auto prev_texture_mip_lod_bias_offset = texture_mip_lod_bias_offset;
-                // We do this even when DLSS is not on, to help with the game's native TAA and DRS implementations
-                if (dlss_sr && prey_taa_detected && cloned_pipeline_count != 0) {
-                    texture_mip_lod_bias_offset = std::log2(render_resolution.y / output_resolution.y) - 1.f; // This results in -1 at output res
-                }
-                else { //TODOFT3: does this actually look better if TAA is disabled?
-                    texture_mip_lod_bias_offset = prey_taa_detected ? -1.f : 0.f; // Reset to default value
-                }
-                const auto new_texture_mip_lod_bias_offset = texture_mip_lod_bias_offset;
+            const auto prev_texture_mip_lod_bias_offset = texture_mip_lod_bias_offset;
+            if (dlss_sr && prey_taa_detected && cloned_pipeline_count != 0) {
+                texture_mip_lod_bias_offset = std::log2(render_resolution.y / output_resolution.y) - 1.f; // This results in -1 at output res
+            }
+            else {
+                texture_mip_lod_bias_offset = prey_taa_detected ? -1.f : 0.f; // Reset to default value (it's determined by "r_AntialiasingTSAAMipBias" for TAA (doesn't apply to SMAA), which Prey defaults to 0 but Luma's configs set to -1)
+            }
+            const auto new_texture_mip_lod_bias_offset = texture_mip_lod_bias_offset;
 
-                bool texture_mip_lod_bias_offset_changed = prev_texture_mip_lod_bias_offset != new_texture_mip_lod_bias_offset;
-                //TODOFT: verify that this doesn't happen a billion times per frame with random resolutions that might be set by non primary render paths (e.g. shadow maps), if so, safely move this to compute once at the end of the frame (tested, it seems fine?)
-                // Re-create all samplers immediately here instead of doing it at the end of the frame.
-                // This allows us to avoid possible (but very unlikely) hitches that could happen if we re-created a new sampler for a new resolution later on when samplers descriptors are set.
-                // It also allows us to use the right samplers for this frame's resolution.
-                if (texture_mip_lod_bias_offset_changed) {
-                    for (auto& samplers_handle : custom_sampler_by_original_sampler) {
-                        if (samplers_handle.second.contains(new_texture_mip_lod_bias_offset)) continue; // Skip "resolutions" that already got their custom samplers created
-                        ID3D11SamplerState* native_sampler = reinterpret_cast<ID3D11SamplerState*>(samplers_handle.first);
-                        D3D11_SAMPLER_DESC native_desc;
-                        native_sampler->GetDesc(&native_desc);
-                        shared_lock_samplers.unlock(); // This is fine!
-                        {
-                            std::unique_lock unique_lock_samplers(s_mutex_samplers);
-                            samplers_handle.second[new_texture_mip_lod_bias_offset] = CreateCustomSampler(global_native_device, native_desc);
-                        }
-                        shared_lock_samplers.lock();
+            bool texture_mip_lod_bias_offset_changed = prev_texture_mip_lod_bias_offset != new_texture_mip_lod_bias_offset;
+            //TODOFT: verify that this doesn't happen a billion times per frame with random resolutions that might be set by non primary render paths (e.g. shadow maps), if so, safely move this to compute once at the end of the frame (tested, it seems fine?)
+            // Re-create all samplers immediately here instead of doing it at the end of the frame.
+            // This allows us to avoid possible (but very unlikely) hitches that could happen if we re-created a new sampler for a new resolution later on when samplers descriptors are set.
+            // It also allows us to use the right samplers for this frame's resolution.
+            if (texture_mip_lod_bias_offset_changed) {
+                for (auto& samplers_handle : custom_sampler_by_original_sampler) {
+                    if (samplers_handle.second.contains(new_texture_mip_lod_bias_offset)) continue; // Skip "resolutions" that already got their custom samplers created
+                    ID3D11SamplerState* native_sampler = reinterpret_cast<ID3D11SamplerState*>(samplers_handle.first);
+                    D3D11_SAMPLER_DESC native_desc;
+                    native_sampler->GetDesc(&native_desc);
+                    shared_lock_samplers.unlock(); // This is fine!
+                    {
+                        std::unique_lock unique_lock_samplers(s_mutex_samplers);
+                        samplers_handle.second[new_texture_mip_lod_bias_offset] = CreateCustomSampler(global_native_device, native_desc);
                     }
+                    shared_lock_samplers.lock();
                 }
             }
+        }
 
-            if (!has_drawn_main_post_processing_previous) {
-                previous_render_resolution = render_resolution;
-                previous_projection_jitters = projection_jitters;
+        if (!has_drawn_main_post_processing_previous) {
+            previous_render_resolution = render_resolution;
+            previous_projection_jitters = projection_jitters;
 
-                previous_projection_matrix = projection_matrix;
-                previous_nearest_projection_matrix = nearest_projection_matrix;
+            previous_projection_matrix = projection_matrix;
+            previous_nearest_projection_matrix = nearest_projection_matrix;
 
-                previous_prey_taa_enabled[0] = prey_taa_enabled;
-                previous_prey_taa_enabled[1] = prey_taa_enabled;
+            previous_prey_taa_enabled[0] = prey_taa_enabled;
+            previous_prey_taa_enabled[1] = prey_taa_enabled;
 
-                // Make sure that after a scene reset our resolution matches the swapchain one.
-                // This also helps us catch edge cases where the first time the game uses this cbuffer it's not for the actual scene but for a side render,
-                // like shadow projection maps, mirrors, etc etc.
-                //ASSERT_ONCE(output_resolution_matches); // NOTE: this can't happen anymore as we wouldn't get here in that case
-            }
+            // Make sure that after a scene reset our resolution matches the swapchain one.
+            // This also helps us catch edge cases where the first time the game uses this cbuffer it's not for the actual scene but for a side render,
+            // like shadow projection maps, mirrors, etc etc.
+            //ASSERT_ONCE(output_resolution_matches); // NOTE: this can't happen anymore as we wouldn't get here in that case
+        }
 
-            Matrix44_tpl<double> projection_matrix_native = current_projection_matrix.GetTransposed();
+        Matrix44_tpl<double> projection_matrix_native = current_projection_matrix.GetTransposed();
 
 #if DEVELOPMENT && 0
-            // We cast to double to caclulate in higher accuracy (given we don't have access to the origin projection matrix).
-            // "(A * B).Transpose()" is equal to "B.Transpose() * A.Transpose()".
-            Matrix44_tpl<double> projection_matrix_recalculated = (Matrix44_tpl<double>(cb_per_view_global.CV_ViewProjMatr) * Matrix44_tpl<double>(cb_per_view_global.CV_InvViewMatr)).GetTransposed();
+        // We cast to double to caclulate in higher accuracy (given we don't have access to the origin projection matrix).
+        // "(A * B).Transpose()" is equal to "B.Transpose() * A.Transpose()".
+        Matrix44_tpl<double> projection_matrix_recalculated = (Matrix44_tpl<double>(cb_per_view_global.CV_ViewProjMatr) * Matrix44_tpl<double>(cb_per_view_global.CV_InvViewMatr)).GetTransposed();
 
-            ASSERT_ONCE(mathMatrixAlmostEqual(projection_matrix_native, projection_matrix_recalculated, 0.001)); // NOTE: this happens, even if the results roughly seem identical (only 3 2 or so are different?)
-            ASSERT_ONCE(AlmostEqual(projection_matrix_native(0, 1), 0.0, 0.0001)
-                && AlmostEqual(projection_matrix_native(0, 2), 0.0, 0.0001)
-                && AlmostEqual(projection_matrix_native(0, 3), 0.0, 0.0001)
-                && AlmostEqual(projection_matrix_native(1, 0), 0.0, 0.0001)
-                && AlmostEqual(projection_matrix_native(1, 2), 0.0, 0.0001)
-                && AlmostEqual(projection_matrix_native(1, 3), 0.0, 0.0001)
-                && AlmostEqual(projection_matrix_native(3, 0), 0.0, 0.0001)
-                && AlmostEqual(projection_matrix_native(3, 1), 0.0, 0.0001)
-                && AlmostEqual(projection_matrix_native(3, 3), 0.0, 0.0001)
-            );
+        ASSERT_ONCE(mathMatrixAlmostEqual(projection_matrix_native, projection_matrix_recalculated, 0.001)); // NOTE: this happens, even if the results roughly seem identical (only 3 2 or so are different?)
+        ASSERT_ONCE(AlmostEqual(projection_matrix_native(0, 1), 0.0, 0.0001)
+            && AlmostEqual(projection_matrix_native(0, 2), 0.0, 0.0001)
+            && AlmostEqual(projection_matrix_native(0, 3), 0.0, 0.0001)
+            && AlmostEqual(projection_matrix_native(1, 0), 0.0, 0.0001)
+            && AlmostEqual(projection_matrix_native(1, 2), 0.0, 0.0001)
+            && AlmostEqual(projection_matrix_native(1, 3), 0.0, 0.0001)
+            && AlmostEqual(projection_matrix_native(3, 0), 0.0, 0.0001)
+            && AlmostEqual(projection_matrix_native(3, 1), 0.0, 0.0001)
+            && AlmostEqual(projection_matrix_native(3, 3), 0.0, 0.0001)
+        );
 
-            // Clean up imprecisions
-            projection_matrix_recalculated(0, 1) = 0;
-            projection_matrix_recalculated(0, 2) = 0;
-            projection_matrix_recalculated(0, 3) = 0;
-            projection_matrix_recalculated(1, 0) = 0;
-            projection_matrix_recalculated(1, 2) = 0;
-            projection_matrix_recalculated(1, 3) = 0;
-            projection_matrix_recalculated(3, 0) = 0;
-            projection_matrix_recalculated(3, 1) = 0;
-            projection_matrix_recalculated(3, 3) = 0;
+        // Clean up imprecisions
+        projection_matrix_recalculated(0, 1) = 0;
+        projection_matrix_recalculated(0, 2) = 0;
+        projection_matrix_recalculated(0, 3) = 0;
+        projection_matrix_recalculated(1, 0) = 0;
+        projection_matrix_recalculated(1, 2) = 0;
+        projection_matrix_recalculated(1, 3) = 0;
+        projection_matrix_recalculated(3, 0) = 0;
+        projection_matrix_recalculated(3, 1) = 0;
+        projection_matrix_recalculated(3, 3) = 0;
 #endif // DEVELOPMENT
 
-            //Matrix44_tpl<double> projection_matrix_prev = (Matrix44_tpl<double>(current_projection_matrix) * Matrix44_tpl<double>(cb_per_view_global.CV_InvViewMatr)).GetTransposed();
-            //Matrix44_tpl<double> projection_matrix_prev_real = (Matrix44_tpl<double>(cb_per_view_global_actual_previous.CV_ViewProjMatr) * Matrix44_tpl<double>(cb_per_view_global_actual_previous.CV_InvViewMatr)).GetTransposed();
-            //Matrix44_tpl<double> projection_matrix_prev_real_fake = (Matrix44_tpl<double>(current_projection_matrix) * Matrix44_tpl<double>(cb_per_view_global_actual_previous.CV_InvViewMatr)).GetTransposed();
+        //Matrix44_tpl<double> projection_matrix_prev = (Matrix44_tpl<double>(current_projection_matrix) * Matrix44_tpl<double>(cb_per_view_global.CV_InvViewMatr)).GetTransposed();
+        //Matrix44_tpl<double> projection_matrix_prev_real = (Matrix44_tpl<double>(cb_per_view_global_actual_previous.CV_ViewProjMatr) * Matrix44_tpl<double>(cb_per_view_global_actual_previous.CV_InvViewMatr)).GetTransposed();
+        //Matrix44_tpl<double> projection_matrix_prev_real_fake = (Matrix44_tpl<double>(current_projection_matrix) * Matrix44_tpl<double>(cb_per_view_global_actual_previous.CV_InvViewMatr)).GetTransposed();
 
 #if 0 // RANDOM TEST (matrix_calculation_mode == 3 looks good)
-            // Supposedly from NDC to UV space
-            Matrix44_tpl<double> mScaleBias1 = Matrix44_tpl<double>(
-                0.5, 0, 0, 0,
-                0, (matrix_calculation_mode == 1 || matrix_calculation_mode == 2) ? 0.5 : -0.5, 0, 0,
-                0, 0, 1, 0,
-                (matrix_calculation_mode == 2 || matrix_calculation_mode == 3) ? 1.0 : 0.5, (matrix_calculation_mode == 2 || matrix_calculation_mode == 3) ? 1.0 : 0.5, 0, 1);
-            Matrix44_tpl<double> mScaleBias2 = Matrix44_tpl<double>(
-                2.0, 0, 0, 0,
-                0, (matrix_calculation_mode == 1 || matrix_calculation_mode == 2) ? 2.0 : -2.0, 0, 0,
-                0, 0, 1, 0,
-                (matrix_calculation_mode == 1 || matrix_calculation_mode == 2) ? 1.0 : -1.0, 1.0, 0, 1);
+        // Supposedly from NDC to UV space
+        Matrix44_tpl<double> mScaleBias1 = Matrix44_tpl<double>(
+            0.5, 0, 0, 0,
+            0, (matrix_calculation_mode == 1 || matrix_calculation_mode == 2) ? 0.5 : -0.5, 0, 0,
+            0, 0, 1, 0,
+            (matrix_calculation_mode == 2 || matrix_calculation_mode == 3) ? 1.0 : 0.5, (matrix_calculation_mode == 2 || matrix_calculation_mode == 3) ? 1.0 : 0.5, 0, 1);
+        Matrix44_tpl<double> mScaleBias2 = Matrix44_tpl<double>(
+            2.0, 0, 0, 0,
+            0, (matrix_calculation_mode == 1 || matrix_calculation_mode == 2) ? 2.0 : -2.0, 0, 0,
+            0, 0, 1, 0,
+            (matrix_calculation_mode == 1 || matrix_calculation_mode == 2) ? 1.0 : -1.0, 1.0, 0, 1);
 #else
-            const Matrix44_tpl<double> mScaleBias1 = Matrix44_tpl<double>(
-                0.5, 0, 0, 0,
-                0, -0.5, 0, 0,
-                0, 0, 1, 0,
-                0.5, 0.5, 0, 1);
-            const Matrix44_tpl<double> mScaleBias2 = Matrix44_tpl<double>(
-                2.0, 0, 0, 0,
-                0, -2.0, 0, 0,
-                0, 0, 1, 0,
-                -1.0, 1.0, 0, 1);
+        // NDC to UV space (y is flipped)
+        const Matrix44_tpl<double> mScaleBias1 = Matrix44_tpl<double>(
+            0.5, 0, 0, 0,
+            0, -0.5, 0, 0,
+            0, 0, 1, 0,
+            0.5, 0.5, 0, 1);
+        // UV to NDC space (y is flipped)
+        const Matrix44_tpl<double> mScaleBias2 = Matrix44_tpl<double>(
+            2.0, 0, 0, 0,
+            0, -2.0, 0, 0,
+            0, 0, 1, 0,
+            -1.0, 1.0, 0, 1);
 #endif
 
 #if DEVELOPMENT && 0 // Not needed anymore, but here in case
-            const Matrix44A mViewProjPrev = Matrix44_tpl<double>(cb_per_view_global_actual_previous.CV_ViewMatr.GetTransposed()) * projection_matrix_native * Matrix44_tpl<double>(mScaleBias1);
+        const Matrix44A mViewProjPrev = Matrix44_tpl<double>(cb_per_view_global_actual_previous.CV_ViewMatr.GetTransposed()) * projection_matrix_native * Matrix44_tpl<double>(mScaleBias1);
 #endif // DEVELOPMENT
 
-            Matrix44_tpl<double> previous_projection_matrix_native = Matrix44_tpl<double>(previous_projection_matrix.GetTransposed());
-            if (matrix_calculation_mode_2 == 1) { // Flip jitters (somehow it works and fixes motion vectors generation, it's not 100% clear why)
-                projection_matrix_native.m20 = -projection_matrix_native.m20;
-                projection_matrix_native.m21 = -projection_matrix_native.m21;
-                previous_projection_matrix_native.m20 = -previous_projection_matrix_native.m20;
-                previous_projection_matrix_native.m21 = -previous_projection_matrix_native.m21;
-            }
-            else if (matrix_calculation_mode_2 == 2) {
-                projection_matrix_native.m20 = -projection_matrix_native.m20;
-                previous_projection_matrix_native.m20 = -previous_projection_matrix_native.m20;
-            }
-            else if (matrix_calculation_mode_2 == 3) {
-                projection_matrix_native.m21 = -projection_matrix_native.m21;
-                previous_projection_matrix_native.m21 = -previous_projection_matrix_native.m21;
-            }
-            Matrix44_tpl<double> mViewInv;
-            mathMatrixLookAtInverse(mViewInv, Matrix44_tpl<double>(cb_per_view_global.CV_ViewMatr.GetTransposed()));
-            Matrix44_tpl<double> mProjInv;
-            mathMatrixPerspectiveFovInverse(mProjInv, previous_projection_matrix_native);
-            Matrix44_tpl<double> mReprojection64 = mProjInv * mViewInv * Matrix44_tpl<double>(cb_per_view_global_actual_previous.CV_ViewMatr.GetTransposed()) * projection_matrix_native;
-            // Not sure exactly what these do (NDC space?, depth buffer scaling?) but they work (anything else doesn't work, I've tried).
-            mReprojection64 = mScaleBias2 * mReprojection64 * mScaleBias1;
-            reprojection_matrix = mReprojection64.GetTransposed(); // Transpose it here so it's easier to read on the GPU (and consistent with the other matrices)
-
-            found_per_view_globals = true; //TODOFT3: moved here, good yeah (seems so!)? (delete the copy below)
+        Matrix44_tpl<double> previous_projection_matrix_native = Matrix44_tpl<double>(previous_projection_matrix.GetTransposed());
+        if (matrix_calculation_mode_2 == 1) { // Flip jitters (somehow it works and fixes motion vectors generation, it's not 100% clear why)
+            projection_matrix_native.m20 = -projection_matrix_native.m20;
+            projection_matrix_native.m21 = -projection_matrix_native.m21;
+            previous_projection_matrix_native.m20 = -previous_projection_matrix_native.m20;
+            previous_projection_matrix_native.m21 = -previous_projection_matrix_native.m21;
         }
-    }
+        else if (matrix_calculation_mode_2 == 2) {
+            projection_matrix_native.m20 = -projection_matrix_native.m20;
+            previous_projection_matrix_native.m20 = -previous_projection_matrix_native.m20;
+        }
+        else if (matrix_calculation_mode_2 == 3) {
+            projection_matrix_native.m21 = -projection_matrix_native.m21;
+            previous_projection_matrix_native.m21 = -previous_projection_matrix_native.m21;
+        }
+        Matrix44_tpl<double> mViewInv;
+        mathMatrixLookAtInverse(mViewInv, Matrix44_tpl<double>(cb_per_view_global.CV_ViewMatr.GetTransposed()));
+        Matrix44_tpl<double> mProjInv;
+        mathMatrixPerspectiveFovInverse(mProjInv, previous_projection_matrix_native);
+        Matrix44_tpl<double> mReprojection64 = mProjInv * mViewInv * Matrix44_tpl<double>(cb_per_view_global_actual_previous.CV_ViewMatr.GetTransposed()) * projection_matrix_native;
+        // Not sure exactly what these do (NDC space?, depth buffer scaling?) but they work (anything else doesn't work, I've tried).
+        mReprojection64 = mScaleBias2 * mReprojection64 * mScaleBias1;
+        reprojection_matrix = mReprojection64.GetTransposed(); // Transpose it here so it's easier to read on the GPU (and consistent with the other matrices)
 
-    //found_per_view_globals = true;
+        found_per_view_globals = true;
+    }
 
     return true;
 }
@@ -5414,7 +5407,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         ImGui::SliderInt("DLSS Halton Jitter Phases", &force_taa_jitter_phases, 0, 64);
         
         ImGui::NewLine();
-        ImGui::SliderInt("Fix Motion Vectors Generation Projection Matrix", &fix_prev_matrix_mode, 0, 8);
+        ImGui::SliderInt("Fix Motion Vectors Generation Projection Matrix", &fix_prev_matrix_mode, 0, 5);
         //ImGui::SliderInt("matrix_calculation_mode", &matrix_calculation_mode, 0, 3); // Disabled
         ImGui::SliderInt("matrix_calculation_mode_2", &matrix_calculation_mode_2, 0, 4);
         if (ImGui::Checkbox("Disable Camera Jitters", &disable_taa_jitters)) {
@@ -5671,7 +5664,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 
         ImGui::NewLine();
         ImGui::Text("Camera Jitters: ", "");
-        // In UV space
+        // In NCD space
         // Add padding to make it draw consistently even with a "-" in front of the numbers.
         text = (projection_jitters.x >= 0 ? " " : "") + std::to_string(projection_jitters.x) + " " + (projection_jitters.y >= 0 ? " " : "") + std::to_string(projection_jitters.y);
         ImGui::Text(text.c_str(), "");

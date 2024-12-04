@@ -44,12 +44,8 @@ float4 MotionBlurPS(float4 WPos, float4 inBaseTC)
 	float rndValue = NRand3(inBaseTC.xy).x - 0.5;
 	float2 tileOffset = tileBorderDist * rndValue;
 	
-#if 1 // LUMA FT: moved this logic to "PackVelocitiesPS()", which should be more optimized and also have better results
+	// LUMA FT: moved the dejitter logic to "PackVelocitiesPS()", which should be more optimized and also have better results
  	float2 jitters = 0;
-#else
-	row_major float4x4 projectionMatrix = mul( CV_ViewProjMatr, CV_InvViewMatr ); // The current projection matrix used to be stored in "CV_PrevViewProjMatr" in vanilla Prey
- 	float2 jitters = float2(projectionMatrix[0][2], projectionMatrix[1][2]);
-#endif
 	
 	// LUMA FT: Motion vectors in "uv space". Once multiplied by the rendering resolution, the value here represents the horizontal and vertical pixel offset (encoded to have more precision around smaller values) (so not the max velocity as the name would imply),
 	// a value of 0.3 -2 means that we need to move 0.3 pixels on the x and -2 pixels on the y to find where this texel remapped on the previous frame buffers.

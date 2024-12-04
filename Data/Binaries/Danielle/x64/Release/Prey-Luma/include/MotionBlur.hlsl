@@ -8,7 +8,7 @@ float2 MapViewportToRaster(float2 normalizedViewportPos)
 float2 UnpackLengthAndDepth( float2 packedLenDepth, float jittersLength = 0 )
 {
 	packedLenDepth.x = (packedLenDepth.x * packedLenDepth.x) / 32.0f;
-#if 0
+#if 0 // Moved this logic to "PackVelocitiesPS()"
 	packedLenDepth.x = max(packedLenDepth.x - jittersLength, 0); // LUMA FT: subtracting the length isn't exactly correct, maybe to average the error out we could do 50% of it
 #endif
 	packedLenDepth.y = packedLenDepth.y * 255.0f;

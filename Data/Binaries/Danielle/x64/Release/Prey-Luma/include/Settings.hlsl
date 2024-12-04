@@ -105,9 +105,10 @@
 #define DLSS_RELATIVE_PRE_EXPOSURE 1
 #endif
 // If true, the motion vectors generated for dynamic objects are generated with both the current and previous jitters acknowledged in the calculations (and baked in their velocity, so they wouldn't be zero even if nothing was moving).
-// If false, motion vectors are generated (and then interpreted in Motion Blur and TAA) like in the vanilla code, so they kinda include the jitter of the current frame, but not the one from the previous frame, which isn't really great.
+// If false, motion vectors are generated (and then interpreted in Motion Blur and TAA) like in the vanilla code, so they kinda include the jitter of the current frame, but not the one from the previous frame, which isn't really great and caused micro shimmers in blur and TAA.
+// This needs to be mirrored in c++ so do not change it directly from ere. In post process shaders it simply determines how to interpret/dejitter the MVs. When DLSS is on, the behaviour is always is if this was true.
 #ifndef FORCE_MOTION_VECTORS_JITTERED
-#define FORCE_MOTION_VECTORS_JITTERED 0
+#define FORCE_MOTION_VECTORS_JITTERED 1
 #endif
 // Allows to disable this given it might not be liked (it can't be turned off individually) and can make DLSS worse
 #ifndef ENABLE_CAMERA_MOTION_BLUR
@@ -166,8 +167,6 @@
 #define ENABLE_SSAO (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
 // Spacial (not temporal) SSAO denoising. Needs to be enabled for it to look good.
 #define ENABLE_SSAO_DENOISE (!DEVELOPMENT || 1)
-// Enable for a more blurry (?) but temporally stable TAA. This isn't really related to "FORCE_MOTION_VECTORS_JITTERED" as that just determines how to interpret motion vectors.
-#define ENABLE_TAA_DEJITTER (ENABLE_POST_PROCESS && (DEVELOPMENT ? 0 : 0))
 // Disables all kinds of AA (SMAA, FXAA, TAA, ...) (disabling "ENABLE_SHARPENING" is also suggested if disabling AA). Doesn't affect DLSS.
 #define ENABLE_AA (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
 // Optional SMAA pass being run before TAA

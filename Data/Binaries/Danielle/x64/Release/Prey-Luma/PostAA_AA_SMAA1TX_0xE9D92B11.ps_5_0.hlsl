@@ -4,6 +4,7 @@
 
 // PostAA_PS
 // Shader used by SMAA 1TX. SMAA 1TX does not use jittered rendering so it doesn't have to acknowledge jitters anywhere.
+// Luma's changes here are mostly mirrored in SMAA 1TX and 2TX.
 void main(
   float4 inWPos : SV_Position0,
   float2 inBaseTC : TEXCOORD0,
@@ -31,10 +32,15 @@ void main(
 	}
 #endif
 
+	bool skipAA = ShouldSkipPostProcess(inWPos.xy, 1);
 #if !ENABLE_AA || !ENABLE_TAA
-	outColor	= SampleCurrentScene(inBaseTC.xy * CV_HPosScale.xy);
-	return;
+	skipAA = true;
 #endif
+	if (skipAA)
+	{
+		outColor	= SampleCurrentScene(inBaseTC.xy * CV_HPosScale.xy);
+		return;
+	}
 	
 	uint3 pixelCoord = int3(inWPos.xy, 0);
 	
@@ -49,11 +55,11 @@ void main(
 	float2 diff = prevTC - currTC;
 
 	float2 vObj = PostAA_VelocityObjectsTex.Load(pixelCoord);
-	// LUMA FT: fixed check not acknowledging the y axis.
 	// LUMA FT: we never need to dejitter MVs with SMAA 1TX does not use jitters to begin with. See "FORCE_MOTION_VECTORS_JITTERED" for more detail.
 	if (vObj.x != 0 || vObj.y != 0)
 	{
 		diff = ReadVelocityObjects(vObj); // clip space
+		diff /= LumaData.RenderResolutionScale;
 	}
 
 	const float2 tc  = currTC * CV_HPosScale.xy; // MapViewportToRaster()
@@ -98,6 +104,4 @@ void main(
 	outColor.a = 0;
 #endif
 #endif
-
-  return;
 }

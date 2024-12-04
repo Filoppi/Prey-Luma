@@ -22,12 +22,6 @@ struct pixout
 float2 AdjustVelocityObjects(float2 VelocityObjects)
 {
 	VelocityObjects /= LumaData.RenderResolutionScale;
-#if 0 //TODOFT3: hack, see "FORCE_MOTION_VECTORS_JITTERED" below (this won't really work at high frame rates though) (not needed anymore, seems all fine now!)
-	if (abs(VelocityObjects.x) <= (1.0 / CV_ScreenSize.x) && abs(VelocityObjects.y) <= (1.0 / CV_ScreenSize.y))
-	{
-		VelocityObjects = 0;
-	}
-#endif
 	return VelocityObjects;
 }
 
@@ -43,50 +37,65 @@ pixout PackVelocitiesPS(vtxOut IN)
 	const float fDepth = GetLinearDepth(_tex0_D3D11, pixelCoord).x; // LUMA FT: this is the current's frame linear depth
 	const float3 vPosWS = ReconstructWorldPos(pixelCoord.xy, fDepth);
 
-	// LUMA FT: "mViewProjPrev" is not jittered (it doesn't acknowledge jitters from this or the previous frame), which is kinda fine for MB (probably good!).
+	// LUMA FT: "mViewProjPrev" is not jittered (it doesn't acknowledge jitters from this or the previous frame, but it seem to acknowledge the current ones), which is kinda fine for MB (probably good!).
 	// LUMA FT: There seems to be a good amount of imprecision into "vPrevPos".
 #if 0
 	float3 vPrevPos = mul(float4(vPosWS, 1.0), mViewProjPrev).xyw;
-#else // LUMA FT: cheaper (original) version
+#else // LUMA FT: cheaper (original) CryEngine version
 	float3 vPrevPos = mViewProjPrev[0].xyw * vPosWS.x + (mViewProjPrev[1].xyw * vPosWS.y + (mViewProjPrev[2].xyw * vPosWS.z + mViewProjPrev[3].xyw));
 #endif
 	vPrevPos.xy /= vPrevPos.z; // Previous pixel screen space position
 
 	float2 vCurrPos = IN.baseTC.xy; // Note: don't use the scaled position here!
-  
-	float2 jitters = 0;
-	bool motion_vectors_need_dejittering = LumaSettings.DLSS;
-#if FORCE_MOTION_VECTORS_JITTERED
-	motion_vectors_need_dejittering = true;
+  	
+	const float2 vVelocityObjs = _tex2_D3D11.Load(pixelCoord).xy; // LUMA FT: if this is zero it means there was no movement in dynamic objects
+	bool noVelocityObj = vVelocityObjs.x == 0 && vVelocityObjs.y == 0; // LUMA FT: fixed the y axis not being checked (maybe it was intentional, but it seems bad)
+
+	bool MVsNeedDejittering = LumaSettings.DLSS;
+#if FORCE_MOTION_VECTORS_JITTERED // This seems to look a tiny bit better in MB
+	MVsNeedDejittering = true;
 #endif
 	// LUMA FT: offset the current's frame jitters from the dynamic objects motion vectors, otherwise the motion blur always includes the velocity of the jitters in every pixel.
 	// The motion vectors generated from depth (above) aren't exactly "jittered" (even if "FORCE_MOTION_VECTORS_JITTERED" was true) but they are calculated on jittered values, without compensating for the jitter offsets (it'd be hard to do so, and it would cause extra blur),
-	// the "dynamic objects" motion vectors (below) on the other hand, they are jittered (if "FORCE_MOTION_VECTORS_JITTERED" was true, and also partially if not).
-	if (motion_vectors_need_dejittering)
+	// the "dynamic objects" motion vectors (below) on the other hand, they are jittered (if "FORCE_MOTION_VECTORS_JITTERED" was true, and also partially if not, but it seems stable (jitterless) enough in the false case).
+	// 
+	// Note that Dynamic Objects MVs are still generated with random hitches of movement even if we pause the game (especially on black worm enemies) (this possibly happens in the vanilla game too!), we gave up on fixing it to a 100%.
+	float2 jitters = 0;
+	if (!noVelocityObj && MVsNeedDejittering)
 	{
-#if 1
-		// Convert from NDC space to UV space
-//TODOFT5: this isn't working properly, the Motion Blur MVs are still generated with random hitches of movement even if we pause the game (especially on black worm enemies) (this possibly happens in the vanilla game too!). Maybe we could add a threshold as big as the jitters (1px)? Possibly disable this if we sort "ReadVelocityObjects()"
-//Actually, we fixed it now (cbuffer params were not aligned correctly). We can clean the code below
-#if 1 
-		jitters -= LumaData.CameraJitters.xy * float2(0.5, -0.5);
-		jitters += LumaData.PreviousCameraJitters.xy * float2(0.5, -0.5);
-#elif DEVELOPMENT
-		jitters -= LumaData.CameraJitters.xy * float2(remap(LumaSettings.DevSetting01, 0.0, 1.0, -2.0, 2.0), remap(LumaSettings.DevSetting02, 0.0, 1.0, -2.0, 2.0)) * LumaSettings.DevSetting03;
-		jitters += LumaData.PreviousCameraJitters.xy * float2(remap(LumaSettings.DevSetting01, 0.0, 1.0, -2.0, 2.0), remap(LumaSettings.DevSetting02, 0.0, 1.0, -2.0, 2.0)) * LumaSettings.DevSetting04;
-#endif
-#elif 0 // We can't have the previous jitters like this, incomplete solution //TODOFT4: should we always dejitter the vanilla motion vectors if DLSS is off (and "motion_vectors_need_dejittering" is off)? Probably?
-		row_major float4x4 projectionMatrix = mul( CV_ViewProjMatr, CV_InvViewMatr ); // The current projection matrix used to be stored in "CV_PrevViewProjMatr" in vanilla Prey
- 		jitters -= float2(projectionMatrix[0][2], projectionMatrix[1][2]) * float2(0.5, -0.5);
-#endif
+        jitters -= LumaData.CameraJitters.xy;
+        jitters += LumaData.PreviousCameraJitters.xy;
 	}
+	// This helps on camera/depth generated MVs, and possibly also helps the dynamic objects MVs (it doesn't seem to do much, but it doesn't hurt them)
+	else
+	{
+        jitters -= LumaData.CameraJitters.xy;
+	}
+	// Convert from NDC space to UV space (y is flipped)
+	jitters *= float2(0.5, -0.5);
 
-	const float2 vVelocityObjs = _tex2_D3D11.Load(pixelCoord).xy; // LUMA FT: if this is zero it means there was no movement in dynamic objects
-	bool noVelocityObj = vVelocityObjs.x == 0 && vVelocityObjs.y == 0; // LUMA FT: fixed the y axis not being checked (maybe it was intentional, but it seems bad)
 	vCurrPos.xy = noVelocityObj ? vCurrPos.xy : 0;
-	vPrevPos.xy = noVelocityObj ? vPrevPos.xy : (AdjustVelocityObjects(ReadVelocityObjects(vVelocityObjs)) + jitters);
+	vPrevPos.xy = noVelocityObj ? vPrevPos.xy : AdjustVelocityObjects(ReadVelocityObjects(vVelocityObjs));
 
-	float2 vVelocity = (vPrevPos.xy - vCurrPos) * vMotionBlurParams.x;
+	float2 vVelocity = (vPrevPos.xy - vCurrPos.xy) + jitters;
+	
+// LUMA FT: Added hack to avoid velocities below the sub texel (1px) jittering from generating MV, given both the camera matrices and MVs low quality buffers and jitters cause imprecisions, it's good to clip the noise.
+// This won't really work at high frame rates, but nothing should move this little within a frame, so in general it should be a positive.
+// If ever necessary, we could try to adjust this threshold by frame rate, or split the x and y axes, or do it by jitter lenght.
+#if 1
+	if (abs(vVelocity.x) <= (1.0 / CV_ScreenSize.x) && abs(vVelocity.y) <= (1.0 / CV_ScreenSize.y))
+	{
+		vVelocity = 0;
+	}
+#elif 0 // This doesn't seem to work (it does in some frames but flickers)
+	if (length(vVelocity) <= length(jitters))
+	{
+		vVelocity = 0;
+	}
+#endif
+
+	vVelocity *= vMotionBlurParams.x;
+
 #if !ENABLE_CAMERA_MOTION_BLUR
 	if (noVelocityObj)
 	{
