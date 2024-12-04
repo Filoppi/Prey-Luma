@@ -444,7 +444,7 @@ void HDRFinalScenePS(float4 WPos, float4 baseTC, out float4 outColor)
   ApplyDithering(outColor.rgb, baseTC.xy, gammaSpace, paperWhite);
 #endif // ENABLE_DITHERING && !DELAY_DITHERING
 
-#if 0 //TODOFT4: test DLSS scRGB passthrough
+#if 0 //TODOFT4: test DLSS scRGB passthrough (duplicate)
   outColor.rgb = lerp(GetLuminance(outColor.rgb), outColor.rgb, 5);
   //outColor.b -= GetLuminance(outColor.rgb) / 2.0;
   FixColorGradingLUTNegativeLuminance(outColor.xyz);

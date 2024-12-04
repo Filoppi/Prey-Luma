@@ -393,7 +393,7 @@ constexpr bool force_motion_vectors_jittered = true;
 int fix_prev_matrix_mode = 1; // NOTE: referenced in shader's code //TODOFT: delete!
 int matrix_calculation_mode = 0;
 int matrix_calculation_mode_2 = 1;
-float texture_mip_lod_bias_offset = -1.0f;
+float texture_mip_lod_bias_offset = 0.f;
 #if DEVELOPMENT
 int samplers_upgrade_mode = 5;
 int samplers_upgrade_mode_2 = 0;
@@ -499,7 +499,7 @@ std::vector<ShaderDefineData> shader_defines_data = {
   {"FORCE_NEUTRAL_COLOR_GRADING_LUT_TYPE", '0', false, false, "Can force a neutral LUT in different ways (color grading is still applied)"},
   {"DRAW_LUT", '0', false, (DEVELOPMENT || TEST) ? false : true},
 #endif
-  {"SSAO_TYPE", '1', false, false, "0 - Vanilla\n1 - Luma GTAO\nIn case GTAO is too performance intensive, go into the official game graphics settings and set \"Screen Space Directional Occlusion\" to half resolution"},
+  {"SSAO_TYPE", '1', false, false, "0 - Vanilla\n1 - Luma GTAO\nIn case GTAO is too performance intensive, go into the official game graphics settings and set \"Screen Space Directional Occlusion\" to half resolution\nDLSS is suggested to help with denoising AO"},
   {"SSAO_QUALITY", '1', false, false, "0 - Vanilla\n1 - High\n2 - Extreme (slow)"},
   {"BLOOM_QUALITY", '1', false, false, "0 - Vanilla\n1 - High"},
 #if DEVELOPMENT || TEST

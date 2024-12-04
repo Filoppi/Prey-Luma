@@ -35,7 +35,7 @@
 #ifndef XE_GTAO_ENABLE_DENOISE
 #define XE_GTAO_ENABLE_DENOISE 1
 #endif
-// LUMA FT: compatibility with downscaled depth texture, where the actual depth is stored on 4th (w) channel channel or the average on 3rd channel (z/blue)
+// LUMA FT: compatibility with downscaled depth texture, where the average is on 3rd channel (z/blue)
 #ifndef XE_GTAO_DEPTH_FLOAT4
 #define XE_GTAO_DEPTH_FLOAT4 0
 #endif
@@ -511,6 +511,7 @@ float4 XeGTAO_MainPass( float2 pixCoord, lpfloat sliceCount, lpfloat stepsPerSli
                 sampleOffset = round(sampleOffset) * (lpfloat2)consts.ScaledViewportPixelSize;
 
                 float2 sampleScreenPos0 = normalizedScreenPos + sampleOffset;
+//TODOFT: make this a runtime branch based on Luma user preference? Also, is the full quality texture actuall 4 channel depth? And is the downscaled texture 1/2 or 1/4 res? And is out output size always 1/2?
 #if XE_GTAO_DEPTH_FLOAT4
                 float  SZ0 = sourceViewspaceDepth.SampleLevel( depthSampler, min(sampleScreenPos0 * consts.RenderResolutionScale, consts.SampleUVClamp), mipLevel ).z * consts.DepthFar;
 #else

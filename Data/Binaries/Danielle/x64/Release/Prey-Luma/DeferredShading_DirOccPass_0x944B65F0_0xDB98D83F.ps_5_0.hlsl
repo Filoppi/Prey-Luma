@@ -24,7 +24,7 @@ cbuffer CBSSDO : register(b0)
 SamplerState ssSSDODepth : register(s0); // MIN_MAG_MIP_POINT CLAMP (as expected from SSDO and GTAO)
 Texture2D<float4> _tex0_D3D11 : register(t0); // Normal maps
 Texture2D<float> _tex1_D3D11 : register(t1); // The linear (non inverted) depth (previously converted from the device g-buffer depth) (0 is zero (not near), 1 far). R32F. Always set. Only drawn in the top left portion of the image if we have a render resolution scale
-Texture2D<float4> _tex2_D3D11 : register(t2); // The "lower quality" half resolution linear depth (previously converted from the device g-buffer depth) (depth is stored in the alpha channel, the rest is other depth near/far scaled values). RGBA16F (all channels are seemengly the same). Always set. Only drawn in the top left portion of the image if we have a render resolution scale
+Texture2D<float4> _tex2_D3D11 : register(t2); // The "lower quality" half or quarter (depending on "r_ssdoHalfRes", though in Prey only half resolution is exposed to user settings, even if quarter res is still likely available in config) resolution linear depth (previously converted from the device g-buffer depth) (average depth is stored in the alpha channel, the rest is other depth near/far scaled values). RGBA16F (all channels are seemengly the same). Always set. Only drawn in the top left portion of the image if we have a render resolution scale
 
 float2 MapViewportToRaster(float2 normalizedViewportPos, bool bOtherEye = false)
 {
@@ -100,7 +100,7 @@ float4 GTAO(float4 WPos, float4 inBaseTC, out float edges)
 	row_major float4x4 projectionMatrix = mul( CV_ViewProjMatr, CV_InvViewMatr ); // The current projection matrix used to be stored in "CV_PrevViewProjMatr" in vanilla Prey
 
 	//TODO LUMA: do this in shader cbuffer or vertex shader? As optimization? It's mostly fine here
-	//TODOFT5: investigate whether the AO color bleeding implementation is good for GTAO (see "AOColorBleedRT"), it seems like it simply prevents AO from applying on bright diffuse color objects but that makes no sense?
+	//TODOFT5: investigate whether the AO color bleeding implementation is good for GTAO (see "AOColorBleedRT"/"r_ssdoColorBleeding" (config can't be disabled in Prey?)), it seems like it simply prevents AO from applying on bright diffuse color objects but that makes no sense?
 	//TODOFT5: test performance and half resolution version (game setting)
 
 #if 1 // The depth in this pass was already linearized (with far matching a value of 1 and the camera origin matching a value of 0), so all we need to do is multiply by the far distance
@@ -136,7 +136,7 @@ float4 GTAO(float4 WPos, float4 inBaseTC, out float edges)
 	consts.EffectFalloffRange = XE_GTAO_DEFAULT_FALLOFF_RANGE;
 #if 0
 	consts.RadiusMultiplier = XE_GTAO_DEFAULT_RADIUS_MULTIPLIER;
-	consts.EffectRadius = 0.5f * CV_HPosScale.y; // Default copied from GTAO code
+	consts.EffectRadius = 0.5f; // Default copied from GTAO code
 #else // We found that using the game's native radius looks best and more in line with SSDO
 	consts.RadiusMultiplier = 1.0f;
 	// The second most important value. 
@@ -324,7 +324,7 @@ void main(float4 WPos : SV_Position0, float4 inBaseTC : TEXCOORD0, out float4 ou
 	float3 vNormal = DecodeGBufferNormal( _tex0_D3D11.Load(pixCoord) );
 	float3 vNormalVS = normalize( mul( CV_ViewMatr, float4(vNormal, 0) ).xyz ) * float3(1, -1, -1);
 
-#if _RT_SAMPLE0 // LUMA FT: fixed depth's UV not being clamped
+#if _RT_SAMPLE0 // LUMA FT: fixed depth's UV not being clamped. Note that "r_ssdoHalfRes" "3" isn't supported here, because that uses a quarter resolution depth buffer. We could check the texture size to determine it but it's not worth it as it's not exposed to the official settings.
 	CV_HPosClamp.xy = CV_HPosScale.xy - (CV_ScreenSize.zw * 2.0); 
 #endif
 
@@ -349,9 +349,11 @@ void main(float4 WPos : SV_Position0, float4 inBaseTC : TEXCOORD0, out float4 ou
 		vSampleTC[1].zw = min(MapViewportToRaster(vSampleUV[1].zw), CV_HPosClamp.xy);
 	
 	#if _RT_SAMPLE0 // LUMA FT: Branch on half or full resolution depth buffer, depending on the quality the user set
-		// LUMA FT: Arkane seems to have added 0.0000001 here, it's unclear why (due to the lower precision?)
-		// LUMA FT: we access the alpha channel as that's the one with the actual depth.
-		float4 fLinearDepthTap = SSDOFetchDepths( _tex2_D3D11, vSampleTC, 3 ) + 0.0000001;
+		// LUMA FT: vanilla code was reading the W channel which is the random top left value of the 4 source texels of the downscaled depth, we changed it to access Z which is the average, which should be more accurate. See "DownsampleDepthPS".
+		float4 fLinearDepthTap = SSDOFetchDepths( _tex2_D3D11, vSampleTC, 2 );
+	#if 0 // LUMA FT: Arkane seems to have added 0.0000001 here, it's unclear why (due to the lower precision?), it might or might not help, but we've disabled it as it seems like a weird thing to do
+		fLinearDepthTap += 0.0000001;
+	#endif
 	#else
 		float4 fLinearDepthTap = SSDOFetchDepths( _tex1_D3D11, vSampleTC );
 	#endif
