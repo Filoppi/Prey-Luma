@@ -2621,6 +2621,7 @@ void OnPresent(
 //TODOFT5: Add "UpdateSubresource" to check whether they map buffers with that (it's not optimized so probably it's unused by CryEngine)? Also make sure that our CopyTexture() func works!
 //TODOFT5: merge all the shader permutations that use the same code (and then move shader binaries to bin folder?)
 //TODOFT5: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project?
+//TODOFT (TODO): make sure DLSS lets scRGB colors pass through...
 //TODOFT: add a new RT to draw UI on top (pre-multiplied alpha everywhere), so we could compose it smartly, possibly in the final linearization pass.
 
 // Return false to prevent the original draw call from running (e.g. if you replaced it or just want to skip it)
@@ -3003,8 +3004,6 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
 #if ENABLE_NGX
       // Don't even try to run DLSS if we have no custom shaders loaded, we need them for DLSS to work properly (it might somewhat work even without them, but it's untested and unneeded)
       if (is_custom_pass && dlss_sr && cloned_pipeline_count != 0) {
-          //TODOFT (TODO): make sure DLSS lets scRGB colors pass through...
-
           // TODO: add DLSS transparency mask (e.g. glass, decals, emissive) by caching the g-buffers before and after transparent stuff draws near the end?
           // TODO: add DLSS bias mask (to ignore animated textures) by marking up some shaders(materials)/textures hashes with it?
           // TODO: move DLSS before tonemapping, depth of field, bloom and blur. It wouldn't be easy because exposure is calculated after blur in CryEngine,
@@ -4507,7 +4506,7 @@ void OnReshadePresent(reshade::api::effect_runtime* runtime) {
   }
 #endif // DEVELOPMENT
 
-  // TODO: verify this delayed behaviour is actually ever needed and delete it if not
+  //TODOFT: verify this delayed behaviour is actually ever needed and delete it if not (it might be useless!)
   {
     const std::unique_lock lock(s_mutex_generic);
     for (auto& pipeline_pair : pipeline_cache_by_pipeline_handle) {
@@ -5051,6 +5050,10 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
                     if (pipeline_pair->second->cloned && ImGui::Button("Unload")) {
                         UnloadCustomShaders({ pipeline_handle }, false, false);
                     }
+                    if (!pipeline_pair->second->cloned && ImGui::Button("Load")) {
+                        LoadCustomShaders({ pipeline_handle }, false, true);
+                    }
+                    // NOTE: we could also have a "Compile" (single shader) button here but it's not necessary
                   }
                   if (pipeline_pair->second->HasPixelShader()) {
                       if (ImGui::Button("Debug Draw Shader")) {
