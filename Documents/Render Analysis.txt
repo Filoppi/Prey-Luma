@@ -3,7 +3,7 @@ Draw "device" depth (inverted) and stencil buffers (there's no pixel shaders her
 ...
 Draw G-Buffers (Normals, Albedos, Specular/Metallicness, motion vectors (of dynamic objects only), "device" depth (inverted) and stencil again?) (first person character meshes draw around the end, likely with a different matrix)
 Convert "device" inverted depth to linear depth (R32F)
-Downsample depth buffer (half res, RGBA16F, with each channel representing max/min/average/tap)
+Downsample depth buffer (half res, RGBA16F, with each channel representing max/min/average/tap, uses "DownsampleDepthPS")
 Draw (deferred) decals
 Downsample depth buffer (again? This one seems to make them even smaller)
 Draws Screen Space Reflections buffer (Takes g-buffers and depth as source, uses "CBSSRRaytrace"/"SSRRaytracePS")
