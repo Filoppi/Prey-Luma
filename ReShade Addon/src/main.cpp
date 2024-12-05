@@ -398,7 +398,7 @@ float texture_mip_lod_bias_offset = 0.f;
 int samplers_upgrade_mode = 5;
 int samplers_upgrade_mode_2 = 0;
 bool custom_texture_mip_lod_bias_offset = false; // Live edit
-float dlss_custom_exposure = 0.f;
+float dlss_custom_exposure = 0.f; // Ignored at 0
 float dlss_custom_pre_exposure = 0.f; // Ignored at 0
 #endif
 float dlss_scene_exposure = 1.f;
@@ -428,7 +428,8 @@ bool found_per_view_globals = false;
 bool prey_drs_active = false;
 bool force_reset_dlss = false;
 bool prey_drs_detected = false;
-float dlss_sr_render_resolution = 1.f;
+float dlss_render_resolution_scale = 1.f;
+bool dlss_suppressed = false;
 bool prey_taa_enabled = false;
 // Index 0 is one frame ago, index 1 is two frames ago
 bool previous_prey_taa_enabled[2] = { false, false };
@@ -1819,7 +1820,7 @@ void OnInitDevice(reshade::api::device* device) {
       dlss_exposure = nullptr;
       dlss_motion_vectors = nullptr;
       dlss_motion_vectors_rtv = nullptr;
-      dlss_sr_render_resolution = 1.f;
+      dlss_render_resolution_scale = 1.f;
       dlss_scene_exposure = 1.f;
       dlss_scene_pre_exposure = 1.f;
       exposure_buffer_gpu = nullptr;
@@ -2518,9 +2519,11 @@ void OnPresent(
       // Theoretically we turn this flag off one frame late (or well, at the end of the frame),
       // but then again, if no scene rendered, this flag wouldn't have been used for anything.
       cb_luma_frame_settings.DLSS = 0; // No need for "s_mutex_reshade" here, given that they are generally only also changed by the user manually changing the settings in ImGUI, which runs at the very end of the frame
-      // Reset DRS related values if there's a scene cut or loading screen or a menu, we have no way of telling if it's actually still enabled in the user settings
+      dlss_suppressed = false;
+      // Reset DRS related values if there's a scene cut or loading screen or a menu, we have no way of telling if it's actually still enabled in the user settings.
+      // Note that this could cause a micro stutter the next frame we use DLSS as it's gonna have to recreate its internal textures, but we have no way to tell if DRS is still active from the user, so we have to reset the DLSS mode at some point to allow DLAA to run again.
       if (!prey_drs_active) {
-        dlss_sr_render_resolution = 1.f;
+        dlss_render_resolution_scale = 1.f;
         prey_drs_detected = false;
       }
       dlss_scene_exposure = 1.f;
@@ -2535,7 +2538,9 @@ void OnPresent(
   has_drawn_main_post_processing_previous = has_drawn_main_post_processing;
   has_drawn_main_post_processing = false;
   has_drawn_upscaling = false;
+#if 0 // Moved to "OnReShadePresent()"
   has_drawn_dlss_sr = false;
+#endif
 #if 1 // Not much need to reset this, but let's do it anyway (e.g. in case the game scene isn't currently rendering)
   prey_drs_active = false;
 #endif
@@ -2578,7 +2583,7 @@ void OnPresent(
           dlss_exposure = nullptr;
           dlss_motion_vectors = nullptr;
           dlss_motion_vectors_rtv = nullptr;
-          dlss_sr_render_resolution = 1.f; // Reset this to 0 when DLSS is toggled, even if "prey_drs_detected" is still true, we'll set it back to a low value if DRS is used again.
+          dlss_render_resolution_scale = 1.f; // Reset this to 0 when DLSS is toggled, even if "prey_drs_detected" is still true, we'll set it back to a low value if DRS is used again.
           dlss_scene_exposure = 1.f;
           dlss_scene_pre_exposure = 1.f;
           exposure_buffer_gpu = nullptr;
@@ -2603,7 +2608,7 @@ void OnPresent(
   }
   else
 #endif
-  if (dlss_sr && prey_taa_detected && cloned_pipeline_count != 0) {
+  if (dlss_sr && !dlss_suppressed && prey_taa_detected && cloned_pipeline_count != 0) {
       NativePlugin::SetHaltonSequencePhases(render_resolution.y, output_resolution.y);
   }
   // Restore the default value for the game's native TAA, though instead of going to "16" as "r_AntialiasingTAAPattern" "10" would do, we set the phase to 8, which is actually the game's default for TAA/SMAA 2TX, and more appropriate for its short history (4 works too and looks about the same, maybe better, as it's what SMAA defaulted to in CryEngine)
@@ -2731,7 +2736,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
           // For this particular case, we don't use the native DLSS exposure texture, but we rely on pre-exposure itself, as it has a different temporal behaviour,
           // if we changed the DLSS exposure texture every frame to follow the scene exposure, DLSS would act weird (mostly likely just ignore it, as it uses that as a hint of the exposure the tonemapper would use after TAA),
           // while with pre-exposure it works as expected (except it kinda lags behind a bit, because it doesn't store a pre-exposure value attached to every frame, and simply uses the last provided one).
-          if (dlss_sr && cloned_pipeline_count != 0 && draw_exposure_pixel_shader) {
+          if (dlss_sr && !dlss_suppressed && prey_taa_detected && cloned_pipeline_count != 0 && draw_exposure_pixel_shader) {
               static D3D11_MAPPED_SUBRESOURCE mapped_exposure;
 
               // Create pre-exposure buffers once
@@ -2952,7 +2957,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
       // If DLSS is guaranteed to be running instead of SMAA 2TX, we can skip the edge detection passes of SMAA 2TX (these also run other SMAA modes but then DLSS wouldn't run with these).
       // This check might engage one frame late after DLSS engages but it doesn't matter.
       // This is particularly useful because on every boot the game rejects the TAA user config setting (seemengly due to "r_AntialiasingMode" being clamped to 3 (SMAA 2TX)), so we'd waste performance if we didn't skip the passes (we still do).
-      if (!has_drawn_main_post_processing && original_shader_hashes.Contains(shader_hashes_SMAA_EdgeDetection) && dlss_sr && prey_taa_detected && cloned_pipeline_count != 0) {
+      if (!has_drawn_main_post_processing && original_shader_hashes.Contains(shader_hashes_SMAA_EdgeDetection) && dlss_sr && !dlss_suppressed && prey_taa_detected && cloned_pipeline_count != 0) {
           return true;
       }
       if (!has_drawn_upscaling) {
@@ -3018,7 +3023,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
 
 #if ENABLE_NGX
       // Don't even try to run DLSS if we have no custom shaders loaded, we need them for DLSS to work properly (it might somewhat work even without them, but it's untested and unneeded)
-      if (is_custom_pass && dlss_sr && cloned_pipeline_count != 0) {
+      if (is_custom_pass && dlss_sr && !dlss_suppressed && cloned_pipeline_count != 0) {
           // TODO: add DLSS transparency mask (e.g. glass, decals, emissive) by caching the g-buffers before and after transparent stuff draws near the end?
           // TODO: add DLSS bias mask (to ignore animated textures) by marking up some shaders(materials)/textures hashes with it?
           // TODO: move DLSS before tonemapping, depth of field, bloom and blur. It wouldn't be easy because exposure is calculated after blur in CryEngine,
@@ -3044,15 +3049,15 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
                   // 16 device depth (inverted depth, used by stencil)
                   native_device_context->PSGetShaderResources(0, ARRAYSIZE(ps_shader_resources), reinterpret_cast<ID3D11ShaderResourceView**>(ps_shader_resources));
 
-                  com_ptr<ID3D11RenderTargetView> render_target_view;
+                  ID3D11RenderTargetView* render_target_views[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
                   com_ptr<ID3D11DepthStencilView> depth_stencil_view;
-                  native_device_context->OMGetRenderTargets(1, &render_target_view, &depth_stencil_view);
+                  native_device_context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &render_target_views[0], &depth_stencil_view);
 
-                  const bool dlss_inputs_valid = ps_shader_resources[0].get() != nullptr && ps_shader_resources[16].get() != nullptr && ps_shader_resources[3].get() != nullptr && render_target_view != nullptr;
+                  const bool dlss_inputs_valid = ps_shader_resources[0].get() != nullptr && ps_shader_resources[16].get() != nullptr && ps_shader_resources[3].get() != nullptr && render_target_views[0] != nullptr;
                   ASSERT_ONCE(dlss_inputs_valid);
                   if (dlss_inputs_valid) {
                       com_ptr<ID3D11Resource> output_colorTemp;
-                      render_target_view->GetResource(&output_colorTemp);
+                      render_target_views[0]->GetResource(&output_colorTemp);
                       com_ptr<ID3D11Texture2D> output_color;
                       HRESULT hr = output_colorTemp->QueryInterface(&output_color);
                       ASSERT_ONCE(SUCCEEDED(hr));
@@ -3061,7 +3066,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
                       output_color->GetDesc(&output_texture_desc);
                                             
                       ASSERT_ONCE(std::lrintf(output_resolution.x) == output_texture_desc.Width && std::lrintf(output_resolution.y) == output_texture_desc.Height);
-                      std::array<uint32_t, 2> dlss_render_resolution = FindClosestIntegerResolutionForAspectRatio((double)output_texture_desc.Width * (double)dlss_sr_render_resolution, (double)output_texture_desc.Height * (double)dlss_sr_render_resolution, (double)output_texture_desc.Width / (double)output_texture_desc.Height);
+                      std::array<uint32_t, 2> dlss_render_resolution = FindClosestIntegerResolutionForAspectRatio((double)output_texture_desc.Width * (double)dlss_render_resolution_scale, (double)output_texture_desc.Height * (double)dlss_render_resolution_scale, (double)output_texture_desc.Width / (double)output_texture_desc.Height);
                       // The "HDR" flag in DLSS SR actually means whether the color is in linear space or "sRGB gamma" (apparently not 2.2) (SDR) space, colors beyond 0-1 don't seem to be clipped either way
                       bool dlss_hdr = GetShaderDefineCompiledNumericalValue(POST_PROCESS_SPACE_TYPE_HASH) >= 1; // we are assuming the value was always a number and not empty
 
@@ -3077,7 +3082,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
                       // At lower quality modes (non DLAA), DLSS actually seems to allow for a wider input resolution range that it actually claims when queried for it, but if we declare a resolution scale below 50% here, we can get an assert,
                       // still, DLSS will keep working at any input resolution (or at least with a pretty big tolerance range).
                       // This function doesn't alter the pipeline state (e.g. shaders, cbuffers, RTs, ...), if not, we need to move it to the "Present()" function
-                      NGX::DLSS::UpdateSettings(native_device, native_device_context, output_texture_desc.Width, output_texture_desc.Height, dlss_render_resolution[0], dlss_render_resolution[1], dlss_hdr);
+                      NGX::DLSS::UpdateSettings(native_device, native_device_context, output_texture_desc.Width, output_texture_desc.Height, dlss_render_resolution[0], dlss_render_resolution[1], dlss_hdr, prey_drs_detected);
 
 #if (DEVELOPMENT || TEST) && TEST_DLSS // Verify that DLSS never alters the pipeline state
                       com_ptr<ID3D11ShaderResourceView> ps_shader_resources_post[ARRAYSIZE(ps_shader_resources)];
@@ -3090,7 +3095,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
                       com_ptr<ID3D11RenderTargetView> render_target_view_post;
                       com_ptr<ID3D11DepthStencilView> depth_stencil_view_post;
                       native_device_context->OMGetRenderTargets(1, &render_target_view_post, &depth_stencil_view_post);
-                      ASSERT_ONCE(render_target_view == render_target_view_post && depth_stencil_view == depth_stencil_view_post);
+                      ASSERT_ONCE(render_target_views[0] == render_target_view_post && depth_stencil_view == depth_stencil_view_post);
 
                       com_ptr<ID3D11VertexShader> vs_post;
                       com_ptr<ID3D11PixelShader> ps_post;
@@ -3202,7 +3207,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
                                   ASSERT_ONCE(SUCCEEDED(hr));
 
                                   D3D11_RENDER_TARGET_VIEW_DESC object_velocity_render_target_view_desc;
-                                  render_target_view->GetDesc(&object_velocity_render_target_view_desc);
+                                  render_target_views[0]->GetDesc(&object_velocity_render_target_view_desc);
                                   object_velocity_render_target_view_desc.Format = object_velocity_texture_desc.Format;
                                   object_velocity_render_target_view_desc.ViewDimension = D3D11_RTV_DIMENSION::D3D11_RTV_DIMENSION_TEXTURE2D;
                                   object_velocity_render_target_view_desc.Texture2D.MipSlice = 0;
@@ -3255,6 +3260,20 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
                           // There doesn't seem to be a need to restore the DX state to whatever we had before (e.g. render targets, cbuffers, samplers, UAVs, texture shader resources, viewport, scissor rect, ...), CryEngine always sets everything it needs again for every pass.
                           // DLSS internally keeps its own frames history, we don't need to do that ourselves (by feeding in an output buffer that was the previous frame's output, though we do have that if needed, it should be in ps_shader_resources[1]).
                           if (NGX::DLSS::Draw(native_device_context, dlss_output_color.get(), source_color.get(), dlss_motion_vectors.get(), depth_buffer.get(), dlss_exposure.get(), dlss_pre_exposure, projection_jitters.x, projection_jitters.y, reset_dlss, render_width_dlss, render_height_dlss)) {
+                              has_drawn_dlss_sr = true;
+                          }
+
+                          // Fully reset the state of the RTs given that CryEngine is very delicate with it and uses some push and pop technique (simply resetting caching and resetting the first RT seemed fine for DLSS in case optimization is needed).
+                          // The fact that it could changes cbuffers or texture resources bindings or viewport seems fines.
+                          native_device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &render_target_views[0], depth_stencil_view.get());
+                          for (UINT i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; i++) {
+                              if (render_target_views[i] != nullptr) {
+                                  render_target_views[i]->Release();
+                                  render_target_views[i] = nullptr;
+                              }
+                          }
+
+                          if (has_drawn_dlss_sr) {
                               if (!dlss_output_supports_uav) {
                                   native_device_context->CopyResource(output_color.get(), dlss_output_color.get()); // DX11 doesn't need barriers
                               }
@@ -3262,11 +3281,12 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
                               has_drawn_dlss_sr = true;
                               return true; // "Cancel" the previously set draw call, DLSS will take care of it
                           }
-                          // Restore the render target, hoping that if DLSS failed, it didn't already start changing cbuffers or texture resources bindings or viewport etc.
+                          // DLSS Failed, suppress it for this frame and fall back on SMAA/TAA, hoping that anything before would have been rendered correctly for it already (otherwise it will start being correct in the next frame, given we suppress it (until manually toggled again, given that it'd likely keep failing))
                           else {
-                              ASSERT_ONCE(false); // DLSS FAILED
-                              ID3D11RenderTargetView* const render_target_view_const = render_target_view.get();
-                              native_device_context->OMSetRenderTargets(1, &render_target_view_const, depth_stencil_view.get());
+                              ASSERT_ONCE(false);
+                              cb_luma_frame_settings.DLSS = 0;
+                              dlss_suppressed = true;
+                              force_reset_dlss = true; // We missed frames so it's good to do this, it might also help prevent further errors
                           }
                       }
                       // In this case it's not our buisness to keep alive this "external" texture
@@ -3811,7 +3831,8 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
     auto current_projection_matrix = cb_per_view_global.CV_PrevViewProjMatr;
     auto current_nearest_projection_matrix = cb_per_view_global.CV_PrevViewProjNearestMatr;
 
-    bool replace_prev_projection_matrix = cloned_pipeline_count != 0 && (dlss_sr
+    // Note that "prey_taa_detected" would be one frame late here, but to avoid unexpectedly replacing proj matrices, we check it anyway  (the game always starts with a fade to black, so it's fine)
+    bool replace_prev_projection_matrix = cloned_pipeline_count != 0 && ((dlss_sr && !dlss_suppressed && prey_taa_detected)
 #if DEVELOPMENT || TEST
     || GetShaderDefineCompiledNumericalValue(FORCE_MOTION_VECTORS_JITTERED_HASH) >= 1
 #else
@@ -3929,11 +3950,32 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
         // Once we detect the user enabled DRS, we can't ever know it's been disabled because the game only occasionally drops to lower rendering resolutions, so we couldn't know if it was ever disabled
         if (prey_drs_active) {
             prey_drs_detected = true;
+
+            float resolution_scale = render_resolution.y / output_resolution.y;
             // Lower the DLSS quality mode (which might introduce a stutter, or a slight blurring of the image as it resets the history),
             // but this will make DLSS not use DLAA and instead fall back on a quality mode that allows for a dynamic range of resolutions.
             // This isn't the exact rend resolution DLSS will be forced to use, but the center of a range it's gonna expect.
-            // See CryEngine "osm_fbMinScale" cvar, it should ideally be set to the same value, but this value is fine if above it, given it's the target "average" dynamic resolution.
-            dlss_sr_render_resolution = 1.f / 1.5f;
+            // Unfortunately DLSS has a limited range of accepted resolutions per quality mode, and if you go beyond it, it fails to render (until in range again),
+            // thus, we need to make sure the automatic DRS range of Prey is within the same range!
+            // We couldn't change this resolution scale every frame as it's make DLSS stutter massively.
+            // See CryEngine "osm_fbMinScale" cvar (config), that drives the min rend res scale, the DLSS rend scale should ideally be set to the same value, but it's fine if it's above it, given it's the target "average" dynamic resolution.
+            // If CryEngine ever went below 50% render scale, we force DLSS into ultra performance mode (33%), as the range allowed by quality mode (67%) can't go below 50%. There will be a stutter (and history reset?) every time we swap back and forth, but at least it works...
+            if (resolution_scale < 0.5f - FLT_EPSILON) {
+#if 1 // Unfortunately no quality mode with a res scale below 0.5 supports dynamic resolution scaling, so we are forced to change the quality mode every frame or so (or at least, every time Prey changes DRS value, which might further slow down the DRS detection mechanism...)
+                dlss_render_resolution_scale = resolution_scale;
+#else // If we do this, DLSS would fail if any resolution that didn't exactly match 33% render scale was used by the game
+                dlss_render_resolution_scale = 1.f / 3.f;
+#endif
+            }
+            else {
+                // This should pick quality or balanced mode, with a range from 100% to 50% resolution scale
+                dlss_render_resolution_scale = 1.f / 1.5f;
+            }
+        }
+        // Reset to DLAA and try again (once), given that we can't go from a 1/3 to a 1 rend scale (e.g. in case DRS was disabled in the menu)
+        else if (dlss_suppressed && dlss_render_resolution_scale != 1.f) {
+            dlss_render_resolution_scale = 1.f;
+            dlss_suppressed = false;
         }
 
         // NOTE: we could just save the first one we found, it should always be jittered and "correct".
@@ -3969,9 +4011,9 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
             bool middle_value_different = (prey_taa_enabled == previous_prey_taa_enabled[0]) != (prey_taa_enabled == previous_prey_taa_enabled[1]);
             ASSERT_ONCE(!middle_value_different);
         }
-        bool drew_dlss = cb_luma_frame_settings.DLSS;
+        bool drew_dlss = cb_luma_frame_settings.DLSS; // If this was true, DLSS would have been enabled and probably drew
         prey_taa_detected = prey_taa_enabled || previous_prey_taa_enabled[0]; // This one has a two frames tolerance. We let it persist even if the game stopped drawing the 3D scene.
-        cb_luma_frame_settings.DLSS = (dlss_sr && prey_taa_detected) ? 1 : 0; // No need for "s_mutex_reshade" here, given that they are generally only also changed by the user manually changing the settings in ImGUI, which runs at the very end of the frame
+        cb_luma_frame_settings.DLSS = (dlss_sr && !dlss_suppressed && prey_taa_detected) ? 1 : 0; // No need for "s_mutex_reshade" here, given that they are generally only also changed by the user manually changing the settings in ImGUI, which runs at the very end of the frame
         if (cb_luma_frame_settings.DLSS && !drew_dlss) {
             // Reset DLSS history when we toggle DLSS on and off manually, or when the user in the game changes the AA mode,
             // otherwise the history from the last time DLSS was active will be kept (DLSS doesn't know time passes since it was last used).
@@ -3990,7 +4032,7 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
             std::shared_lock shared_lock_samplers(s_mutex_samplers);
 
             const auto prev_texture_mip_lod_bias_offset = texture_mip_lod_bias_offset;
-            if (dlss_sr && prey_taa_detected && cloned_pipeline_count != 0) {
+            if (dlss_sr && !dlss_suppressed && prey_taa_detected && cloned_pipeline_count != 0) {
                 texture_mip_lod_bias_offset = std::log2(render_resolution.y / output_resolution.y) - 1.f; // This results in -1 at output res
             }
             else {
@@ -4498,6 +4540,9 @@ void OnReshadePresent(reshade::api::effect_runtime* runtime) {
 #endif
   }
 #endif // DEVELOPMENT
+
+  // Moved here so we can read it from ImGUI
+  has_drawn_dlss_sr = false;
 
   //TODOFT: verify this delayed behaviour is actually ever needed and delete it if not (it might be useless!)
   {
@@ -5087,10 +5132,11 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 
         ImGui::BeginDisabled(!dlss_sr_supported);
         if (ImGui::Checkbox("DLSS Super Resolution", &dlss_sr)) {
+            if (dlss_sr) dlss_suppressed = false;
             reshade::set_config_value(runtime, NAME, "DLSSSuperResolution", dlss_sr);
         }
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-            ImGui::SetTooltip("This replaces the game's native AA and dynamic resolution scaling implementations.\nSelect \"SMAA 2TX\" or \"TAA\" in the game's AA settings for DLSS/DLAA to engage (a tick will appear here when it's engaged).\n\nRequires compatible Nvidia GPUs.");
+            ImGui::SetTooltip("This replaces the game's native AA and dynamic resolution scaling implementations.\nSelect \"SMAA 2TX\" or \"TAA\" in the game's AA settings for DLSS/DLAA to engage (a tick will appear here when it's engaged and a warning if it failed).\n\nRequires compatible Nvidia GPUs.");
         }
         ImGui::SameLine();
         if (dlss_sr != true && dlss_sr_supported) {
@@ -5104,7 +5150,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             if (dlss_sr && prey_taa_detected && cloned_pipeline_count != 0) {
                 ImGui::PushID("DLSS Super Resolution Active");
                 ImGui::BeginDisabled();
-                ImGui::SmallButton(ICON_FK_OK); // Show that DLSS is engaged (this will reset if we open a menu etc)
+                ImGui::SmallButton((has_drawn_dlss_sr && !dlss_suppressed) ? ICON_FK_OK : ICON_FK_WARNING); // Show that DLSS is engaged (or failed) (this will reset if we open a menu etc)
                 ImGui::EndDisabled();
                 ImGui::PopID();
             }
@@ -5647,7 +5693,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         if (dlss_sr) {
             ImGui::NewLine();
             ImGui::Text("DLSS Target Resolution Scale: ", "");
-            text = std::to_string(dlss_sr_render_resolution);
+            text = std::to_string(dlss_render_resolution_scale);
             ImGui::Text(text.c_str(), "");
         }
 

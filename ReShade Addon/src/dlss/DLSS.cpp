@@ -286,7 +286,7 @@ bool NGX::DLSS::IsSupported()
 	return data && data->isSupported;
 }
 
-bool NGX::DLSS::UpdateSettings(ID3D11Device* device, ID3D11DeviceContext* commandList, unsigned int outputWidth, unsigned int outputHeight, unsigned int renderWidth, unsigned int renderHeight, bool hdr)
+bool NGX::DLSS::UpdateSettings(ID3D11Device* device, ID3D11DeviceContext* commandList, unsigned int outputWidth, unsigned int outputHeight, unsigned int renderWidth, unsigned int renderHeight, bool hdr, bool dynamicResolution)
 {
 	// Early exit if DLSS is not supported by hardware or driver.
 	if (!device || !commandList || !data || !data->isSupported)
@@ -341,8 +341,8 @@ bool NGX::DLSS::UpdateSettings(ID3D11Device* device, ID3D11DeviceContext* comman
 			const unsigned int deltaFromOptimal = std::abs((int)renderWidth - (int)optimalWidth) + std::abs((int)renderHeight - (int)optimalHeight);
 			const bool isInRange = renderWidth >= minWidth && renderWidth <= maxWidth && renderHeight >= minHeight && renderHeight <= maxHeight;
 
-			// Pick the first one with a matching optimal resolution
-			if (optimalWidth == renderWidth && optimalHeight == renderHeight)
+			// Pick the first one with a matching optimal resolution (unless we are doing dynamic resolution, in that case, simply checking for a raw match isn't enough)
+			if (!dynamicResolution && optimalWidth == renderWidth && optimalHeight == renderHeight)
 			{
 				data->sharpness = sharpness;
 				qualityMode = i;

@@ -24,7 +24,7 @@ namespace NGX
 		// Should be called before shutdown or on device destruction.
 		static void Deinit(ID3D11Device* device);
 
-		static bool UpdateSettings(ID3D11Device* device, ID3D11DeviceContext* commandList, unsigned int outputWidth, unsigned int outputHeight, unsigned int renderWidth, unsigned int renderHeight, bool hdr = true);
+		static bool UpdateSettings(ID3D11Device* device, ID3D11DeviceContext* commandList, unsigned int outputWidth, unsigned int outputHeight, unsigned int renderWidth, unsigned int renderHeight, bool hdr = true, bool dynamicResolution = false);
 
 		// Returns true if drawing didn't fail
 		static bool Draw(ID3D11DeviceContext* commandList, ID3D11Resource* outputColor, ID3D11Resource* sourceColor, ID3D11Resource* motionVectors, ID3D11Resource* depthBuffer, ID3D11Resource* exposure /*= nullptr*/, float preExposure /*= 0*/, float fJitterX, float fJitterY, bool reset = false, unsigned int renderWidth = 0, unsigned int renderHeight = 0);
