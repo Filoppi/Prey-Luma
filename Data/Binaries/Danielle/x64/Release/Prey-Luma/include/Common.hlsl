@@ -103,7 +103,8 @@ cbuffer LumaData : register(b8)
     // and thus we need to work in full resolution space and not rendering resolution space.
     uint PostEarlyUpscaling;
     uint CustomDataOrDummyPadding; // GPU has "32 32 32 32 | break" bits alignment on memory, so to not break the "float2" below, we need this (because we are using a unified struct). This can also be used as non generic (pass specific) data.
-    // Camera jitters in NCD space (rendering resolution) (not in projection matrix space, so they don't need to be divided by the rendering resolution). You might need to multiply this by 0.5 and invert the horizontal axis before using it, if it's targeting UV space.
+    // Camera jitters in NCD space (based on the rendering resolution, but relative to the output resolution full range UVs, so apply these before "CV_HPosScale.xy")
+    // (not in projection matrix space, so they don't need to be divided by the rendering resolution). You might need to multiply this by 0.5 and invert the horizontal axis before using it, if it's targeting UV space.
     float2 CameraJitters;
     // Previous frame's camera jitters in NCD space (relative to its own resolution).
     float2 PreviousCameraJitters;

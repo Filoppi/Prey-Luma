@@ -31,7 +31,7 @@ void main(
   WPos.xy *= float2(BaseHorizontalResolution, BaseVerticalResolution) / CV_ScreenSize.xy;
   // LUMA FT: Add the camera jitters given that these are rendered before TAA, so we have the oportunity to add temporal detail to them
   // (camera jitters might have already been partially considered in the geometry (vertex shader) of this pass, but modulating the screen position helps further)
-	WPos.xy += LumaData.CameraJitters.xy * float2(0.5, -0.5) * CV_ScreenSize.xy;
+	WPos.xy += LumaData.CameraJitters.xy * float2(0.5, -0.5) * CV_ScreenSize.xy * LumaData.RenderResolutionScale;
 
 #if 0 //TODOFT2: do this?
 	float fGlintSpeed = VisionMtlParams.x;

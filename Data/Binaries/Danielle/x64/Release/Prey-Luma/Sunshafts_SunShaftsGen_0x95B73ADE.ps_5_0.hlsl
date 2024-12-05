@@ -46,7 +46,7 @@ void main(
   float2 jitteredBaseTC = inBaseTC;
 #if REJITTER_SUNSHAFTS
   // Selectively pick what we jitter and what not (e.g. the depth buffer (occlusion map), was already dejittered so we don't need to re-jitter it)
-  jitteredBaseTC += LumaData.CameraJitters.xy * float2(0.5, -0.5) / LumaData.RenderResolutionScale;
+  jitteredBaseTC += LumaData.CameraJitters.xy * float2(0.5, -0.5);
 #endif
   
   float2 sunVec = (sunPosProj.xy - jitteredBaseTC.xy) * aspectRatioCorrection;

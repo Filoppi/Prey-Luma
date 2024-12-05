@@ -18,13 +18,13 @@ void main(
   float4 inBaseTC : TEXCOORD0,
   out float4 outColor : SV_Target0)
 {
-  float2 sampleUV = MapViewportToRaster(inBaseTC.xy);
-
 #if REJITTER_SUNSHAFTS
   // Dejitter the background depth/color, to get a more consistent result over time (basically a quick way of resolving TAA)
-  sampleUV -= LumaData.CameraJitters.xy * float2(0.5, -0.5);
+  inBaseTC.xy -= LumaData.CameraJitters.xy * float2(0.5, -0.5);
 #endif
-	
+
+  float2 sampleUV = MapViewportToRaster(inBaseTC.xy);
+
 	sampleUV = min(sampleUV, CV_HPosScale.xy);
 	
   //TODO LUMA: use .Load() for these textures?

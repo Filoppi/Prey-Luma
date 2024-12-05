@@ -35,7 +35,7 @@ void main(
   out float4 o0 : SV_Target0)
 {
   v0.xy *= float2(BaseHorizontalResolution, BaseVerticalResolution) / CV_ScreenSize.xy;
-	v0.xy += LumaData.CameraJitters.xy * float2(0.5, -0.5) * CV_ScreenSize.xy;
+	v0.xy += LumaData.CameraJitters.xy * float2(0.5, -0.5) * CV_ScreenSize.xy * LumaData.RenderResolutionScale;
 
   float4 r0,r1;
 

@@ -269,7 +269,7 @@ void HDRFinalScenePS(float4 WPos, float4 baseTC, out float4 outColor)
 #if ENABLE_VIGNETTE
   // LUMA FT: Ultrawide friendly vignette implementation. To alter the vignette strength, we can multiply the offset from 1 (away from it)
   // LUMA FT: added jittering to vignette, so it's resolved over time more nicely (it's still bad that it's applied before TAA!)
-  float2 jitteredBaseTC = baseTC.xy + (LumaData.CameraJitters.xy * float2(0.5, -0.5) / LumaData.RenderResolutionScale);
+  float2 jitteredBaseTC = baseTC.xy + LumaData.CameraJitters.xy * float2(0.5, -0.5);
 	float fVignetting = vignettingTex.Sample(ssHdrLinearClamp, jitteredBaseTC).x;
 #else // !ENABLE_VIGNETTE
   float fVignetting = 1.0;
