@@ -55,13 +55,15 @@ namespace Hooks
 			// CTexture::GenerateHDRMaps
 			const auto address = Offsets::GetAddress(Offsets::CTexture_GenerateHDRMaps);
 
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_BitsPerPixel), format16f);  // used to calculate bits per pixel 
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_HDRTargetPrev), format16f);  // $HDRTargetPrev
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_HDRTempBloom0), format16f);  // $HDRTempBloom0
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_HDRTempBloom1), format16f);  // $HDRTempBloom1
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_HDRFinalBloom), format16f);  // $HDRFinalBloom
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_SceneTargetR11G11B10F_0), format16f);  // $SceneTargetR11G11B10F_0
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_SceneTargetR11G11B10F_1), format16f);  // $SceneTargetR11G11B10F_1
+#if UPGRADE_INTERMEDIARY_TEXTURES //TODOFT: do we even need to upgrade these from R11G11B10F?
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_BitsPerPixel), format16f);  // used to calculate bits per pixel
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_HDRTargetPrev), format16f);  // $HDRTargetPrev: used for screen space reflections (SSR), Water Volumes (? possibly not in Prey), SVO (? probably not in Prey), Motion Blur (if DoF is disabled?)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_HDRTempBloom0), format16f);  // $HDRTempBloom0: bloom intermediary texture
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_HDRTempBloom1), format16f);  // $HDRTempBloom1: bloom intermediary texture
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_HDRFinalBloom), format16f);  // $HDRFinalBloom: bloom final target
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_SceneTargetR11G11B10F_0), format16f);  // $SceneTargetR11G11B10F_0: used by Lens Optics, Motion Blur (?), and DoF (?)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_SceneTargetR11G11B10F_1), format16f);  // $SceneTargetR11G11B10F_1: used by Screen Space SubSurfaceScattering (SSSSS), Water Volume Caustics (?), ...
+#endif
 		}
 
 #if !ADD_NEW_RENDER_TARGETS && 0 // Force upgrade all the texture we'd replace later too (this leads to issues, like some objects having purple reflections etc) (only compatible with the Steam base game)
