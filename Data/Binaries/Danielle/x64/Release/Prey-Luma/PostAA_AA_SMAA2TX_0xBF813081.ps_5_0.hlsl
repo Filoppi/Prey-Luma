@@ -146,6 +146,7 @@ void main(
 		// We tried scaling the depth generated MVs by the opposite factor instead and it did not work.
 		velocity /= LumaData.RenderResolutionScale;
 	}
+
 // For some reason both the camera depth/projection generation motion vectors and the dynamic objects motion vectors need to be dejittered the same way here, either way.
 // Turning this on makes the TAA/MVs slightly more accurate and stable.
 // Note: see MotionBlur PackVelocities for more info on Jitters and Motion Vectors etc
@@ -166,7 +167,7 @@ void main(
 #endif
 
 	float2 sampleCurrentTC = currTC;
-#if 0 // LUMA FT: use the dejittered UVs here as they avoid shimmering and favour blur (this is currently generally looking worse)
+#if 0 // LUMA FT: use the dejittered UVs here as they avoid shimmering and favour blur (this is currently generally looking worse and probably makes no sense)
 	sampleCurrentTC = dejitteredCurrTC;
 #endif
 #if 0 // LUMA FT: optionally dejitter the previous frame UV, though in reality this is "wrong" because the previous frame is already the blended history of the TAA output and not the last raw pre-TAA jittered frame, so it's already somehow "dejittered" (we could dejitter it by 1/2 or 1/4 in case though)

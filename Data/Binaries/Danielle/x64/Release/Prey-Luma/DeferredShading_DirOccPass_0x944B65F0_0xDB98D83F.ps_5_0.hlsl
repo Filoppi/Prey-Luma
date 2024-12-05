@@ -100,7 +100,7 @@ float4 GTAO(float4 WPos, float4 inBaseTC, out float edges)
 	row_major float4x4 projectionMatrix = mul( CV_ViewProjMatr, CV_InvViewMatr ); // The current projection matrix used to be stored in "CV_PrevViewProjMatr" in vanilla Prey
 
 	//TODO LUMA: do this in shader cbuffer or vertex shader? As optimization? It's mostly fine here
-	//TODOFT5: investigate whether the AO color bleeding implementation is good for GTAO (see "AOColorBleedRT"/"r_ssdoColorBleeding" (config can't be disabled in Prey?)), it seems like it simply prevents AO from applying on bright diffuse color objects but that makes no sense?
+	//TODOFT5: investigate whether the AO color bleeding implementation is good for GTAO (see "AOColorBleedRT"/"r_ssdoColorBleeding" (config can't be disabled in Prey? Actually it seemengly can)), it seems like it simply prevents AO from applying on bright diffuse color objects but that makes no sense?
 	//TODOFT5: test performance and half resolution version (game setting)
 
 #if 1 // The depth in this pass was already linearized (with far matching a value of 1 and the camera origin matching a value of 0), so all we need to do is multiply by the far distance
