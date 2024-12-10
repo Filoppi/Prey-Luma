@@ -85,7 +85,7 @@ void main(
 	const float2 jitteredCurrTC = inBaseTC.xy + jitters;
 
 #if TEST_TAA_TYPE == 1 // LUMA FT: quick jitter test (this will show the original jitter value "m_vProjMatrixSubPixoffset" on the game code)
-	outColor = float4(LumaData.CameraJitters.xy * 0.5 * cbPostAA.screenSize.xy / sRGB_WhiteLevelNits, CF_VolumetricFogDistributionParams.w / sRGB_WhiteLevelNits, 0);
+	outColor = float4(LumaData.CameraJitters.xy * float2(0.5, -0.5) * cbPostAA.screenSize.xy / sRGB_WhiteLevelNits, CF_VolumetricFogDistributionParams.w / sRGB_WhiteLevelNits, 0);
 	return;
 #endif
 

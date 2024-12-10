@@ -82,10 +82,11 @@ void main(
 	[unroll]
 	for (uint i = 0; i < weightsNum; ++i)
 	{
-		outColor.rgb += bloomSourceTex.Sample(ssBloom, coords).rgb * (weights[i] / weightSum);
-    // LUMA FT: adjusted the coords scaling to make sure the "size" of the bloom remains consistent independently of the samples count
+    // LUMA FT: adjusted the coords scaling to make sure the "size" of the bloom remains consistent independently of the samples count,
+    // this change also avoids bloom sampling out of range UVs and trailing at the edges (it was clamping the TC in the wrong place, it should be done on sampling only!)
+		outColor.rgb += bloomSourceTex.Sample(ssBloom, ClampScreenTC(coords)).rgb * (weights[i] / weightSum);
     static const float offsetAdjustment = ((float)weightsNumVanilla - 0.5) / (float)weightsNum;
-		coords = ClampScreenTC(coords + (HDRParams0AspectRatioAdjusted.xy * offsetAdjustment));
+		coords += HDRParams0AspectRatioAdjusted.xy * offsetAdjustment;
 	}
 	
 	// Compose sum of Gaussians in final pass
