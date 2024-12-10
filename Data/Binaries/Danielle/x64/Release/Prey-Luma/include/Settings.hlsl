@@ -167,6 +167,7 @@
 
 //TODOFT2: try to boost the chrominance on highlights? Or desaturate, the opposite.
 //TODOFT0: disable all dev/debug settings below, even for dev mode
+//TODOFT: add test setting to disable all exposure, and see if the game looks more "HDR" (though tonemapping would break...?)
 
 /////////////////////////////////////////
 // Rendering features toggles (development)
@@ -287,7 +288,6 @@ cbuffer LumaSettings : register(b2)
     float GamePaperWhiteNits; // Access this through the global variables below
     float UIPaperWhiteNits; // Access this through the global variables below
     uint DLSS; // Is DLSS enabled (implies it engaged and it's compatible) (this is on even in fullscreen UI menus that don't use upscaling)
-    uint FrameIndex;
 #if DEVELOPMENT
     // These are reflected in ImGui (the number is hardcoded in c++).
     // You can add up to 3 numbers as comment to their right to define the UI settings sliders default, min and max values, and their name.
