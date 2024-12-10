@@ -237,7 +237,7 @@ std::shared_mutex s_mutex_samplers;
 // For "native_swapchain3" and "global_native_device"
 std::shared_mutex s_mutex_device;
 #if DEVELOPMENT
-// for "trace_shader_hashes" and "trace_pipeline_handles" (writing only, reading is already safe)
+// for "trace_shader_hashes", "trace_pipeline_handles", "trace_pipeline_draws" and "trace_threads" (writing only, reading is already safe)
 std::shared_mutex s_mutex_trace;
 #endif
 
@@ -302,8 +302,10 @@ std::unordered_set<uint32_t> shaders_to_dump;
 std::unordered_set<uint32_t> dumped_shaders;
 
 #if DEVELOPMENT
-std::vector<uint32_t> trace_shader_hashes;
-std::vector<uint64_t> trace_pipeline_handles;
+std::vector<uint64_t> trace_pipeline_handles; // The actual list of pipelines that run within the traced frame
+std::vector<uint32_t> trace_pipeline_draws; // How many times the last bound pipeline drew
+std::vector<std::thread::id> trace_threads; // The thread that drew (set) each pipeline
+std::vector<uint32_t> trace_shader_hashes; // Just used to filter out what shaders we've already listed
 #endif
 
 const uint32_t HASH_CHARACTERS_LENGTH = 8;
@@ -794,15 +796,14 @@ struct DrawStateStack {
 };
 
 bool last_pressed_unload = false;
-bool trace_scheduled = false;
-bool trace_running = false;
 bool needs_unload_shaders = false;
 bool needs_load_shaders = false; // Load or reload shaders
 bool needs_live_reload_update = live_reload;
-bool trace_names = false;
 std::atomic<bool> cloned_pipelines_changed = false;
-uint32_t cloned_pipeline_count = 0;
+uint32_t cloned_pipeline_count = 0; // How many pipelines (shaders/passes) we replaced with custom ones (if zero, we can assume the mod isn't doing much)
 #if DEVELOPMENT
+bool trace_scheduled = false;
+bool trace_running = false;
 uint32_t shader_cache_count = 0;
 uint32_t trace_count = 0;
 #endif
@@ -863,7 +864,6 @@ uint64_t GetResourceByViewHandle(DeviceData& data, uint64_t handle) {
 }
 
 std::string GetResourceNameByViewHandle(DeviceData& data, uint64_t handle) {
-  if (!trace_names) return "?";
   auto resource_handle = GetResourceByViewHandle(data, handle);
   if (resource_handle == 0) return "?";
   if (!data.resources.contains(resource_handle)) return "?";
@@ -2291,6 +2291,7 @@ void OnBindPipeline(
   const std::unique_lock lock_trace(s_mutex_trace);
 
   bool add_pipeline_trace = true;
+  // Not a particularly useful feature anymore, given that it hides away passes (we might wanna add some g-buffer geometry draws from the list but not the post processing stuff for example)
   if (trace_list_unique_shaders_only) {
     auto trace_count = trace_shader_hashes.size();
     for (auto index = 0; index < trace_count; index++) {
@@ -2307,9 +2308,12 @@ void OnBindPipeline(
     add_pipeline_trace = false;
   }
 
-  // Pipelines are always "unique"
+  // Pipelines are always "unique" (in DX11 they are simply shader state set calls)
+  // TODO: move this to actual draw calls, not pipelines bindings...
   if (add_pipeline_trace) {
     trace_pipeline_handles.push_back(cached_pipeline->pipeline.handle);
+    trace_pipeline_draws.push_back(0);
+    trace_threads.push_back(std::this_thread::get_id());
   }
 
   for (auto shader_hash : cached_pipeline->shader_hashes) {
@@ -2697,6 +2701,19 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
   ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
   ID3D11DeviceContext* native_device_context = (ID3D11DeviceContext*)(cmd_list->get_native());
   auto& device_data = device->get_private_data<DeviceData>();
+
+#if DEVELOPMENT
+  if (trace_running) {
+      const std::unique_lock lock_trace(s_mutex_trace);
+      // Hack to find the last matching index of "trace_pipeline_draws" given that there's different command lists doing draw calls in multiple threads cuncurrently
+      for (int i = trace_threads.size() - 1; i >= 0; i--) {
+          if (trace_threads[i] == std::this_thread::get_id()) {
+              trace_pipeline_draws[i]++;
+              break;
+          }
+      }
+  }
+#endif
 
   reshade::api::shader_stage stages = reshade::api::shader_stage::all_graphics | reshade::api::shader_stage::all_compute;
 
@@ -4724,14 +4741,17 @@ void OnReshadePresent(reshade::api::effect_runtime* runtime) {
     reshade::log::message(reshade::log::level::info, "present()");
     reshade::log::message(reshade::log::level::info, "--- End Frame ---");
 #endif
+    const std::unique_lock lock_trace(s_mutex_trace);
     trace_count = trace_pipeline_handles.size();
     trace_running = false;
   } else if (trace_scheduled) {
     trace_scheduled = false;
     {
         const std::unique_lock lock_trace(s_mutex_trace);
-        trace_shader_hashes.clear();
         trace_pipeline_handles.clear();
+        trace_pipeline_draws.clear();
+        trace_threads.clear();
+        trace_shader_hashes.clear();
     }
     trace_running = true;
 #if _DEBUG && LOG_VERBOSE
@@ -5100,6 +5120,8 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             const std::shared_lock lock(s_mutex_generic);
             for (auto index = 0; index < trace_count; index++) {
               auto pipeline_handle = trace_pipeline_handles.at(index);
+              auto thread_id =  trace_threads.at(index)._Get_underlying_id(); // Possibly compiler dependent but whatever, cast to int alternatively
+              auto draw_calls = trace_pipeline_draws.at(index);
               const bool is_selected = selected_index == index;
               // Note that the pipelines can be run more than once so this will return the first one matching (there's only one actually, we don't have separate settings for their running instance, as that's runtime stuff)
               const auto pipeline_pair = pipeline_cache_by_pipeline_handle.find(pipeline_handle);
@@ -5110,7 +5132,10 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
               if (is_valid) {
                 const auto pipeline = pipeline_pair->second;
 
-                name << std::setfill('0') << std::setw(3) << index << std::setw(0);
+                // Index - Thread ID - Draw Calls count - Shader Hash(es) - Shader Name
+                name << std::setfill('0') << std::setw(3) << index << std::setw(0); // Fill up 3 slots for the index so the text is aligned
+                name << " - " << thread_id;
+                name << " - " << draw_calls << "x";
                 for (auto shader_hash : pipeline->shader_hashes) {
                   name << " - " << PRINT_CRC32(shader_hash);
                 }
