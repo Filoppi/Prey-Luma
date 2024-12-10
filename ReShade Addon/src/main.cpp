@@ -2856,9 +2856,10 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
                   }
               }
 
-              ssr_command_list = native_device_context;
+              ASSERT_ONCE(ssr_command_list == nullptr);
+              ssr_command_list = native_device_context; // To make sure we only fix mip map draw calls from the same command list (more can run at the same time in different threads)
 
-              return false;
+              return true;
           }
           else {
               ssr_texture = nullptr;
@@ -2868,10 +2869,10 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
               ssr_diffuse_srv = nullptr;
           }
       }
-      if (has_drawn_ssr && !has_drawn_ssr_blend && native_device_context == ssr_command_list && is_custom_pass && original_shader_hashes.Contains(shader_hash_PostEffectsGaussBlurBilinear, reshade::api::shader_stage::pixel) || original_shader_hashes.Contains(shader_hash_PostEffectsTextureToTextureResampled, reshade::api::shader_stage::pixel)) {
+      if (has_drawn_ssr && !has_drawn_ssr_blend && native_device_context == ssr_command_list && is_custom_pass && (original_shader_hashes.Contains(shader_hash_PostEffectsGaussBlurBilinear, reshade::api::shader_stage::pixel) || original_shader_hashes.Contains(shader_hash_PostEffectsTextureToTextureResampled, reshade::api::shader_stage::pixel))) {
           uint32_t custom_data = 1; // This value will make the SSR mip map generation and blurring shaders take choices specifically designed for SSR
           SetPreyLumaConstantBuffers(cmd_list, stages, shared_data_pipeline_layout, LumaConstantBufferType::LumaData, custom_data);
-          return true;
+          return false;
       }
       if (has_drawn_ssr && !has_drawn_ssr_blend && original_shader_hashes.Contains(shader_hash_DeferredShadingSSReflectionComp, reshade::api::shader_stage::pixel)) {
           has_drawn_ssr_blend = true;
@@ -2880,6 +2881,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
               ID3D11ShaderResourceView* const shader_resource_views_const[2] = { ssr_srv.get(), ssr_diffuse_srv.get() };
               native_device_context->PSSetShaderResources(5, 2, &shader_resource_views_const[0]);
           }
+          return false; // Return as we don't need any of Luma's cbuffers
       }
       if (!has_drawn_tonemapping && original_shader_hashes.Contains(shader_hashes_HDRPostProcessHDRFinalScene)) {
           has_drawn_tonemapping = true;
@@ -3083,7 +3085,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
                         rtvs[i] = nullptr;
                     }
                 }
-                return false;
+                return true;
             }
             else {
                 gtao_edges_texture = nullptr; // We can leave "gtao_edges_texture_width" and "gtao_edges_texture_height" as they were
