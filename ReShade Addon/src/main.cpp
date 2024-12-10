@@ -417,33 +417,36 @@ int force_taa_jitter_phases = 0; // Ignored if 0 (automatic mode), set to 1 to b
 int frame_sleep_ms = 0;
 #endif
 
-//TODOFT: put all of these in a better place (e.g. command list data? device data? frame data?), or atomic? or thread_local?
-// Per frame states:
-bool has_drawn_composed_gbuffers = false;
-bool has_drawn_main_post_processing = false;
+////////////////////////////////////////////////////////////////////
+// Per frame states
+// These are atomic for extra safety as there's multiple command lists in the game
+////////////////////////////////////////////////////////////////////
+
+std::atomic<bool> has_drawn_composed_gbuffers = false;
+std::atomic<bool> has_drawn_main_post_processing = false;
 // Useful to know if rendering was skipped in the previous frame (e.g. in case we were in a UI view)
 bool has_drawn_main_post_processing_previous = false;
-bool has_drawn_upscaling = false;
-bool has_drawn_dlss_sr = false;
+std::atomic<bool> has_drawn_upscaling = false;
+std::atomic<bool> has_drawn_dlss_sr = false;
+std::atomic<bool> has_drawn_motion_blur = false;
 bool has_drawn_motion_blur_previous = false;
-bool has_drawn_motion_blur = false;
-bool has_drawn_tonemapping = false;
-bool has_drawn_ssr = false;
-bool has_drawn_ssr_blend = false;
-bool has_drawn_ssao = false;
-bool has_drawn_ssao_denoise = false;
-bool found_per_view_globals = false;
+std::atomic<bool> has_drawn_tonemapping = false;
+std::atomic<bool> has_drawn_ssr = false;
 std::atomic<ID3D11DeviceContext*> ssr_command_list = nullptr;
+std::atomic<bool> has_drawn_ssr_blend = false;
+std::atomic<bool> has_drawn_ssao = false;
+std::atomic<bool> has_drawn_ssao_denoise = false;
+std::atomic<bool> found_per_view_globals = false;
 // Whether the rendering resolution was scaled in this frame (different from the ouput resolution)
-bool prey_drs_active = false;
-bool force_reset_dlss = false;
-bool prey_drs_detected = false;
-float dlss_render_resolution_scale = 1.f;
-bool dlss_suppressed = false;
-bool prey_taa_enabled = false;
+std::atomic<bool> prey_drs_active = false;
+std::atomic<bool> force_reset_dlss = false;
+std::atomic<bool> prey_drs_detected = false;
+std::atomic<float> dlss_render_resolution_scale = 1.f;
+std::atomic<bool> dlss_suppressed = false;
+std::atomic<bool> prey_taa_enabled = false;
 // Index 0 is one frame ago, index 1 is two frames ago
 bool previous_prey_taa_enabled[2] = { false, false };
-bool prey_taa_detected = false;
+std::atomic<bool> prey_taa_detected = false;
 uint32_t frame_index = 0;
 // Directly from cbuffer (so these are transposed)
 Matrix44A projection_matrix;
@@ -2349,7 +2352,7 @@ void SetPreyLumaConstantBuffers(reshade::api::command_list* cmd_list, reshade::a
         // Always do this relative to the current output resolution
         frame_data.PreviousRenderResolutionScale.x = previous_render_resolution.x / output_resolution.x;
         frame_data.PreviousRenderResolutionScale.y = previous_render_resolution.y / output_resolution.y;
-        frame_data.ViewProjectionMatrix = cb_per_view_global.CV_ViewProjMatr; //TODOFT3: delete? are we using these?
+        frame_data.ViewProjectionMatrix = cb_per_view_global.CV_ViewProjMatr; //TODOFT3: delete? are we using these? Make it thread safe
         frame_data.PreviousViewProjectionMatrix = cb_per_view_global_previous.CV_ViewProjMatr;
         frame_data.ReprojectionMatrix = reprojection_matrix;
         cmd_list->push_constants(
@@ -2983,15 +2986,16 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
 
               // Copy it back as CPU buffer and read+store it
               native_device_context->CopyResource(exposure_buffer_cpu.get(), exposure_buffer_gpu.get());
-              float scene_pre_exposure = 1.f;
+              float scene_exposure = 1.f;
               // Note: this is possibly some frames behind, but has no performance hit and it's fine as it is for the use we make of it
               if (mapped_exposure.pData != nullptr) {
-                  scene_pre_exposure = *((float*)mapped_exposure.pData);
-                  if (std::isinf(scene_pre_exposure) || std::isnan(scene_pre_exposure) || scene_pre_exposure <= 0.f) {
-                      scene_pre_exposure = 1.f;
+                  // Depending on "DLSS_RELATIVE_PRE_EXPOSURE" this is either the relative exposure (compared to the average expected exposure value) or raw final exposure
+                  scene_exposure = *((float*)mapped_exposure.pData);
+                  if (std::isinf(scene_exposure) || std::isnan(scene_exposure) || scene_exposure <= 0.f) {
+                      scene_exposure = 1.f;
                   }
               }
-              dlss_scene_pre_exposure = scene_pre_exposure;
+              dlss_scene_pre_exposure = scene_exposure;
 #if DEVELOPMENT || TEST
               bool dlss_relative_pre_exposure = GetShaderDefineCompiledNumericalValue(DLSS_RELATIVE_PRE_EXPOSURE_HASH) >= 1;
 #else
@@ -3008,7 +3012,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
               else {
                   // With this design, we set the DLSS pre-exposure and exposure to the same value, so, given that the exposure was already multiplied in despite it shouldn't have it been so,
                   // DLSS will divide out the exposure through the pre-exposure parameter and then re-acknowledge it through the exposure texture, basically making DLSS act as if it was done before exposure/tonemapping.
-                  dlss_scene_exposure = scene_pre_exposure;
+                  dlss_scene_exposure = scene_exposure;
               }
 
               // Restore original state
@@ -3023,7 +3027,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
       }
       if (!has_drawn_ssao && original_shader_hashes.Contains(shader_hashes_DirOccPass)) {
             has_drawn_ssao = true;
-            if (cloned_pipeline_count != 0 && GetShaderDefineCompiledNumericalValue(SSAO_TYPE_HASH) >= 1) { // If using GTAO
+            if (is_custom_pass && GetShaderDefineCompiledNumericalValue(SSAO_TYPE_HASH) >= 1) { // If using GTAO
                 uint2 gtao_edges_target_resolution = { (UINT)output_resolution.x, (UINT)output_resolution.y };
 
                 ID3D11RenderTargetView* rtvs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
@@ -3927,6 +3931,8 @@ void OnDestroyResourceView(reshade::api::device* device, reshade::api::resource_
   const std::unique_lock lock(data.mutex);
   data.resource_views.erase(view.handle);
 }
+
+std::thread::id global_cbuffer_thread_id;
 #endif // DEVELOPMENT
 
 //TODOFT: an alternative way of approaching this would be to cache all the address of buffers that are ever filled up through ::Map() calls,
@@ -4001,6 +4007,15 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
     if (is_custom_draw_version) {
         return false;
     }
+
+#if DEVELOPMENT
+    std::thread::id new_global_cbuffer_thread_id = std::this_thread::get_id();
+    // Make sure this cbuffer is always updated in the same thread (forever)
+    if (global_cbuffer_thread_id != std::thread::id()) {
+        ASSERT_ONCE(global_cbuffer_thread_id == new_global_cbuffer_thread_id);
+    }
+    global_cbuffer_thread_id = new_global_cbuffer_thread_id;
+#endif
 
     // Copy the temporary buffer ptr into our persistent data
     cb_per_view_global = global_buffer_data;
@@ -4102,7 +4117,8 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
     // After vanilla tonemapping (as soon as AA starts),
     // camera jitters are removed from the cbuffer projection matrices, and the render resolution is also set to 100% (after the upscaling pass),
     // so we want to ignore these cases. We stop at the gbuffer compositions draw, because that's the last know cbuffer 13 to have the perfect values we are looking for (that shader is always run, so it's reliable)!
-    if (output_resolution_matches && (/*!found_per_view_globals ||*/ (!has_drawn_composed_gbuffers && !has_drawn_tonemapping && !has_drawn_main_post_processing)) /*&& !prey_drs_active*/) {
+    // A lot of passes are drawn on scaled down render targets and the cbuffer values would have been updated to reflect that (e.g. "CV_ScreenSize"), so ignore these cases.
+    if (output_resolution_matches && (/*!found_per_view_globals ||*/ (!has_drawn_composed_gbuffers && !has_drawn_tonemapping && !has_drawn_main_post_processing))) {
 #if DEVELOPMENT
         static float2 local_previous_render_resolution;
         if (!found_per_view_globals) {
@@ -4111,12 +4127,15 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
         }
 #endif // DEVELOPMENT
 
+        //TODOFT: these have read/writes that are possibly not thread safe but they should never cause issues in actual usages of Prey
         render_resolution.x = cb_per_view_global.CV_ScreenSize.x;
         render_resolution.y = cb_per_view_global.CV_ScreenSize.y;
+#if 0 // They should already match and the one we have would be more accurate anyway
         output_resolution.x = cb_output_resolution_x; // Round here already as it would always meant to be integer
         output_resolution.y = cb_output_resolution_y;
+#endif
 
-        auto previous_prey_drs_active = prey_drs_active;
+        auto previous_prey_drs_active = prey_drs_active.load();
         prey_drs_active = std::abs(render_resolution.x - output_resolution.x) >= 0.5f || std::abs(render_resolution.y - output_resolution.y) >= 0.5f;
         // Make sure this doesn't change within a frame (once we found DRS in a frame, we should never "lose" it again for that frame.
         // Ignore this when we have no shaders loaded as it would always break due to the "has_drawn_tonemapping" check failing.
@@ -4179,7 +4198,7 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
         // they could also be zero with Halton if the frame index was reset to zero (it is every x frames), but that happens very rarely, and for one frame only.
         prey_taa_enabled = (std::abs(projection_jitters.x * render_resolution.x) >= 0.00075) || (std::abs(projection_jitters.y * render_resolution.y) >= 0.00075); //TODOFT: make calculations more accurate (the threshold)
 #if DEVELOPMENT
-        prey_taa_enabled |= disable_taa_jitters;
+        prey_taa_enabled = prey_taa_enabled || disable_taa_jitters;
 #endif // DEVELOPMENT
         // Make sure that once we detect that TAA was active within a frame, then it should never be detected as off in the same frame (it would mean we are reading a bad cbuffer 13 that we should have discarded).
         // Ignore this when we have no shaders loaded as it would always break due to the "has_drawn_tonemapping" check failing.
