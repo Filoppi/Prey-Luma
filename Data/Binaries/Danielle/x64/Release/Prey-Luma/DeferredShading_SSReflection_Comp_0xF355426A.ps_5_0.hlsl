@@ -266,7 +266,7 @@ void main(
 
 	float weight = frac( min( gloss, 0.99999 ) * 3 ); // LUMA FT: this was probably clamped to ~0.9999 to avoid the weight flipping over to 1 in the last iteration
 	// LUMA FT: the blending weight between mips didn't really make sense and was not perceptually "linear" so we fixed it (it's flipped compared to the new implementation as we go from more blurry to less blurry here)
-	weight = sqr(weight);
+	weight = sqrt(weight);
 
 	[branch] if (gloss > 2.0/3.0)
 		outColor = lerp( refl1, refl0, weight );
