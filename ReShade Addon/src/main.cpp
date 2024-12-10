@@ -465,6 +465,16 @@ std::vector<ID3D11Buffer*> cb_per_view_global_buffer_pending_verification;
 std::vector<CBPerViewGlobal> cb_per_view_globals;
 std::vector<CBPerViewGlobal> cb_per_view_globals_previous;
 
+enum class DebugDrawTextureOptionsMask : uint32_t {
+    None = 0,
+    Fullscreen = 1 << 0,
+    RenderResolutionScale = 1 << 1,
+    ShowAlpha = 1 << 2,
+    PreMultiplyAlpha = 1 << 3,
+    InvertColors = 1 << 4,
+    LinearToGamma = 1 << 5,
+    GammaToLinear = 1 << 6
+};
 com_ptr<ID3D11Texture2D> debug_draw_texture;
 DXGI_FORMAT debug_draw_texture_format = DXGI_FORMAT_UNKNOWN;
 uint32_t debug_draw_shader_hash = 0;
@@ -475,6 +485,7 @@ int32_t debug_draw_pipeline_target_instance = -1;
 // If true we are drawing the render target texture, otherwise the shader resource texture
 bool debug_draw_render_target_view = true;
 int32_t debug_draw_view_index = 0;
+uint32_t debug_draw_options = (uint32_t)DebugDrawTextureOptionsMask::Fullscreen | (uint32_t)DebugDrawTextureOptionsMask::RenderResolutionScale;
 bool debug_draw_auto_clear_texture = false;
 #endif // DEVELOPMENT
 LumaFrameSettings cb_luma_frame_settings = { };
@@ -2419,6 +2430,8 @@ void OnPresent(
             // For now we only support this format, nothing else wouldn't realy make sense
             ASSERT_ONCE(target_desc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT);
 
+            uint32_t custom_const_buffer_data = 0;
+
 #if DEVELOPMENT
             if (debug_draw_texture.get()) {
                 D3D11_SHADER_RESOURCE_VIEW_DESC debug_srv_desc;
@@ -2434,7 +2447,7 @@ void OnPresent(
                 ID3D11ShaderResourceView* const debug_srv_const = debug_srv.get();
                 native_device_context->PSSetShaderResources(1, 1, &debug_srv_const); // Use index 1 (0 is already used)
 
-                // TODO: add gamma visualization parameter, and scaling options (fullscreen, render res, native texture res)
+                custom_const_buffer_data = debug_draw_options;
             }
             // Empty the shader resource so the shader can tell there isn't one
             else {
@@ -2509,8 +2522,8 @@ void OnPresent(
                 if (force_linearize) {
                     cb_luma_frame_settings.DisplayMode = cb_luma_frame_settings_copy.DisplayMode;
                 }
-                if (cloned_pipeline_count == 0) {
-                    SetPreyLumaConstantBuffers(queue->get_immediate_command_list(), reshade::api::shader_stage::pixel, device_data.shared_data_pipeline_layout, LumaConstantBufferType::LumaData);
+                if (cloned_pipeline_count == 0 || custom_const_buffer_data != 0) {
+                    SetPreyLumaConstantBuffers(queue->get_immediate_command_list(), reshade::api::shader_stage::pixel, device_data.shared_data_pipeline_layout, LumaConstantBufferType::LumaData, custom_const_buffer_data);
                 }
             }
 
@@ -5583,24 +5596,88 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             size.y += style.FramePadding.y;
             ImGui::InvisibleButton("", ImVec2(size.x, size.y));
         }
-        const char* debug_draw_mode_strings[2] = {
-            "Render Target",
-            "Shader Resource",
-        };
-        static int debug_draw_mode;
-        if (ImGui::SliderInt("Debug Draw Mode", &debug_draw_mode, 0, 1, debug_draw_mode_strings[debug_draw_mode], ImGuiSliderFlags_NoInput)) {
-            debug_draw_render_target_view = debug_draw_mode <= 0;
-            debug_draw_view_index = 0;
+        if (debug_draw_shader_hash != 0 || debug_draw_pipeline != 0) {
+            const char* debug_draw_mode_strings[2] = {
+                "Render Target",
+                "Shader Resource",
+            };
+            static int debug_draw_mode;
+            if (ImGui::SliderInt("Debug Draw Mode", &debug_draw_mode, 0, 1, debug_draw_mode_strings[debug_draw_mode], ImGuiSliderFlags_NoInput)) {
+                debug_draw_render_target_view = debug_draw_mode <= 0;
+                debug_draw_view_index = 0;
+            }
+            if (debug_draw_render_target_view) {
+                ImGui::SliderInt("Debug Draw: Render Target Index", &debug_draw_view_index, 0, D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT - 1);
+            }
+            else {
+                ImGui::SliderInt("Debug Draw: Pixel Shader Resource Index", &debug_draw_view_index, 0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT - 1);
+            }
+            ImGui::SliderInt("Debug Draw: Pipeline Instance", &debug_draw_pipeline_target_instance, -1, 100); // In case the same pipeline was run more than once by the game, we can pick one to print
+            bool debug_draw_fullscreen = (debug_draw_options & (uint32_t)DebugDrawTextureOptionsMask::Fullscreen) != 0;
+            bool debug_draw_rend_res_scale = (debug_draw_options & (uint32_t)DebugDrawTextureOptionsMask::RenderResolutionScale) != 0;
+            bool debug_draw_show_alpha = (debug_draw_options & (uint32_t)DebugDrawTextureOptionsMask::ShowAlpha) != 0;
+            bool debug_draw_premultiply_alpha = (debug_draw_options & (uint32_t)DebugDrawTextureOptionsMask::PreMultiplyAlpha) != 0;
+            bool debug_draw_invert_colors = (debug_draw_options & (uint32_t)DebugDrawTextureOptionsMask::InvertColors) != 0;
+            bool debug_draw_linear_to_gamma = (debug_draw_options & (uint32_t)DebugDrawTextureOptionsMask::LinearToGamma) != 0;
+            bool debug_draw_gamma_to_linear = (debug_draw_options & (uint32_t)DebugDrawTextureOptionsMask::GammaToLinear) != 0;
+            if (ImGui::Checkbox("Debug Draw Options: Fullscreen", &debug_draw_fullscreen)) {
+                if (debug_draw_fullscreen) {
+                    debug_draw_options |= (uint32_t)DebugDrawTextureOptionsMask::Fullscreen;
+                }
+                else {
+                    debug_draw_options &= ~(uint32_t)DebugDrawTextureOptionsMask::Fullscreen;
+                }
+            }
+            if (ImGui::Checkbox("Debug Draw Options: Render Resolution Scale", &debug_draw_rend_res_scale)) {
+                if (debug_draw_rend_res_scale) {
+                    debug_draw_options |= (uint32_t)DebugDrawTextureOptionsMask::RenderResolutionScale;
+                }
+                else {
+                    debug_draw_options &= ~(uint32_t)DebugDrawTextureOptionsMask::RenderResolutionScale;
+                }
+            }
+            if (ImGui::Checkbox("Debug Draw Options: Show Alpha", &debug_draw_show_alpha)) {
+                if (debug_draw_show_alpha) {
+                    debug_draw_options |= (uint32_t)DebugDrawTextureOptionsMask::ShowAlpha;
+                }
+                else {
+                    debug_draw_options &= ~(uint32_t)DebugDrawTextureOptionsMask::ShowAlpha;
+                }
+            }
+            if (ImGui::Checkbox("Debug Draw Options: Premultiply Alpha", &debug_draw_premultiply_alpha)) {
+                if (debug_draw_premultiply_alpha) {
+                    debug_draw_options |= (uint32_t)DebugDrawTextureOptionsMask::PreMultiplyAlpha;
+                }
+                else {
+                    debug_draw_options &= ~(uint32_t)DebugDrawTextureOptionsMask::PreMultiplyAlpha;
+                }
+            }
+            if (ImGui::Checkbox("Debug Draw Options: Invert Colors", &debug_draw_invert_colors)) {
+                if (debug_draw_invert_colors) {
+                    debug_draw_options |= (uint32_t)DebugDrawTextureOptionsMask::InvertColors;
+                }
+                else {
+                    debug_draw_options &= ~(uint32_t)DebugDrawTextureOptionsMask::InvertColors;
+                }
+            }
+            if (ImGui::Checkbox("Debug Draw Options: Linear to Gamma", &debug_draw_linear_to_gamma)) {
+                if (debug_draw_linear_to_gamma) {
+                    debug_draw_options |= (uint32_t)DebugDrawTextureOptionsMask::LinearToGamma;
+                }
+                else {
+                    debug_draw_options &= ~(uint32_t)DebugDrawTextureOptionsMask::LinearToGamma;
+                }
+            }
+            if (ImGui::Checkbox("Debug Draw Options: Gamma to Linear", &debug_draw_gamma_to_linear)) {
+                if (debug_draw_gamma_to_linear) {
+                    debug_draw_options |= (uint32_t)DebugDrawTextureOptionsMask::GammaToLinear;
+                }
+                else {
+                    debug_draw_options &= ~(uint32_t)DebugDrawTextureOptionsMask::GammaToLinear;
+                }
+            }
+            ImGui::Checkbox("Debug Draw: Auto Clear Texture", &debug_draw_auto_clear_texture); // Is it persistent or not (in case the target texture stopped being found on newer frames). We could also "freeze" it and stop updating it, but we don't need that for now.
         }
-        if (debug_draw_render_target_view) {
-            ImGui::SliderInt("Debug Draw Render Target Index", &debug_draw_view_index, 0, D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT - 1);
-        }
-        else {
-            ImGui::SliderInt("Debug Draw Pixel Shader Resource Index", &debug_draw_view_index, 0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT - 1);
-            
-        }
-        ImGui::SliderInt("Debug Draw Pipeline Instance", &debug_draw_pipeline_target_instance, -1, 100); // In case the same pipeline was run more than once by the game, we can pick one to print
-        ImGui::Checkbox("Debug Draw Auto Clear Texture", &debug_draw_auto_clear_texture); // Is it persistent or not (in case the target texture stopped being found on newer frames). We could also "freeze" it and stop updating it, but we don't need that for now.
 
         ImGui::NewLine();
         ImGui::SliderFloat("DLSS Custom Exposure", &dlss_custom_exposure, 0.0, 10.0);

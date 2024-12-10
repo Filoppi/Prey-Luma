@@ -13,26 +13,54 @@ float4 main(float4 pos : SV_Position0) : SV_Target0
 	float debugWidth;
 	float debugHeight;
 	debugTexture.GetDimensions(debugWidth, debugHeight);
+	// Skip if there's no texture. It might be undefined behaviour, but it seems to work on Nvidia
 	if (debugWidth != 0 && debugHeight != 0)
     {
 		float2 resolutionScale = 1.0;
-#if 1 // Stretch to fullscreen
-		float targetWidth;
-		float targetHeight;
-		sourceTexture.GetDimensions(targetWidth, targetHeight);
-		resolutionScale = float2(debugWidth / targetWidth, debugHeight / targetHeight);
-#endif
-#if 1 // Scale by rendering resolution
-		resolutionScale *= LumaData.RenderResolutionScale;
-#endif
+		bool fullscreen = (LumaData.CustomData & (1 << 0)) != 0;
+        bool renderResolutionScale = (LumaData.CustomData & (1 << 1)) != 0;
+        bool showAlpha = (LumaData.CustomData & (1 << 2)) != 0;
+        bool premultiplyAlpha = (LumaData.CustomData & (1 << 3)) != 0;
+		bool invertColors = (LumaData.CustomData & (1 << 4)) != 0;
+        bool gammaToLinear = (LumaData.CustomData & (1 << 5)) != 0;
+        bool linearToGamma = (LumaData.CustomData & (1 << 6)) != 0;
+
+		if (fullscreen) // Stretch to fullscreen
+		{
+			float targetWidth;
+			float targetHeight;
+			sourceTexture.GetDimensions(targetWidth, targetHeight);
+			resolutionScale = float2(debugWidth / targetWidth, debugHeight / targetHeight);
+		}
+		if (renderResolutionScale) // Scale by rendering resolution
+		{
+			resolutionScale *= LumaData.RenderResolutionScale;
+		}
+
 		pos.xy = round((pos.xy - 0.5) * resolutionScale) + 0.5;
 		float4 color = debugTexture.Load((int3)pos.xyz); // We don't have a sampler here so we just approimate to the closest texel
-#if 0 // Linearize
-        color.rgb = pow(color.rgb, 2.2f);
-#elif 0
-        color.rgb = pow(color.rgb, 1.f / 2.2f);
-#endif
-		return color * paperWhite;
+
+		if (showAlpha)
+		{
+			color.rgb = color.a;
+		}
+		if (premultiplyAlpha)
+		{
+			color.rgb *= color.a;
+		}
+		if (invertColors) // Only works on in SDR range
+		{
+			color.rgb = 1.0 - color.rgb;
+		}
+		if (gammaToLinear) // Linearize (output expects linear)
+		{
+        	color.rgb = pow(abs(color.rgb), 2.2f) * sign(color.rgb);
+		}
+		if (linearToGamma) // Gammify (usually not necessary)
+		{
+       		color.rgb = pow(abs(color.rgb), 1.f / 2.2f) * sign(color.rgb);
+		}
+		return color * paperWhite; // Scale by user paper white brightness just to make it more visible
     }
 #endif
 
