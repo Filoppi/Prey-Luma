@@ -22,22 +22,23 @@ cbuffer CBPerViewGlobal : register(b13)
   row_major float4x4 CV_PrevViewProjMatr : packoffset(c17);
   // Same logic as in "CV_PrevViewProjMatr" (this was also broken in Prey code without Luma).
   row_major float4x4 CV_PrevViewProjNearestMatr : packoffset(c21);
-  // From camera pixel space coordinates (and depth) (the camera location not the near plane) to world space position.
-  // This is jittered too.
+  // From camera pixel space coordinates (and linear normalized depth) (the camera location, not the near plane) to world space position.
+  // This acknowledges jitters too.
   row_major float3x4 CV_ScreenToWorldBasis : packoffset(c25);
   float4 CV_TessInfo : packoffset(c28);
   float4 CV_CameraRightVector : packoffset(c29);
   float4 CV_CameraFrontVector : packoffset(c30);
   float4 CV_CameraUpVector : packoffset(c31);
-  // xy is current viewport resolution, so before and during uspcaling/downscaling to the final/output resolution, it's the rendering resolution, and after it's the output resolution.
+  // xy is current "viewport resolution", so before and during uspcaling/downscaling to the final/output resolution, it's the rendering resolution, and after it's the output resolution.
   // zw is the half of the inverse of the final/output resolution (no rendering resolution scaling acknowledged by it) (half texel size).
-  // Note that this is not always the actual "swapchain" resolution, in most passes it's adapted to actually represent the render target texture resolution.
+  // Note that this is not always the actual "swapchain" texture resolution, in most passes it's adapted to actually represent the render target texture resolution.
   float4 CV_ScreenSize : packoffset(c32);
   // "CV_ScreenSize.xy" divided by "CV_HPosScale.xy" gives the final output resolution (so this has values < 1 for a rendering resolution lower than the output one) (basically it's the rendering res scale). zw are the values from the previous frame.
+  // This has a consistent value independently of the current render target resolution (e.g. whether we are rendering to a half res RT or not, the render scale would still be (e.g.) 50%), though sometimes it might be set to 1 for custom passes that ignore DRS.
   float4 CV_HPosScale : packoffset(c33);
   // Max (bottom right) texture UV coordinates of the render resolution area of the target texture. Z and W are the ones from the previous frame.
   float4 CV_HPosClamp : packoffset(c34);
-  // near / (near - far), near / (far - near), 1 / hfov, 1.
+  // near / (near - far), near / (far - near), 1 / hor fov (not halved), 1.
   float4 CV_ProjRatio : packoffset(c35);
   float4 CV_NearestScaled : packoffset(c36);
   // near (usually 0.1), far (usually 8000), far / maxViewDistance (usually 1), 1/far.

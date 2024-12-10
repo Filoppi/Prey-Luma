@@ -371,6 +371,10 @@ bool hdr_enabled_display = false;
 bool hdr_supported_display = false;
 float default_user_peak_white = default_peak_white;
 ShaderHashesList shader_hashes_TiledShadingTiledDeferredShading;
+uint32_t shader_hash_DeferredShadingSSRRaytrace;
+uint32_t shader_hash_DeferredShadingSSReflectionComp;
+uint32_t shader_hash_PostEffectsGaussBlurBilinear;
+uint32_t shader_hash_PostEffectsTextureToTextureResampled;
 ShaderHashesList shader_hashes_MotionBlur;
 ShaderHashesList shader_hashes_HDRPostProcessHDRFinalScene;
 ShaderHashesList shader_hashes_HDRPostProcessHDRFinalScene_Sunshafts;
@@ -412,6 +416,7 @@ int frame_sleep_ms = 0;
 
 //TODOFT: put all of these in a better place (e.g. command list data? device data? frame data?), or atomic? or thread_local?
 // Per frame states:
+bool has_drawn_composed_gbuffers = false;
 bool has_drawn_main_post_processing = false;
 // Useful to know if rendering was skipped in the previous frame (e.g. in case we were in a UI view)
 bool has_drawn_main_post_processing_previous = false;
@@ -420,10 +425,12 @@ bool has_drawn_dlss_sr = false;
 bool has_drawn_motion_blur_previous = false;
 bool has_drawn_motion_blur = false;
 bool has_drawn_tonemapping = false;
-bool has_drawn_composed_gbuffers = false;
+bool has_drawn_ssr = false;
+bool has_drawn_ssr_blend = false;
 bool has_drawn_ssao = false;
 bool has_drawn_ssao_denoise = false;
 bool found_per_view_globals = false;
+std::atomic<ID3D11DeviceContext*> ssr_command_list = nullptr;
 // Whether the rendering resolution was scaled in this frame (different from the ouput resolution)
 bool prey_drs_active = false;
 bool force_reset_dlss = false;
@@ -503,6 +510,7 @@ std::vector<ShaderDefineData> shader_defines_data = {
   {"SSAO_TYPE", '1', false, false, "0 - Vanilla\n1 - Luma GTAO\nIn case GTAO is too performance intensive, go into the official game graphics settings and set \"Screen Space Directional Occlusion\" to half resolution\nDLSS is suggested to help with denoising AO"},
   {"SSAO_QUALITY", '1', false, false, "0 - Vanilla\n1 - High\n2 - Extreme (slow)"},
   {"BLOOM_QUALITY", '1', false, false, "0 - Vanilla\n1 - High"},
+  {"SSR_QUALITY", '1', false, false, "Screen Space Reflections\n0 - Vanilla\n1 - High\n2 - Ultra\nThis can be fairly expensive so lower it if you are having performance issues"},
 #if DEVELOPMENT || TEST
   {"FORCE_MOTION_VECTORS_JITTERED", force_motion_vectors_jittered ? '0' : '0', false, false, "Forces Motion Vectors generation to include the jitters from the previous frame too, as DLSS needs\nEnabling this forces the native TAA to work as when we have DLSS enabled, making it look a little bit better (less shimmery)"},
 #endif
@@ -624,6 +632,16 @@ UINT gtao_edges_texture_width = 0;
 UINT gtao_edges_texture_height = 0;
 com_ptr<ID3D11RenderTargetView> gtao_edges_rtv;
 com_ptr<ID3D11ShaderResourceView> gtao_edges_srv;
+
+// SSR
+com_ptr<ID3D11Texture2D> ssr_texture;
+com_ptr<ID3D11Texture2D> ssr_diffuse_texture;
+UINT ssr_diffuse_texture_width = 0;
+UINT ssr_diffuse_texture_height = 0;
+DXGI_FORMAT ssr_texture_format = DXGI_FORMAT_UNKNOWN;
+com_ptr<ID3D11RenderTargetView> ssr_diffuse_rtv;
+com_ptr<ID3D11ShaderResourceView> ssr_srv;
+com_ptr<ID3D11ShaderResourceView> ssr_diffuse_srv;
 
 com_ptr<ID3D11BlendState> default_blend_state;
 
@@ -2531,6 +2549,8 @@ void OnPresent(
   }
   has_drawn_ssao = false;
   has_drawn_ssao_denoise = false;
+  has_drawn_ssr = false;
+  has_drawn_ssr_blend = false;
   has_drawn_composed_gbuffers = false;
   has_drawn_motion_blur_previous = has_drawn_motion_blur;
   has_drawn_motion_blur = false;
@@ -2728,6 +2748,132 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
       if (!has_drawn_composed_gbuffers && original_shader_hashes.Contains(shader_hashes_TiledShadingTiledDeferredShading)) {
           has_drawn_composed_gbuffers = true;
       }
+      if (!has_drawn_ssr && original_shader_hashes.Contains(shader_hash_DeferredShadingSSRRaytrace, reshade::api::shader_stage::pixel)) {
+          has_drawn_ssr = true;
+          // There's no need to ever skip this added render target, the performance cost is tiny
+          if (is_custom_pass) {
+              uint2 ssr_diffuse_target_resolution = { (UINT)output_resolution.x, (UINT)output_resolution.y };
+
+              ID3D11RenderTargetView* rtvs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
+              ID3D11DepthStencilView* dsvs;
+              native_device_context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &rtvs[0], &dsvs);
+
+              DXGI_FORMAT new_ssr_texture_format = DXGI_FORMAT_UNKNOWN;
+
+              // See the same code for SSDO (GTAO), the render target resolution is handled in a similar way, based on "r_arkssr" and "r_SSReflHalfRes", but this one can actually draw to a lower (halved) resolution render target (when selecting the half res SSR quality from the menu)
+              if (rtvs[0]) {
+                  com_ptr<ID3D11Resource> render_target_resource;
+                  rtvs[0]->GetResource(&render_target_resource);
+                  if (render_target_resource) {
+                      ssr_texture = nullptr;
+                      render_target_resource->QueryInterface(&ssr_texture);
+                      if (ssr_texture) {
+                          D3D11_TEXTURE2D_DESC render_target_texture_2d_desc;
+                          ssr_texture->GetDesc(&render_target_texture_2d_desc);
+                          ssr_diffuse_target_resolution.x = render_target_texture_2d_desc.Width;
+                          ssr_diffuse_target_resolution.y = render_target_texture_2d_desc.Height;
+                          new_ssr_texture_format = render_target_texture_2d_desc.Format;
+                      }
+                  }
+              }
+              if (!ssr_diffuse_texture.get() || ssr_diffuse_texture_width != ssr_diffuse_target_resolution.x || ssr_diffuse_texture_height != ssr_diffuse_target_resolution.y || ssr_texture_format != new_ssr_texture_format) {
+                  ssr_diffuse_texture_width = ssr_diffuse_target_resolution.x;
+                  ssr_diffuse_texture_height = ssr_diffuse_target_resolution.y;
+
+                  D3D11_TEXTURE2D_DESC texture_desc;
+                  texture_desc.Width = ssr_diffuse_texture_width;
+                  texture_desc.Height = ssr_diffuse_texture_height;
+                  texture_desc.MipLevels = 1;
+                  texture_desc.ArraySize = 1;
+                  texture_desc.Format = DXGI_FORMAT::DXGI_FORMAT_R8_UNORM;
+                  texture_desc.SampleDesc.Count = 1;
+                  texture_desc.SampleDesc.Quality = 0;
+                  texture_desc.Usage = D3D11_USAGE_DEFAULT;
+                  texture_desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+                  texture_desc.CPUAccessFlags = 0;
+                  texture_desc.MiscFlags = 0;
+
+                  ssr_diffuse_texture = nullptr;
+                  HRESULT hr = native_device->CreateTexture2D(&texture_desc, nullptr, &ssr_diffuse_texture);
+                  assert(SUCCEEDED(hr));
+
+                  D3D11_RENDER_TARGET_VIEW_DESC rtv_desc;
+                  rtv_desc.Format = texture_desc.Format;
+                  rtv_desc.ViewDimension = D3D11_RTV_DIMENSION::D3D11_RTV_DIMENSION_TEXTURE2D;
+                  rtv_desc.Texture2D.MipSlice = 0;
+
+                  ssr_diffuse_rtv = nullptr;
+                  hr = native_device->CreateRenderTargetView(ssr_diffuse_texture.get(), &rtv_desc, &ssr_diffuse_rtv);
+                  assert(SUCCEEDED(hr));
+
+                  D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+                  srv_desc.Format = texture_desc.Format;
+                  srv_desc.ViewDimension = D3D11_SRV_DIMENSION::D3D11_SRV_DIMENSION_TEXTURE2D;
+                  srv_desc.Texture2D.MipLevels = 1;
+                  srv_desc.Texture2D.MostDetailedMip = 0;
+
+                  ssr_diffuse_srv = nullptr;
+                  hr = native_device->CreateShaderResourceView(ssr_diffuse_texture.get(), &srv_desc, &ssr_diffuse_srv);
+                  assert(SUCCEEDED(hr));
+
+                  if (ssr_texture) {
+                      srv_desc.Format = new_ssr_texture_format;
+
+                      ssr_texture_format = new_ssr_texture_format;
+                      ssr_srv = nullptr;
+                      // Cache the main (first) SSR texture for later retrieval in the SSR blend shader, given it only had access to mip mapped versions of it
+                      hr = native_device->CreateShaderResourceView(ssr_texture.get(), &srv_desc, &ssr_srv);
+                      assert(SUCCEEDED(hr));
+                  }
+              }
+
+              // Add a second render target to store how "diffuse" reflections need to be, based on the ray travel distance from the relfection point (and the specularity etc).
+              // We need to cache and restore all the RTs as the game uses a push and pop mechanism that tracks them closely, so any changes in state can break them.
+              ID3D11RenderTargetView* rtv1 = rtvs[1];
+              rtvs[1] = ssr_diffuse_rtv.get();
+              native_device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &rtvs[0], dsvs);
+
+#if DEVELOPMENT // Currently we'd only ever need these in development modes to make tweaks
+              SetPreyLumaConstantBuffers(cmd_list, stages, settings_pipeline_layout, LumaConstantBufferType::LumaSettings);
+              SetPreyLumaConstantBuffers(cmd_list, stages, shared_data_pipeline_layout, LumaConstantBufferType::LumaData);
+#endif
+
+              native_device_context->Draw(3, 0);
+
+              rtvs[1] = rtv1;
+              native_device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &rtvs[0], dsvs);
+              for (UINT i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; i++) {
+                  if (rtvs[i] != nullptr) {
+                      rtvs[i]->Release();
+                      rtvs[i] = nullptr;
+                  }
+              }
+
+              ssr_command_list = native_device_context;
+
+              return false;
+          }
+          else {
+              ssr_texture = nullptr;
+              ssr_srv = nullptr;
+              ssr_diffuse_texture = nullptr; // We can leave "ssr_diffuse_texture_width" and "ssr_diffuse_texture_height" as they were
+              ssr_diffuse_rtv = nullptr;
+              ssr_diffuse_srv = nullptr;
+          }
+      }
+      if (has_drawn_ssr && !has_drawn_ssr_blend && native_device_context == ssr_command_list && is_custom_pass && original_shader_hashes.Contains(shader_hash_PostEffectsGaussBlurBilinear, reshade::api::shader_stage::pixel) || original_shader_hashes.Contains(shader_hash_PostEffectsTextureToTextureResampled, reshade::api::shader_stage::pixel)) {
+          uint32_t custom_data = 1; // This value will make the SSR mip map generation and blurring shaders take choices specifically designed for SSR
+          SetPreyLumaConstantBuffers(cmd_list, stages, shared_data_pipeline_layout, LumaConstantBufferType::LumaData, custom_data);
+          return true;
+      }
+      if (has_drawn_ssr && !has_drawn_ssr_blend && original_shader_hashes.Contains(shader_hash_DeferredShadingSSReflectionComp, reshade::api::shader_stage::pixel)) {
+          has_drawn_ssr_blend = true;
+          ssr_command_list = nullptr;
+          if (ssr_srv.get() || ssr_diffuse_srv.get()) {
+              ID3D11ShaderResourceView* const shader_resource_views_const[2] = { ssr_srv.get(), ssr_diffuse_srv.get() };
+              native_device_context->PSSetShaderResources(5, 2, &shader_resource_views_const[0]);
+          }
+      }
       if (!has_drawn_tonemapping && original_shader_hashes.Contains(shader_hashes_HDRPostProcessHDRFinalScene)) {
           has_drawn_tonemapping = true;
 
@@ -2841,6 +2987,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
           has_drawn_motion_blur = true;
       }
       if (!has_drawn_ssao && original_shader_hashes.Contains(shader_hashes_DirOccPass)) {
+            has_drawn_ssao = true;
             if (cloned_pipeline_count != 0 && GetShaderDefineCompiledNumericalValue(SSAO_TYPE_HASH) >= 1) { // If using GTAO
                 uint2 gtao_edges_target_resolution = { (UINT)output_resolution.x, (UINT)output_resolution.y };
 
@@ -2929,7 +3076,6 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
                         rtvs[i] = nullptr;
                     }
                 }
-                has_drawn_ssao = true;
                 return false;
             }
             else {
@@ -2937,14 +3083,13 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
                 gtao_edges_rtv = nullptr;
                 gtao_edges_srv = nullptr;
             }
-            has_drawn_ssao = true;
       }
       if (has_drawn_ssao && !has_drawn_ssao_denoise && original_shader_hashes.Contains(shader_hashes_SSDO_Blur)) {
+          has_drawn_ssao_denoise = true;
           if (gtao_edges_srv.get()) {
               ID3D11ShaderResourceView* const shader_resource_view_const = gtao_edges_srv.get();
               native_device_context->PSSetShaderResources(3, 1, &shader_resource_view_const);
           }
-          has_drawn_ssao_denoise = true;
       }
       if (!has_drawn_main_post_processing && original_shader_hashes.Contains(shader_hashes_PostAAComposites)) {
           // This is the last known pass that is guaranteed to run before UI draws in
@@ -3044,7 +3189,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
                   com_ptr<ID3D11ShaderResourceView> ps_shader_resources[17];
                   // 0 current color source
                   // 1 previous color source (post TAA)
-                  // 2 depth (0-1 being near-far)
+                  // 2 depth (0-1 being camera origin - far)
                   // 3 motion vectors (dynamic objects movement only, no camera movement (if not baked in the dynamic objects))
                   // 16 device depth (inverted depth, used by stencil)
                   native_device_context->PSGetShaderResources(0, ARRAYSIZE(ps_shader_resources), reinterpret_cast<ID3D11ShaderResourceView**>(ps_shader_resources));
@@ -3299,7 +3444,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
 #endif // NGX
   }
 
-  //TODOFT: avoid re-applying these if the data hasn't changed (within the same frame)?
+  //TODOFT: avoid re-applying these if the data hasn't changed (within the same frame)? Add a flag by shader for who needs them?
   if (is_custom_pass) {
       SetPreyLumaConstantBuffers(cmd_list, stages, settings_pipeline_layout, LumaConstantBufferType::LumaSettings);
       //TODOFT: only ever send this after DLSS? We don't really need it before (we barely even need it after!)
@@ -5869,6 +6014,14 @@ void Init(bool async) {
 
   // TiledShading TiledDeferredShading
   shader_hashes_TiledShadingTiledDeferredShading.compute_shaders = { std::stoul("1E676CD5", nullptr, 16), std::stoul("80FF9313", nullptr, 16), std::stoul("571D5EAE", nullptr, 16), std::stoul("6710AFD5", nullptr, 16), std::stoul("54147C78", nullptr, 16), std::stoul("BCD5A089", nullptr, 16), std::stoul("C2FC1948", nullptr, 16), std::stoul("E3EF3C20", nullptr, 16), std::stoul("F8633A07", nullptr, 16) };
+  // DeferredShading SSR_Raytrace 
+  shader_hash_DeferredShadingSSRRaytrace = std::stoul("AED014D7", nullptr, 16);
+  // DeferredShading - SSReflection_Comp
+  shader_hash_DeferredShadingSSReflectionComp = std::stoul("F355426A", nullptr, 16);
+  // PostEffects GaussBlurBilinear
+  shader_hash_PostEffectsGaussBlurBilinear = std::stoul("8B135192", nullptr, 16);
+  // PostEffects TextureToTextureResampled
+  shader_hash_PostEffectsTextureToTextureResampled = std::stoul("B969DC27", nullptr, 16); // One of the many
   // MotionBlur MotionBlur
   shader_hashes_MotionBlur.pixel_shaders = { std::stoul("D0C2257A", nullptr, 16), std::stoul("76B51523", nullptr, 16), std::stoul("6DCC9E5D", nullptr, 16) };
   // HDRPostProcess HDRFinalScene (vanilla HDR->SDR tonemapping)

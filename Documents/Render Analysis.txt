@@ -2,7 +2,7 @@
 Draw "device" depth (inverted) and stencil buffers (there's no pixel shaders here for the most part (there are for a couple materials, like vegetation? but they seem to be empty), just raw vertices)
 ...
 Draw G-Buffers (Normals, Albedos, Specular/Metallicness, motion vectors (of dynamic objects only), "device" depth (inverted) and stencil again?) (first person character meshes draw around the end, likely with a different matrix)
-Convert "device" inverted depth to linear depth (R32F)
+Convert "device" inverted depth to linear depth (R32F) (this also maps it from the near 0 - far 1 range to a camera origin 0 - far 1 range)
 Downsample depth buffer (half res, RGBA16F, with each channel representing max/min/average/tap, uses "DownsampleDepthPS")
 Draw (deferred) decals
 Downsample depth buffer (again? This one seems to make them even smaller)
@@ -12,7 +12,7 @@ Compose SSR textures to a final buffer usable later (uses "SSRCompositionPS")
 Draw some dynamic shadow maps (cubemaps?)
 Draw SSDO (SSAO) (uses "DirOccPassPS")
 Blur SSAO (uses "SSDO_Blur_PS")
-Downsample and blur albedo buffer
+Downsample and blur albedo buffer (probably for SSDO Color Bleeding)
 Draw some more stuff on the depth buffer
 Draw "ClipVolumeBlendValue" (some kind of mask that goes into "ResolveStencil"?)
 Draw "ResolveStencil" (this is for blur?)

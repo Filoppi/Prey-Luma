@@ -1,3 +1,5 @@
+#include "include/Common.hlsl"
+
 cbuffer PER_BATCH : register(b0)
 {
   float4 clampTC : packoffset(c0);
@@ -34,29 +36,54 @@ void main(
   float2 sampleUVClamp = CV_HPosScale.xy - (0.5 / outputResolution);
 #endif
 
+  float validWeight = 0.0;
+  float totalWeight = 0.0;
+
 	float4 col = _tex0.Sample(_tex0_s, min(tc0.xy, sampleUVClamp));
-	sum += col * psWeights[0].x;  
+	sum += col * psWeights[0].x;
+  validWeight += all(col == 0.0) ? 0.0 : psWeights[0].x;
+  totalWeight += psWeights[0].x;
 
 	col = _tex0.Sample(_tex0_s, min(tc0.zw, sampleUVClamp));
-	sum += col * psWeights[1].x;  
+	sum += col * psWeights[1].x;
+  validWeight += all(col == 0.0) ? 0.0 : psWeights[1].x;
+  totalWeight += psWeights[1].x;
 	
   col = _tex0.Sample(_tex0_s, min(tc1.xy, sampleUVClamp));
-	sum += col * psWeights[2].x;  
+	sum += col * psWeights[2].x;
+  validWeight += all(col == 0.0) ? 0.0 : psWeights[2].x;
+  totalWeight += psWeights[2].x;
 
 	col = _tex0.Sample(_tex0_s, min(tc1.zw, sampleUVClamp));
 	sum += col * psWeights[3].x;
+  validWeight += all(col == 0.0) ? 0.0 : psWeights[3].x;
+  totalWeight += psWeights[3].x;
 
 	col = _tex0.Sample(_tex0_s, min(tc2.xy, sampleUVClamp));
-	sum += col * psWeights[4].x;  
+	sum += col * psWeights[4].x;
+  validWeight += all(col == 0.0) ? 0.0 : psWeights[4].x;
+  totalWeight += psWeights[4].x;
 	
 	col = _tex0.Sample(_tex0_s, min(tc2.zw, sampleUVClamp));
-	sum += col * psWeights[5].x;  
+	sum += col * psWeights[5].x;
+  validWeight += all(col == 0.0) ? 0.0 : psWeights[5].x;
+  totalWeight += psWeights[5].x;
 	
 	col = _tex0.Sample(_tex0_s, min(tc3.xy, sampleUVClamp));
-	sum += col * psWeights[6].x;  
+	sum += col * psWeights[6].x;
+  validWeight += all(col == 0.0) ? 0.0 : psWeights[6].x;
+  totalWeight += psWeights[6].x;
 	
 	col = _tex0.Sample(_tex0_s, min(tc3.zw, sampleUVClamp));
 	sum += col * psWeights[7].x;
+  validWeight += all(col == 0.0) ? 0.0 : psWeights[7].x;
+  totalWeight += psWeights[7].x;
+
+  // See shader 0xB969DC27 to explanation
+  if (LumaData.CustomData != 0 && validWeight != 0.0)
+  {
+    sum.rgb *= totalWeight / validWeight; // Leave the alpha as it was, we want that
+  }
 
   // LUMA FT: this seems to already be acknowledging the aspect ratio (in the vertex shader) and thus it blurs equally (in screen space) for ultrawide or 16:9 or any aspect ratio. This is used in menus backgrounds and other scene texture operations in Prey anyways
   // LUMA FT: note that this can cause invalid luminances in the downscaled image

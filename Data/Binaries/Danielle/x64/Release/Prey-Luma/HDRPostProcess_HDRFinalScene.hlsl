@@ -15,7 +15,7 @@ Texture2D<float4> hdrSourceTex : register(t0);
 #endif
 Texture2D<float2> adaptedLumTex : register(t1); // 1px texture
 Texture2D<float4> bloomTex : register(t2);
-Texture2D<float> depthTex : register(t5);
+Texture2D<float> depthTex : register(t5); // Linear Depth (0 camera origin, 1 far)
 Texture2D<float4> vignettingTex : register(t7);
 Texture2D<float4> colorChartTex : register(t8);
 Texture2D<float4> sunshaftsTex : register(t9);
@@ -45,9 +45,26 @@ float2 MapViewportToRaster(float2 normalizedViewportPos, bool bOtherEye = false)
 		return normalizedViewportPos * CV_HPosScale.xy;
 }
 
-float GetLinearDepth(float fLinearDepth, bool bScaled = false)
+// LUMA FT: added device depth support (for no reason really)
+float GetLinearDepth(float fDepth, bool bScaled = false, bool bDeviceDepth = false)
 {
-    return fLinearDepth * (bScaled ? CV_NearFarClipDist.y : 1.0f);
+  if (bScaled)
+	{
+    if (bDeviceDepth)
+    {
+      fDepth = ((1.0 - fDepth) * (CV_NearFarClipDist.y - CV_NearFarClipDist.x)) + CV_NearFarClipDist.x;
+    }
+    else
+    {
+		  fDepth *= CV_NearFarClipDist.y;
+    }
+  }
+  else if (bDeviceDepth)
+  {
+    float fRelativeNear = CV_NearFarClipDist.x / CV_NearFarClipDist.y;
+    fDepth = (1.0 - fDepth) + (fRelativeNear * fDepth);
+  }
+  return fDepth;
 }
 
 //TODOFT: move?

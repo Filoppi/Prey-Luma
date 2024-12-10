@@ -20,7 +20,7 @@ List of features:
 -Improved Dynamic Resolution Scaling support (film grain, bloom, TAA, lens optics, ... did not scale properly with dynamic rendering resolutions, and it generally just did not look very nice)
 -Improved Anisotropic Filtering (it was not set to 16x on all textures)
 -Improved Swapchain flip model (more responsive)
--Improved Screen Space Reflections
+-Improved Screen Space Reflections (they are not cropped anymore, and get progressively more diffuse with distance)
 -More (e.g. the sun got progressively smaller at higher resolutions in some scenes, objects highlights didn't look right at higher resolutions, added optional HDR post process filter on video cutscenes)!
 
 How to use:

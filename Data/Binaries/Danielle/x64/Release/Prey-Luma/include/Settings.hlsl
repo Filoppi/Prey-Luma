@@ -137,6 +137,12 @@
 #ifndef BLOOM_QUALITY
 #define BLOOM_QUALITY 1
 #endif
+// 0 Vanilla
+// 1 High (best balance)
+// 2 Extreme (slow)
+#ifndef SSR_QUALITY
+#define SSR_QUALITY 1
+#endif
 // 0 None: disabled
 // 1 Vanilla: basic sharpening
 // 2 RCAS: AMD improved sharpening
