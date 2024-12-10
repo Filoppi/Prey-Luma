@@ -65,6 +65,9 @@ public:
 	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CD3D9Renderer_RT_RenderScene = { 0xF41CA0, 0xF2F6B5, 0xF0A2A0, 0xF64F40 };
 	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> CD3D9Renderer_RT_RenderScene_Jitters = { 0x57A, 0x5E5, 0x5DC, 0x585 };
 
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> OnHFOVChanged = { 0x17266D0, 0x1850B10, 0x16B4260, 0x17DCD10 };
+	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> OnHFOVChanged_Offset = { 0x8E, 0x8E, 0x89, 0x89 };
+
 	// Hooks
 	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SwapchainDesc_Func = { 0xF50000, 0xF733E0, 0xF17790, 0xF3C5F0 };
 	static constexpr std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)> SwapchainDesc_Start = { 0x50E, 0x50E, 0x505, 0x505 };

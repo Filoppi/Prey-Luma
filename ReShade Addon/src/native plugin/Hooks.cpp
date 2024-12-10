@@ -66,6 +66,16 @@ namespace Hooks
 		}
 #endif
 
+		// Patch out the branch that clamps hFOV to 120.f
+		{
+			// OnHFOVChanged
+			const auto address = Offsets::GetAddress(Offsets::OnHFOVChanged);
+
+			uint8_t nop8[] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
+
+			dku::Hook::WriteData(address + Offsets::Get(Offsets::OnHFOVChanged_Offset), &nop8, sizeof(nop8));  // minss -> nop
+		}
+
 #if !ADD_NEW_RENDER_TARGETS && 0 // Force upgrade all the texture we'd replace later too (this leads to issues, like some objects having purple reflections etc) (only compatible with the Steam base game)
 		{
 			// CDeferredShading::CreateDeferredMaps
