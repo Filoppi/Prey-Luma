@@ -120,7 +120,6 @@ namespace
         float ScenePaperWhite;
         float UIPaperWhite;
         uint32_t DLSS;
-        uint32_t FrameIndex;
 #if DEVELOPMENT // In case we disabled the "DEVELOPMENT" shader define while the code is compiled in "DEVELOPMENT" mode, we'll simply push values that aren't read by shaders
         LumaFrameDevSettings DevSettings;
 #endif
@@ -129,7 +128,9 @@ namespace
 
     struct LumaFrameData {
         uint32_t PostEarlyUpscaling;
-        uint32_t CustomData; // Per call data (used to be padding)
+        uint32_t CustomData; // Per call data
+        uint32_t Padding;
+        uint32_t FrameIndex;
         float2 CameraJitters;
         float2 PreviousCameraJitters;
         float2 RenderResolutionScale;

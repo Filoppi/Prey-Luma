@@ -441,6 +441,7 @@ bool prey_taa_enabled = false;
 // Index 0 is one frame ago, index 1 is two frames ago
 bool previous_prey_taa_enabled[2] = { false, false };
 bool prey_taa_detected = false;
+uint32_t frame_index = 0;
 // Directly from cbuffer (so these are transposed)
 Matrix44A projection_matrix;
 Matrix44A nearest_projection_matrix;
@@ -2315,7 +2316,9 @@ void SetPreyLumaConstantBuffers(reshade::api::command_list* cmd_list, reshade::a
         LumaFrameData frame_data;
         frame_data.PostEarlyUpscaling = has_drawn_dlss_sr && !has_drawn_upscaling;
         frame_data.CustomData = custom_data;
-        frame_data.CameraJitters = projection_jitters;
+        frame_data.Padding = 0;
+        frame_data.FrameIndex = frame_index;
+        frame_data.CameraJitters = projection_jitters; //TODOFT: pre-multiply these by float2(0.5, -0.5) (NDC to UV space) given that they are always used like that in shaders
         frame_data.PreviousCameraJitters = previous_projection_jitters;
         frame_data.RenderResolutionScale.x = render_resolution.x / output_resolution.x;
         frame_data.RenderResolutionScale.y = render_resolution.y / output_resolution.y;
@@ -2642,7 +2645,7 @@ void OnPresent(
   NativePlugin::SetHaltonSequencePhases(8); // We could do this once only on boot but whatever
 #endif // NGX
 
-  cb_luma_frame_settings.FrameIndex++;
+  frame_index++;
 }
 
 //TODOFT5: "_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR" as define at the top?

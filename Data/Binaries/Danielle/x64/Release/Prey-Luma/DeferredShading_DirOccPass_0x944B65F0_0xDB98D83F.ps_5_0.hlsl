@@ -87,7 +87,7 @@ float4 GTAO(float4 WPos, float4 inBaseTC, out float edges)
 	GTAOConstants consts;
 
 #if ENABLE_SSAO_TEMPORAL && ENABLE_SSAO_DENOISE
-	const uint frameCounter = LumaSettings.FrameIndex;
+	const uint frameCounter = LumaData.FrameIndex;
 	static const uint denoisePasses = 1; // Match this with how many times the denoiser pass will later run: "0: disabled, 1: sharp, 2: medium, 3: soft".
 #elif ENABLE_SSAO_DENOISE
 	static const uint frameCounter = 0;
@@ -339,7 +339,7 @@ void main(float4 WPos : SV_Position0, float4 inBaseTC : TEXCOORD0, out float4 ou
 // This can look very weird given that this kind of "randomization" isn't made to be temporally reconstructed (we'd need to blend in with the previous AO results and reject them by depth to do this properly).
 #if ENABLE_SSAO_TEMPORAL && 0
 	static const uint phases = 8; // Higher values could be better. 8 is the default jitter period for DLAA.
-	const float angularTime = LumaSettings.DLSS ? (abs(((LumaSettings.FrameIndex % phases) / (float)(phases - 1)) - 0.5) * 2.0 * PI_X2) : 0.0;
+	const float angularTime = LumaSettings.DLSS ? (abs(((LumaData.FrameIndex % phases) / (float)(phases - 1)) - 0.5) * 2.0 * PI_X2) : 0.0;
 #else // !ENABLE_SSAO_TEMPORAL
 	static const float angularTime = 0;
 #endif // ENABLE_SSAO_TEMPORAL

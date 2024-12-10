@@ -14,7 +14,7 @@ Texture2D<float2> adaptedLumTex : register(t1);
 float main() : SV_Target0
 {
 	// The HDR tonemap shader (HDRPostProcess HDRFinalScene) has branches for sun shafts, which shift the "HDREyeAdaptation" cbuffer value.
-	bool hasSunshafts = LumaData.CustomDataOrDummyPadding;
+	bool hasSunshafts = LumaData.CustomData;
 	float4 HDREyeAdaptation = hasSunshafts ? Param2 : Param1;
 	
 	float vAdaptedLum = adaptedLumTex.Load(0).x; // This is a 1x1 texture, so any UV will return the same value
