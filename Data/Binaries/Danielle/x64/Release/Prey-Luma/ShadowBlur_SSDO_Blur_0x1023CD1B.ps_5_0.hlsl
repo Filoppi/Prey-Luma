@@ -59,7 +59,7 @@ void main(
 	consts.ViewportPixelSize = CV_ScreenSize.zw * 2.0;
 	consts.ScaledViewportPixelSize = 1.0 / CV_ScreenSize.xy;
 	consts.SampleUVClamp = CV_HPosClamp.xy;
-	consts.DenoiseBlurBeta = (denoisePasses==0) ? 1e4f : 1.2f;
+	consts.DenoiseBlurBeta = (denoisePasses == 0) ? 1e4f : 1.2f; // The lower this value, the bluerrier the output will be. At higher values, we keep the AO as sharp as it was.
     outColor = XeGTAO_Denoise( v0.xy, consts, sourceTex, gtaoEdges, ssDepth, lastDenoisePass );
 #if PREMULTIPLY_BENT_NORMALS // On the last denoising pass, do this as it's expected by Prey's code
 	if (lastDenoisePass)
@@ -76,8 +76,6 @@ void main(
 		return;
 	}
 #endif
-
-	float4 depth4;
   
 	// In order to get four bilinear-filtered samples(16 samples effectively)
 	// +-+-+-+-+
@@ -95,22 +93,26 @@ void main(
 	float4 value2 = GetTexture2D(sourceTex, ssSource, addr2);
 	float4 value3 = GetTexture2D(sourceTex, ssSource, addr3);
 
+	// Average the 4 samples
+	outColor = (value0 + value1 + value2 + value3) * 0.25;
+
 	// Sample depth values
 	const float4 vDepthAddrOffset = float4(1.0, 1.0, -1.0, -1.0) * BlurOffset.xyxy;
+	float4 depth4;
 	depth4.x = GetTexture2D_1(depthTex, ssDepth, addr0 + vDepthAddrOffset.zw).x;
 	depth4.y = GetTexture2D_1(depthTex, ssDepth, addr1 + vDepthAddrOffset.xw).x;
 	depth4.z = GetTexture2D_1(depthTex, ssDepth, addr2 + vDepthAddrOffset.zy).x;
 	depth4.w = GetTexture2D_1(depthTex, ssDepth, addr3 + vDepthAddrOffset.xy).x;
 
 	float centerDepth = GetLinearDepth(GetTexture2D_1(depthTex, ssDepth, inBaseTC.xy).x);
-	float4 weight4 = saturate(1.0 - 35.0 * abs(depth4 / centerDepth - 1.0));
+	float4 weight4 = saturate(1.0 - 35.0 * abs(depth4 / centerDepth - 1.0)); // LUMA FT: empirically found value
 
 	float totalWeight = dot(weight4, 1.0);
-	weight4 /= totalWeight;
-
-	outColor = (value0 + value1 + value2 + value3) * 0.25;
-	if (totalWeight > 0.01) //TODOFT: why this threshold?
+	// Re-average the 4 samples based on their relative depth (against the depth at the center)
+	if (totalWeight > 0.01) // Avoid doing it for smaller values, to not incur into precision errors (the threshold is currently pretty high!)
+	{
+		weight4 /= totalWeight;
 		outColor = weight4.x * value0 + weight4.y * value1 + weight4.z * value2 + weight4.w * value3;
-	
+	}
 #endif // SSAO_TYPE >= 1
 }

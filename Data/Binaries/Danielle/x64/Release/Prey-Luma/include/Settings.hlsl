@@ -129,6 +129,13 @@
 #ifndef SSAO_QUALITY
 #define SSAO_QUALITY 1
 #endif
+// 0 Small (makes the screen space limitations less appearent)
+// 1 Vanilla
+// 2 Large (can look more realistic, but also over darkening and bring out the screen space limitations (e.g. stuff de-occluding around the edges when turning the camera))
+// GTAO only
+#ifndef SSAO_RADIUS
+#define SSAO_RADIUS 1
+#endif
 // Makes AO jitter a bit to add blend in more quality over time.
 // Requires TAA enabled to not look terrible.
 #define ENABLE_SSAO_TEMPORAL 1

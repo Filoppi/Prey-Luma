@@ -507,8 +507,11 @@ std::vector<ShaderDefineData> shader_defines_data = {
   {"FORCE_NEUTRAL_COLOR_GRADING_LUT_TYPE", '0', false, false, "Can force a neutral LUT in different ways (color grading is still applied)"},
   {"DRAW_LUT", '0', false, (DEVELOPMENT || TEST) ? false : true},
 #endif
-  {"SSAO_TYPE", '1', false, false, "0 - Vanilla\n1 - Luma GTAO\nIn case GTAO is too performance intensive, go into the official game graphics settings and set \"Screen Space Directional Occlusion\" to half resolution\nDLSS is suggested to help with denoising AO"},
+  {"SSAO_TYPE", '1', false, false, "Screen Space Ambient Occlusion\n0 - Vanilla\n1 - Luma GTAO\nIn case GTAO is too performance intensive, lower the \"SSAO_QUALITY\" or go into the official game graphics settings and set \"Screen Space Directional Occlusion\" to half resolution\nDLSS is suggested to help with denoising AO"},
   {"SSAO_QUALITY", '1', false, false, "0 - Vanilla\n1 - High\n2 - Extreme (slow)"},
+#if DEVELOPMENT || TEST // For now we don't want to give users this customization, the default value should be good for most users and most cases
+  {"SSAO_RADIUS", '1', false, false, "0 - Small, 1 - Vanilla/Standard (suggested)\n2 - Large\nSmaller radiuses can look more stable but don't do as much\nLarger radiuses can look more realistic, but also over darkening and bring out screen space limitations more often (e.g. stuff de-occluding around the edges when turning the camera)\nOnly applies to GTAO"},
+#endif
   {"BLOOM_QUALITY", '1', false, false, "0 - Vanilla\n1 - High"},
   {"SSR_QUALITY", '1', false, false, "Screen Space Reflections\n0 - Vanilla\n1 - High\n2 - Ultra\nThis can be fairly expensive so lower it if you are having performance issues"},
 #if DEVELOPMENT || TEST

@@ -35,9 +35,13 @@
 #ifndef XE_GTAO_ENABLE_DENOISE
 #define XE_GTAO_ENABLE_DENOISE 1
 #endif
+// LUMA FT: added custom code to skip the sky (depth ~1) given that it has invalid (garbage) normal maps (they aren't drawn there). This is optional anyway as no AO is drawn in the sky.
+#ifndef XE_GTAO_IGNORE_SKY
+#define XE_GTAO_IGNORE_SKY 1
+#endif
 // LUMA FT: compatibility with downscaled depth texture, where the average is on 3rd channel (z/blue)
-#ifndef XE_GTAO_DEPTH_FLOAT4
-#define XE_GTAO_DEPTH_FLOAT4 0
+#ifndef XE_GTAO_SCALED_DEPTH_FLOAT4
+#define XE_GTAO_SCALED_DEPTH_FLOAT4 0
 #endif
 // LUMA FT: In Prey this is true, though the FP32 depth was sourced from a S24 or some other format like that so maybe it's not right to have it on, but we haven't seen issues from it
 #define XE_GTAO_FP32_DEPTHS
@@ -65,9 +69,10 @@ struct GTAOConstants
     Vector2                 ViewportPixelSize;                  // .zw == 1.0 / ViewportSize.xy
     // LUMA FT: pre-scaled by render resolution, as optimization
     Vector2                 ScaledViewportPixelSize;
-    // LUMA FT: added render scale (e.g. if 0.5, only the top left half of the buffer is used) and UV clamp
+    // LUMA FT: added render scale (e.g. if 0.5, only the top left half of the buffer is used) and UV clamp (for full res and scaled textures)
     Vector2                 RenderResolutionScale;
     Vector2                 SampleUVClamp;                      // 1
+    Vector2                 SampleScaledUVClamp;                // 1
 
 #if 1 // LUMA FT: changed to support Prey
     float                   DepthFar;
@@ -85,7 +90,7 @@ struct GTAOConstants
     float                   EffectFalloffRange;
 
     float                   RadiusMultiplier;
-    float                   Padding1;
+    float                   MinVisibility;                      // e.g. 0 or 0.03...
     float                   FinalValuePower;
     float                   DenoiseBlurBeta;
 
@@ -318,10 +323,11 @@ lpfloat3x3 XeGTAO_RotFromToMatrix( lpfloat3 from, lpfloat3 to )
 }
 
 float4 XeGTAO_MainPass( float2 pixCoord, lpfloat sliceCount, lpfloat stepsPerSlice, const lpfloat2 localNoise, lpfloat3 viewspaceNormal, const GTAOConstants consts,
-#if XE_GTAO_DEPTH_FLOAT4
-    Texture2D<float4> sourceViewspaceDepth,
-#else
     Texture2D<float> sourceViewspaceDepth,
+#if XE_GTAO_SCALED_DEPTH_FLOAT4
+    Texture2D<float4> sourceViewspaceScaledDepth,
+#else
+    Texture2D<float> sourceViewspaceScaledDepth,
 #endif
     SamplerState depthSampler, out float packedEdges )
 {                                                                       
@@ -331,18 +337,18 @@ float4 XeGTAO_MainPass( float2 pixCoord, lpfloat sliceCount, lpfloat stepsPerSli
     // LUMA FT: these buffers are jittered, and that theoretically helps with AO as it adds temporal information to it.
     // It won't directly react to the jitters in the way TAA reconstruction will expect, but it will still add some temporal information.
     // We couldn't easily de-jitter these as they are sampled weirdly, and also it probably would look worse.
-    // TODO: consider using the full resolution depth for this central samples? That's that GTAO was doing, it was only using mip maps for the further samples below
+    // 
+    // We always use the full resolution depth here as this sample has a higher importance and both GTAO and SSDO natively did it this way
     // TODO: due to dynamic rendering resolution, instead of doing a clamp before the gather (which shifts all 4 samples), we could either do 4 loads and clamp them individually, or do a gather but then set the bottom right samples to the top left values in case they were out of bounds (the same in other code in XeGTAO)
-#if XE_GTAO_DEPTH_FLOAT4
-    lpfloat4 valuesUL   = sourceViewspaceDepth.GatherBlue( depthSampler, float2( min(pixCoord * consts.ViewportPixelSize, consts.SampleUVClamp) ) ) * consts.DepthFar; // Up Left
-    lpfloat4 valuesBR   = sourceViewspaceDepth.GatherBlue( depthSampler, float2( min((pixCoord + 1.0) * consts.ViewportPixelSize, consts.SampleUVClamp) ) ) * consts.DepthFar; // Bottom Right
-#else
-    lpfloat4 valuesUL   = sourceViewspaceDepth.GatherRed( depthSampler, float2( min(pixCoord * consts.ViewportPixelSize, consts.SampleUVClamp) ) ) * consts.DepthFar; // Up Left
+    float4 valuesUL_Raw = sourceViewspaceDepth.GatherRed( depthSampler, float2( min(pixCoord * consts.ViewportPixelSize, consts.SampleUVClamp) ) ); 
+    lpfloat4 valuesUL   = valuesUL_Raw * consts.DepthFar; // Up Left
     lpfloat4 valuesBR   = sourceViewspaceDepth.GatherRed( depthSampler, float2( min((pixCoord + 1.0) * consts.ViewportPixelSize, consts.SampleUVClamp) ) ) * consts.DepthFar; // Bottom Right
-#endif
 
     // viewspace Z at the center
-    lpfloat viewspaceZ  = valuesUL.y; // sourceViewspaceDepth.SampleLevel( depthSampler, min(normalizedScreenPos, consts.SampleUVClamp), 0 ).x * consts.DepthFar; 
+    // use the "y" from the gather, which matches the texel loaded at the requested coordinates.
+    // Equal to "sourceViewspaceDepth.SampleLevel( depthSampler, min(normalizedScreenPos, consts.SampleUVClamp), 0 ).x * consts.DepthFar"
+    // Or "sourceViewspaceDepth.Load( int3(pixCoord, 0) ).x * consts.DepthFar"
+    lpfloat viewspaceZ  = valuesUL.y;
     
     // viewspace Zs left top right bottom
     const lpfloat pixLZ = valuesUL.x;
@@ -355,6 +361,13 @@ float4 XeGTAO_MainPass( float2 pixCoord, lpfloat sliceCount, lpfloat stepsPerSli
     packedEdges = XeGTAO_PackEdges(edgesLRTB);
 #else
     packedEdges = 0;
+#endif
+
+#if XE_GTAO_IGNORE_SKY // Hopefully this optimized performance (we don't need the "[branch]" indicator, it's already made a hard branch by the compiler)
+    if (valuesUL_Raw.y >= 0.9999999)
+    {
+        return 0; // Return zero even if theoretically it's not a valid normal (not normalized)
+    }
 #endif
 
     // Move center pixel slightly towards camera to avoid imprecision artifacts due to depth buffer imprecision; offset depends on depth texture format used
@@ -406,25 +419,21 @@ float4 XeGTAO_MainPass( float2 pixCoord, lpfloat sliceCount, lpfloat stepsPerSli
         // approx viewspace pixel size at pixCoord; approximation of NDCToViewspace( normalizedScreenPos.xy + consts.ViewportPixelSize.xy, pixCenterPos.z ).xy - pixCenterPos.xy;
         const float2 pixelDirRBViewspaceSizeAtCenterZ = viewspaceZ.xx * consts.NDCToViewMul_x_PixelSize;
 
-        // LUMA FT: made this a float2 to improve ultrawide aspect ratios support (y is the primary one as FOV scales horizontally)
-        lpfloat2 screenspaceRadius   = effectRadius / (lpfloat)pixelDirRBViewspaceSizeAtCenterZ;
+        // Use the x value of "pixelDirRBViewspaceSizeAtCenterZ", given it's the pixel size scaled by the FOV tan, so unless the FOV was stretched, it'd have the same exact value for x and y (so this supports arbitrary aspect ratios)
+        lpfloat screenspaceRadius   = effectRadius / (lpfloat)pixelDirRBViewspaceSizeAtCenterZ.x;
 
         // fade out for small screen radii
-        // LUMA FT: taking the average of x and y "screenspaceRadius" would be even better but it's probably not worth the performance impact
-        visibility += saturate((10 - screenspaceRadius.y)/100)*0.5;
+        visibility += saturate((10 - screenspaceRadius)/100)*0.5; //TODOFT: test arbitrary values
 
-#if 1   // sensible early-out for even more performance; disabled because not yet tested //TODOFT: try it for performance
-#pragma warning( disable : 4000 ) // It's not clear why this branch generates this error
-        [branch]
-        if( screenspaceRadius.y < pixelTooCloseThreshold )
+#if 0   // sensible early-out for even more performance. This seems to skip drawing AO in the far distance (not close by as the name seems to imply) // LUMA FT: disabled as Prey is almost always indoor and has not much stuff far (nor very close to the camera), except the sky, which is already earlied out above. Also we don't need the "[branch]" indicator
+        if( screenspaceRadius < pixelTooCloseThreshold )
         {
-            return float4(viewspaceNormal, 0);
+            return float4(viewspaceNormal, 0.0);
         }
-#pragma warning( default : 4000 )
 #endif
 
         // this is the min distance to start sampling from to avoid sampling from the center pixel (no useful data obtained from sampling center pixel)
-        const lpfloat2 minS = (lpfloat2)pixelTooCloseThreshold / screenspaceRadius;
+        const lpfloat minS = (lpfloat)pixelTooCloseThreshold / screenspaceRadius;
 
 #if !DEVELOPMENT
         [unroll]
@@ -491,10 +500,10 @@ float4 XeGTAO_MainPass( float2 pixCoord, lpfloat sliceCount, lpfloat stepsPerSli
                 s       = (lpfloat)pow( s, (lpfloat)sampleDistributionPower );
 
                 // avoid sampling center pixel
-                lpfloat2 s2 = s + minS;
+                s += minS;
 
                 // approx lines 21-22 from the paper, unrolled
-                lpfloat2 sampleOffset = s2 * omega;
+                lpfloat2 sampleOffset = s * omega;
 
 #if 1 // LUMA FT: optimize given that we've disabled this stuff
                 const lpfloat mipLevel = 0;
@@ -508,22 +517,23 @@ float4 XeGTAO_MainPass( float2 pixCoord, lpfloat sliceCount, lpfloat stepsPerSli
                 // Snap to pixel center (more correct direction math, avoids artifacts due to sampling pos not matching depth texel center - messes up slope - but adds other 
                 // artifacts due to them being pushed off the slice). Also use full precision for high res cases.
                 // LUMA FT: here we snap by the scaled (rendering resolution) pixel offset, which is (e.g.) double as big, but then below the sampling will divide by two again and actually end up on a centered pixel as it intended.
+                // LUMA FT: this won't work properly if "XE_GTAO_SCALED_DEPTH_FLOAT4" is true, we'd need to round to a unit of 2 or something, but we don't care enough until proven it's necessary.
                 sampleOffset = round(sampleOffset) * (lpfloat2)consts.ScaledViewportPixelSize;
 
+                //TODOFT: pass in both textures and dynamically pick the best one based on "mipLevel"? Sampling from the lower res depth currently looks bad and has a lot of artifacts on flat surfaces (due to low precision)
                 float2 sampleScreenPos0 = normalizedScreenPos + sampleOffset;
-//TODOFT: make this a runtime branch based on Luma user preference? Also, is the full quality texture actuall 4 channel depth? And is the downscaled texture 1/2 or 1/4 res? And is out output size always 1/2?
-#if XE_GTAO_DEPTH_FLOAT4
-                float  SZ0 = sourceViewspaceDepth.SampleLevel( depthSampler, min(sampleScreenPos0 * consts.RenderResolutionScale, consts.SampleUVClamp), mipLevel ).z * consts.DepthFar;
+#if XE_GTAO_SCALED_DEPTH_FLOAT4
+                float  SZ0 = sourceViewspaceScaledDepth.SampleLevel( depthSampler, min(sampleScreenPos0 * consts.RenderResolutionScale, consts.SampleScaledUVClamp), mipLevel ).z * consts.DepthFar;
 #else
-                float  SZ0 = sourceViewspaceDepth.SampleLevel( depthSampler, min(sampleScreenPos0 * consts.RenderResolutionScale, consts.SampleUVClamp), mipLevel ).x * consts.DepthFar;
+                float  SZ0 = sourceViewspaceScaledDepth.SampleLevel( depthSampler, min(sampleScreenPos0 * consts.RenderResolutionScale, consts.SampleScaledUVClamp), mipLevel ).x * consts.DepthFar;
 #endif
                 float3 samplePos0 = XeGTAO_ComputeViewspacePosition( sampleScreenPos0, SZ0, consts );
 
                 float2 sampleScreenPos1 = normalizedScreenPos - sampleOffset;
-#if XE_GTAO_DEPTH_FLOAT4
-                float  SZ1 = sourceViewspaceDepth.SampleLevel( depthSampler, min(sampleScreenPos1 * consts.RenderResolutionScale, consts.SampleUVClamp), mipLevel ).z * consts.DepthFar;
+#if XE_GTAO_SCALED_DEPTH_FLOAT4
+                float  SZ1 = sourceViewspaceScaledDepth.SampleLevel( depthSampler, min(sampleScreenPos1 * consts.RenderResolutionScale, consts.SampleScaledUVClamp), mipLevel ).z * consts.DepthFar;
 #else
-                float  SZ1 = sourceViewspaceDepth.SampleLevel( depthSampler, min(sampleScreenPos1 * consts.RenderResolutionScale, consts.SampleUVClamp), mipLevel ).x * consts.DepthFar;
+                float  SZ1 = sourceViewspaceScaledDepth.SampleLevel( depthSampler, min(sampleScreenPos1 * consts.RenderResolutionScale, consts.SampleScaledUVClamp), mipLevel ).x * consts.DepthFar;
 #endif
                 float3 samplePos1 = XeGTAO_ComputeViewspacePosition( sampleScreenPos1, SZ1, consts );
 
@@ -597,8 +607,11 @@ float4 XeGTAO_MainPass( float2 pixCoord, lpfloat sliceCount, lpfloat stepsPerSli
 #endif
         }
         visibility /= (lpfloat)sliceCount;
+        if (consts.MinVisibility != 0) // This is statically fixed in value // LUMA FT: move this before the "FinalValuePower" is applied in, for more consistent results
+        {
+            visibility = max( (lpfloat)consts.MinVisibility, visibility ); // disallow total occlusion (which wouldn't make any sense anyhow since pixel is visible but also helps with packing bent normals)
+        }
         visibility = pow( visibility, (lpfloat)consts.FinalValuePower ); // LUMA FT: power is the best way of scaling AO, a linear multiplication could also work (especially because AO is not applied to full intensity), but it's not as good
-        //visibility = max( (lpfloat)0.03, visibility ); // disallow total occlusion (which wouldn't make any sense anyhow since pixel is visible but also helps with packing bent normals) //TODOFT: restore? test it!
         
 #ifdef XE_GTAO_COMPUTE_BENT_NORMALS
 #if 1 // This is more accurate
@@ -795,12 +808,12 @@ void XeGTAO_DecodeGatherPartial( Texture2D<float4> sourceAOTerm, const uint2 pix
     // LUMA FT: Follow the "Gather" sample functions order.
 #ifdef XE_GTAO_COMPUTE_BENT_NORMALS
     XeGTAO_DecodeVisibilityBentNormal( sourceAOTerm.Load(int3(min(pixCoord - uint2(1, 0), maxPixCoord), 0)), outDecoded[0].w, outDecoded[0].xyz );
-    XeGTAO_DecodeVisibilityBentNormal( sourceAOTerm.Load(int3(min(pixCoord /*+ uint2(0, 0)*/, maxPixCoord), 0)), outDecoded[1].w, outDecoded[1].xyz );
+    XeGTAO_DecodeVisibilityBentNormal( sourceAOTerm.Load(int3(min(pixCoord - uint2(0, 0), maxPixCoord), 0)), outDecoded[1].w, outDecoded[1].xyz );
     XeGTAO_DecodeVisibilityBentNormal( sourceAOTerm.Load(int3(min(pixCoord - uint2(0, 1), maxPixCoord), 0)), outDecoded[2].w, outDecoded[2].xyz );
     XeGTAO_DecodeVisibilityBentNormal( sourceAOTerm.Load(int3(min(pixCoord - uint2(1, 1), maxPixCoord), 0)), outDecoded[3].w, outDecoded[3].xyz );
 #else
     outDecoded[0] = lpfloat(sourceAOTerm.Load(int3(pixCoord - uint2(1, 0), 0)).r);
-    outDecoded[1] = lpfloat(sourceAOTerm.Load(int3(pixCoord /*+ uint2(0, 0)*/, 0)).r);
+    outDecoded[1] = lpfloat(sourceAOTerm.Load(int3(pixCoord - uint2(0, 0), 0)).r);
     outDecoded[2] = lpfloat(sourceAOTerm.Load(int3(pixCoord - uint2(0, 1), 0)).r);
     outDecoded[3] = lpfloat(sourceAOTerm.Load(int3(pixCoord - uint2(1, 1), 0)).r);
 #endif
@@ -811,10 +824,9 @@ float4 XeGTAO_Denoise( const uint2 pixCoord, const GTAOConstants consts, Texture
     // LUMA FT: added some code to allow calling this as a per pixel pixel shader, instead of the original which was a compute shader run every 2 horizontal pixels (as optimization)
     const bool odd = pixCoord.x % 2 != 0;
     const uint2 pixCoordBase = uint2(odd ? (pixCoord.x - 1) : pixCoord.x, pixCoord.y);
-
-    //TODOFT: magic numbers?
+    
     const lpfloat blurAmount = (finalApply)?((lpfloat)consts.DenoiseBlurBeta):((lpfloat)consts.DenoiseBlurBeta/(lpfloat)5.0);
-    const lpfloat diagWeight = 0.85 * 0.5;
+    const lpfloat diagWeight = 0.85 * 0.5; //TODOFT: magic numbers?
 
     // gather edge and visibility quads, used later
     const float2 gatherCenter1 = min(float2( pixCoordBase.x + 0, pixCoordBase.y + 0 ) * consts.ViewportPixelSize, consts.SampleUVClamp);
@@ -889,15 +901,16 @@ float4 XeGTAO_Denoise( const uint2 pixCoord, const GTAOConstants consts, Texture
     aoTerm = sum / sumWeight;
 
 #ifdef XE_GTAO_COMPUTE_BENT_NORMALS
-    lpfloat     visibility = aoTerm.w * ((finalApply)?((lpfloat)XE_GTAO_OCCLUSION_TERM_SCALE):(1));
-    lpfloat3    bentNormal = normalize(aoTerm.xyz);
+    lpfloat     visibility = aoTerm.w * (finalApply ? (lpfloat)XE_GTAO_OCCLUSION_TERM_SCALE : 1.0f);
+    // LUMA FT: corrected edge case where the denoised average was all zeroes (see "XE_GTAO_IGNORE_SKY"), though to be even better, we should avoid normalizing when the length is too small, though this is likely all unnecessary
+    lpfloat3    bentNormal = all(aoTerm.xyz == 0) ? 0 : normalize(aoTerm.xyz);
 #if XE_GTAO_ENCODE_BENT_NORMALS
     return float4( bentNormal * 0.5 + 0.5, 1.f - visibility );
 #else // !XE_GTAO_ENCODE_BENT_NORMALS
     return float4( bentNormal, 1.f - visibility );
 #endif // XE_GTAO_ENCODE_BENT_NORMALS
 #else // !XE_GTAO_COMPUTE_BENT_NORMALS
-    aoTerm *= (finalApply)?((lpfloat)XE_GTAO_OCCLUSION_TERM_SCALE):(1);
+    aoTerm *= finalApply ? (lpfloat)XE_GTAO_OCCLUSION_TERM_SCALE : 1.0f;
     return aoTerm;
 #endif // XE_GTAO_COMPUTE_BENT_NORMALS
 }
