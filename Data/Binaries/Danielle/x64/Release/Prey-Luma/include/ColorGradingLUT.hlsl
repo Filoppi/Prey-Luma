@@ -599,7 +599,7 @@ float3 SampleLUT(LUT_TEXTURE_TYPE lut, SamplerState samplerState, float3 encoded
   const bool highQualityLUTCoordinateAdjustments = settings.samplingQuality >= 1;
   const bool tetrahedralInterpolation = settings.samplingQuality >= 2;
   
-#pragma warning( disable : 4000 ) // It's not clear why this function generates this error
+#pragma warning( disable : 4000 ) // It's not clear why this function generates this error (sometimes?), maybe it's because we should add an else case for the return
   float3 sampleCoordinates = AdjustLUTCoordinatesForLinearLUT(encodedCoordinates, highQualityLUTCoordinateAdjustments, settings.transferFunctionIn, settings.lutInputLinear, settings.lutOutputLinear, settings.lutSize, specifyLinearColor, linearCoordinates);
   float3 color = SampleLUT(lut, samplerState, sampleCoordinates, settings.lutSize, tetrahedralInterpolation, settings.lutInputLinear, settings.lutOutputLinear, settings.transferFunctionIn);
   // We appply the transfer function even beyond 0-1 as if the color comes from a linear LUT, it shouldn't already have any kind of gamma correction applied to it (gamma correction runs later).

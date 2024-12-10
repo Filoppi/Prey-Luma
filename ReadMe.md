@@ -16,6 +16,7 @@ Windows 11 SDK 10.0.26100.0 (older versions work, but don't support HDR as good)
 - Open "Prey-Luma.sln" and build it. Note that "Edit and Continue" build settings (\ZI) should not be used as they break the code patches generation.
 - Run "deploy (*).bat" to run the game. The Steam version of the game can't be launched from the exe (without a modified steam dll), so that bat automatically closes the previous instance of the game, copies the new files and launches the game through Steam.
 - The "Data" folder needs to be manually copied into the directory of the game at least once. For development of shaders, it's suggested to make a symbolic link of the "Prey-Luma" folder (to allow git to pick up the changes while also having the latest version in game).
+- If you want to load the mod with an asi loader instead of through ReShade Addons automatic loading, you can rename the dll to ".asi" name, add the asi loader and use one of the following names: bink2w64.dll, dinput8.dll, version.dll, winhttp.dll, winmm.dll (untested), wininet.dll.
 
 # Further development details
 - The code hot spots are in main.cpp file.

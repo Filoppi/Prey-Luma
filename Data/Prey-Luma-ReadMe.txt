@@ -32,16 +32,15 @@ Unless you are on Linux/Proton, delete the "d3dcompiler_47.dll" from the main bi
 Preferably, keep your ".\renodx-dev\dump" folder and send them to the developers after long play sessions, so they can catch all the shaders and make them Luma compatible.
 Performance cost on modern GPUs is negligeable, especially when using DLSS SR + Dynamic Resolution Scaling.
 Set you "game.cfg" to read only to avoid the game clearing most settings from it if changing settings within the game menu, so it's suggested to change your resolution directly from config before booting the game.
+The mod is best used with all the graphics settings maxed out in the game, but any setting combination is supported too.
 The game's HDR uses the HDR calibration data from Windows 11 and display's EDID.
 The in game brightness slider is best left at default value.
 
 Issues and limitations:
 -The Epic Games Store and Microsoft Store versions are not supported (the game data is across all game releases, so one could theoretically force use the Steam or GOG executables).
--The SDR mode is currently contained in an HDR output, so if looked at from an SDR display, it will have a gamma 2.2/sRGB mismatch.
--Prey Luma settings aren't saved so they need to be changed on every boot.
 -The UI will look a bit different from Vanilla due to Luma using HDR/linear blending modes by default. Set "POST_PROCESS_SPACE_TYPE" to 0 or 2 in the advanced settings to make it behave like Vanilla.
--Anti Aliasing might show as "None" in the game settings menu even if it internally is engaged to TAA or SMAA 2TX (when changed from config).
--Super-sampling is not supported with Luma.
+-Anti Aliasing might show as "None" in the game settings menu even if it internally is engaged to TAA or SMAA 2TX (when changed from config) (setting it back to TAA will only affect the menu).
+-MSAA or Super-sampling are not supported with Luma.
 -Changing the resolution after starting the game is not suggested, as some effects get initialized for the original resolution without being resized (vanilla issue).
 -FXAA and no AA is not suggested as they lack object highlights and have other bugs (e.g. FXAA can break the game when close to an enemy and looking at the sun) (vanilla issue).
 -Sun shafts can disappear while they are still visible if the sun center gets occluded (this is a bug with the original game, it's slightly more noticeable with LUMA because sun shafts are stronger).
@@ -52,7 +51,6 @@ Issues and limitations:
 Compatibility:
 This mod should work with any other mod for Prey, just be careful of what you install, because some of the most popular mods change very random stuff with the game, or its graphics config (they will still be compatible with Luma).
 Replace their files with the Luma version if necessary, none of the game's mods rely on config changes, so the Luma version of the configs will work with them too, and Luma only changes what's strictly necessary and with careful research behind it.
-If you want to load the mod with an asi loader instead of through ReShade Addons automatic loading, you can name the asi loader with the following names: bink2w64.dll, dinput8.dll, version.dll, winhttp.dll, winmm.dll (untested), wininet.dll.
 
 Donations:
 https://www.buymeacoffee.com/realfiloppi (Pumbo)

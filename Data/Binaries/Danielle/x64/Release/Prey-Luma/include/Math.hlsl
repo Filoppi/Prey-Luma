@@ -55,6 +55,8 @@ float3 max3(float3 _a, float3 _b, float3 _c) { return max(_a, max(_b, _c)); }
 float max3(float _a, float _b, float _c) { return max(_a, max(_b, _c)); }
 float max3(float3 _a) { return max(_a.x, max(_a.y, _a.z)); }
 
+// Returns a random value betweed 0 and 1
+// "seed" can be in any space (e.g. pixel or uv or whatever else)
 float3 NRand3(float2 seed, float tr = 1.0)
 {
   return frac(sin(dot(seed.xy, float2(34.483, 89.637) * tr)) * float3(29156.4765, 38273.5639, 47843.7546));

@@ -496,7 +496,7 @@ std::vector<ShaderDefineData> shader_defines_data = {
   {"DEVELOPMENT", DEVELOPMENT ? '1' : '0', true, DEVELOPMENT ? false : true, "Enables some development/debug features that are otherwise not allowed"},
   {"POST_PROCESS_SPACE_TYPE", '1', true, false, "0 - Gamma space\n1 - Linear space\n2 - Linear space until UI (then gamma space)\n\nSelect \"2\" if you want the UI to look exactly like it did in Vanilla\nSelect \"1\" for the highest possible quality (e.g. color accuracy, banding, DLSS)"},
   {"GAMMA_CORRECTION_TYPE", '1', true, false, "(HDR only) Emulates a specific SDR gamma\nThis is best left to \"1\" (Gamma 2.2) unless you have crushed blacks or overly saturated colors\n0 - sRGB\n1 - Gamma 2.2\n2 - sRGB (color hues) with gamma 2.2 luminance"},
-  {"TONEMAP_TYPE", '1', false, false, "0 - Vanilla SDR\n1 - Luma HDR (Vanilla+)\n2 - Raw HDR (Untonemapped)\nThe HDR tonemapper works for SDR too"},
+  {"TONEMAP_TYPE", '1', false, false, "0 - Vanilla SDR\n1 - Luma HDR (Vanilla+)\n2 - Raw HDR (Untonemapped)\nThe HDR tonemapper works for SDR too\nThis games uses a filmic tonemapper, which slightly crushes blacks"},
   {"SUNSHAFTS_LOOK_TYPE", '2', false, false, "0 - Raw Vanilla\n1 - Vanilla+\n2 - Luma HDR (Suggested)\nThis influences both HDR and SDR, all options work in both"},
   {"ENABLE_LENS_OPTICS_HDR", '1', false, false, "Makes the lens effects (e.g. lens flare) slightly HDR"},
   {"AUTO_HDR_VIDEOS", '1', false, false, "(HDR only) Generates some HDR highlights from SDR videos, for consistency\nThis is pretty lightweight so it won't really affect the artistic intent"},
@@ -2647,8 +2647,9 @@ void OnPresent(
 //TODOFT5: Add "UpdateSubresource" to check whether they map buffers with that (it's not optimized so probably it's unused by CryEngine)? Also make sure that our CopyTexture() func works!
 //TODOFT5: merge all the shader permutations that use the same code (and then move shader binaries to bin folder?)
 //TODOFT5: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project?
+//TODOFT5: the game broke the exposure state in debug?
 //TODOFT (TODO): make sure DLSS lets scRGB colors pass through...
-//TODOFT@ do one last test on all jitters with DLSS to see if motion vectors are right in motion with DRS (it seems to be?)
+//TODOFT: do one last test on all jitters with DLSS to see if motion vectors are right in motion with DRS (it seems to be?)
 //TODOFT: add a new RT to draw UI on top (pre-multiplied alpha everywhere), so we could compose it smartly, possibly in the final linearization pass.
 
 // Return false to prevent the original draw call from running (e.g. if you replaced it or just want to skip it)
@@ -2833,7 +2834,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
               rtvs[1] = ssr_diffuse_rtv.get();
               native_device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &rtvs[0], dsvs);
 
-#if DEVELOPMENT // Currently we'd only ever need these in development modes to make tweaks
+#if DEVELOPMENT // Currently we'd only ever need these in development modes to make tweaks, or for in development code paths that are still disabled
               SetPreyLumaConstantBuffers(cmd_list, stages, settings_pipeline_layout, LumaConstantBufferType::LumaSettings);
               SetPreyLumaConstantBuffers(cmd_list, stages, shared_data_pipeline_layout, LumaConstantBufferType::LumaData);
 #endif
@@ -3979,9 +3980,9 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
     // Note that "prey_taa_detected" would be one frame late here, but to avoid unexpectedly replacing proj matrices, we check it anyway  (the game always starts with a fade to black, so it's fine)
     bool replace_prev_projection_matrix = cloned_pipeline_count != 0 && ((dlss_sr && !dlss_suppressed && prey_taa_detected)
 #if DEVELOPMENT || TEST
-    || GetShaderDefineCompiledNumericalValue(FORCE_MOTION_VECTORS_JITTERED_HASH) >= 1
+        || GetShaderDefineCompiledNumericalValue(FORCE_MOTION_VECTORS_JITTERED_HASH) >= 1
 #else
-    || force_motion_vectors_jittered
+        || force_motion_vectors_jittered
 #endif
     );
 
@@ -5343,7 +5344,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
                 reshade::set_config_value(runtime, NAME, "ScenePaperWhite", cb_luma_frame_settings.ScenePaperWhite);
             }
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-                ImGui::SetTooltip("The \"average\" brightness of the game scene.\nHigher does not mean better, change this to your liking, and don't get too close to the peak white.\nThe in game settings brightness is best left at default.");
+                ImGui::SetTooltip("The \"average\" brightness of the game scene.\nHigher does not mean better, change this to your liking (especially if you struggle to read UI text), and don't get too close to the peak white.\nThe in game settings brightness is best left at default.");
             }
             ImGui::SameLine();
             if (cb_luma_frame_settings.ScenePaperWhite != default_paper_white) {
@@ -5516,6 +5517,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             float& min_value = cb_luma_frame_dev_settings_min_value[i];
             float& max_value = cb_luma_frame_dev_settings_max_value[i];
             float& default_value = cb_luma_frame_dev_settings_default_value[i];
+            // Note: this will "fail" if we named two devs settings with the same name!
             ImGui::SliderFloat(cb_luma_frame_dev_settings_names[i].empty() ? DevSettingsNames[i].c_str() : cb_luma_frame_dev_settings_names[i].c_str(), &value, min_value, max_value);
             ImGui::SameLine();
             if (value != default_value) {
@@ -6208,7 +6210,7 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
               delete[] verData;
           }
           if (old_version) {
-              MessageBoxA(game_window, "Please delete \"d3dcompiler_47.dll\" from the game executable directory;\n the game came bundled with an old version that is worse in all aspects.\nIf you are on Proton, manually update to the latest version.", NAME, MB_SETFOREGROUND);
+              MessageBoxA(game_window, "Please delete \"d3dcompiler_47.dll\" from the game executable directory;\nthe game came bundled with an old version that is worse in all aspects.\nIf you are on Proton, manually update it to the latest version.", NAME, MB_SETFOREGROUND);
               prevent_shader_cache_saving = true;
           }
       }
