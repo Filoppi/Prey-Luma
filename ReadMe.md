@@ -32,5 +32,5 @@ Windows 11 SDK 10.0.26100.0 (older versions work, but don't support HDR as good)
 - Shader are saved and replaced by (cso/binary) hash.
 - VSCode is suggested.
 - The game's original shaders code can be found in the Engine\Shaders.pak in the GOG version of the game (extract it as zip).
-- To decompile further game shaders you will need 3DMigoto (see RenoDX).
+- To decompile further game shaders you will need 3DMigoto (see RenoDX). There's a premade batch file to extract all the dumped CSOs in a folder.
 - Running a graphics capture debugger requires ReShade to be off. NV Nsight and Intel "Graphics Frame Analyzer" work. Microsoft Pix and RenderDoc might also work but are untested. The GOG version is the easiest to debug graphics for as it can be launched directly from its exe (differently from the Steam version).

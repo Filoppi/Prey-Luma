@@ -1,3 +1,5 @@
+#include "include/Common.hlsl"
+
 cbuffer CBSSRRaytrace : register(b0)
 {
   struct
@@ -9,7 +11,6 @@ cbuffer CBSSRRaytrace : register(b0)
   } cbRefl : packoffset(c0);
 }
 
-#include "include/Common.hlsl"
 #include "include/CBuffer_PerViewGlobal.hlsl"
 
 SamplerState ssReflectionPoint : register(s0);

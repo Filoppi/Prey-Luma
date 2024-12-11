@@ -10,6 +10,7 @@ Texture2D<float4> ArkFullscreenTex : register(t0);
 
 // ArkFullscreenTexturePS
 // This runs after AA and PostCompositesAA. It possibly writes directly on the swapchain.
+// This can draw a (possibly stretched) texture on screen, for example a vignette effect when zooming in with weapons (Z key) (though we can't know what it is upfront so we can't branch on "ENALBE_VIGNETTE").
 void main(
   float4 v0 : SV_Position0,
   float4 inBaseTC : TEXCOORD0,
@@ -25,24 +26,30 @@ void main(
 	// LUMA FT: Alpha mask (or simply an optimization threshold to avoid drawing pixels with alpha that is near zero and thus not perceivable)
 	clip(outColor.w - fAlphaTest);
 
-//TODOFT2: Does this need linearization? In all cases?
-//Does this need proper alpha blending with the UI? Should this use the UI or game paper white?
+//TODOFT2: test this shader mode and detect what it draws, could it ever be UI stuff? Probably not anyway, and even if it was... it'd still be fine to be using the scene HDR paper white (and thus we wouldn't wanna hide it with the "ENABLE_UI" flag)
+//Also, does this need linearization in all cases? It seems so, as it always runs at the end probably, whether it's writing on the swapchain or not.
+//Delete the tests below!
+#if 1
+	LumaUIData.BackgroundTonemappingAmount = 0.f;
+	outColor = ConditionalLinearizeUI(outColor);
+	outColor *= GamePaperWhiteNits / UIPaperWhiteNits; // Temporary hack to force use te scene paper white as opposed to the UI one
+#else
 #if POST_PROCESS_SPACE_TYPE == 1
-	if (LumaUIData.WritingOnSwapchain)
-	{
-		const float paperWhite = GamePaperWhiteNits / sRGB_WhiteLevelNits;
-		outColor.rgb = game_gamma_to_linear(outColor.rgb);
-		outColor.rgb *= paperWhite;
-	}
+	const float paperWhite = GamePaperWhiteNits / sRGB_WhiteLevelNits;
+	outColor.rgb = game_gamma_to_linear(outColor.rgb);
+	outColor.rgb *= paperWhite;
 #endif // POST_PROCESS_SPACE_TYPE == 1
+#endif
 
+#if 0
+	if (!LumaUIData.WritingOnSwapchain)
+	{
+		outColor.rgb = float3(2, 0, 1);
+	}
+#endif
 #if TEST_UI
 	outColor.rgb = float3(2, 0, 1);
 #endif
-
-#if !ENABLE_UI // We treat this as UI, as it likely is
-	outColor = 0;
-#endif // !ENABLE_UI
 
   return;
 }

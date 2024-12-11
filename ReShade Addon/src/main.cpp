@@ -2759,6 +2759,7 @@ void OnPresent(
 //TODOFT5: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project?
 //TODOFT5: the game broke the exposure state in debug?
 //TODOFT5: add asserts for when we meet the shaders we are looking for
+//TODOFT5: restore objects quality setting in the game's menu?
 //TODOFT (TODO): make sure DLSS lets scRGB colors pass through...
 //TODOFT: do one last test on all jitters with DLSS to see if motion vectors are right in motion with DRS (it seems to be?)
 //TODOFT: add a new RT to draw UI on top (pre-multiplied alpha everywhere), so we could compose it smartly, possibly in the final linearization pass.
@@ -5001,6 +5002,7 @@ bool OnReShadeSetEffectsState(reshade::api::effect_runtime* runtime, bool enable
 
 void OnReShadeReloadedEffects(reshade::api::effect_runtime* runtime) {
     if (!last_pressed_unload) {
+        //TODOFT: force clean previous shader cache here? Nah
         OnReShadeSetEffectsState(runtime, true); // This will load and recompile all shaders
     }
 }
@@ -5479,7 +5481,8 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
                         UnloadCustomShaders({ pipeline_handle }, false, false);
                     }
                     if (ImGui::Button(pipeline_pair->second->cloned ? "Recompile" : "Load")) {
-                        LoadCustomShaders({ pipeline_handle }, false, true);
+                        bool compile = pipeline_pair->second->cloned;
+                        LoadCustomShaders({ pipeline_handle }, compile, true);
                     }
                   }
                   if (pipeline_pair->second->HasPixelShader() || pipeline_pair->second->HasComputeShader()) {
