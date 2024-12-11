@@ -1891,10 +1891,28 @@ void OnInitDevice(reshade::api::device* device) {
       NGX::DLSS::Deinit(native_device);
   }
 #endif
-#endif // NGX
+#endif // ENABLE_NGX
 }
 
 void OnDestroyDevice(reshade::api::device* device) {
+  ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
+  const std::unique_lock lock(s_mutex_device); // Leave this locked for the whole function in case this was natively invoked by DirectX/ReShade before we got a new "OnInitDevice()" call
+  {
+#if 0
+    assert(!native_swapchain3); // Hopefully this is forcefully garbage collected when the device is destroyed (it is!)
+    assert(global_native_device); // This can happen when we reset the graphics settings somehow
+#endif
+    if (global_native_device == native_device) {
+      global_native_device = nullptr;
+      global_device = nullptr;
+    }
+#if 0
+    else {
+      return; // This was already destroyed!
+    }
+#endif
+  }
+
   auto& device_data = device->get_private_data<DeviceData>(); // No need to lock the data mutex here, it could be concurrently used at this point
 
   {
@@ -2438,11 +2456,11 @@ void OnPresent(
     bool shader_defines_need_gamma_correction = GetShaderDefineCompiledNumericalValue(POST_PROCESS_SPACE_TYPE_HASH) == 1 && GetShaderDefineCompiledNumericalValue(GAMMA_CORRECTION_TYPE_HASH) >= 2;
     bool display_mode_needs_gamma_correction = cb_luma_frame_settings.DisplayMode == 0; // SDR on SDR Display on scRGB HDR Swapchain needs Gamma 2.2/sRGB mismatch correction
 #if DEVELOPMENT
-    bool needs_draw_debug_texture = debug_draw_texture.get() != nullptr;
+    bool needs_debug_draw_texture = debug_draw_texture.get() != nullptr;
 #else
-    constexpr bool needs_draw_debug_texture = false;
+    constexpr bool needs_debug_draw_texture = false;
 #endif
-    if (shader_defines_need_linearization || shader_defines_need_gamma_correction || display_mode_needs_gamma_correction || cloned_pipeline_count == 0 || needs_draw_debug_texture) {
+    if (shader_defines_need_linearization || shader_defines_need_gamma_correction || display_mode_needs_gamma_correction || cloned_pipeline_count == 0 || needs_debug_draw_texture) {
         const std::shared_lock lock_shader_objects(s_mutex_shader_objects);
         if (copy_vertex_shader && transfer_function_copy_pixel_shader) {
             IDXGISwapChain* native_swapchain = (IDXGISwapChain*)(swapchain->get_native());
@@ -2621,8 +2639,10 @@ void OnPresent(
   cb_per_view_globals_previous = cb_per_view_globals;
   cb_per_view_globals.clear();
 
+  // Clear at the end of every frame and re-capture it in the next frame if its still available
   if (debug_draw_auto_clear_texture) {
     debug_draw_texture = nullptr;
+    // Leave "debug_draw_texture_format", we need that in ImGUI (we'd need to clear it after ImGUI if necessary, but we skip drawing it if the texture isn't valid)
   }
   debug_draw_pipeline_instance = 0;
 #endif // DEVELOPMENT
@@ -2682,7 +2702,7 @@ void OnPresent(
   }
 #else
   NativePlugin::SetHaltonSequencePhases(8); // We could do this once only on boot but whatever
-#endif // NGX
+#endif // ENABLE_NGX
 
   frame_index++;
 }
@@ -2693,6 +2713,7 @@ void OnPresent(
 //TODOFT5: merge all the shader permutations that use the same code (and then move shader binaries to bin folder?)
 //TODOFT5: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project?
 //TODOFT5: the game broke the exposure state in debug?
+//TODOFT5: add asserts for when we meet the shaders we are looking for
 //TODOFT (TODO): make sure DLSS lets scRGB colors pass through...
 //TODOFT: do one last test on all jitters with DLSS to see if motion vectors are right in motion with DRS (it seems to be?)
 //TODOFT: add a new RT to draw UI on top (pre-multiplied alpha everywhere), so we could compose it smartly, possibly in the final linearization pass.
@@ -3503,7 +3524,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
                   }
               }
       }
-#endif // NGX
+#endif // ENABLE_NGX
   }
 
   //TODOFT: avoid re-applying these if the data hasn't changed (within the same frame)? Add a flag by shader for who needs them?
@@ -4792,7 +4813,7 @@ bool OnCopyTextureRegion(reshade::api::command_list* cmd_list, reshade::api::res
     return false;
 }
 
-void OnReshadePresent(reshade::api::effect_runtime* runtime) {
+void OnReShadePresent(reshade::api::effect_runtime* runtime) {
 #if DEVELOPMENT
   if (trace_running) {
 #if _DEBUG && LOG_VERBOSE
@@ -5054,8 +5075,10 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
   if (ImGui::Button("Trace")) {
     trace_scheduled = true;
   }
+#if 0 // Currently not necessary
   ImGui::SameLine();
   ImGui::Checkbox("List Unique Shaders Only", &trace_list_unique_shaders_only);
+#endif
 
   ImGui::SameLine();
   ImGui::Checkbox("Ignore Vertex Shaders", &trace_ignore_vertex_shaders);
@@ -5084,9 +5107,6 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 
 #if DEVELOPMENT || TEST
   if (ImGui::Button(std::format("Unload Shaders ({})", cloned_pipeline_count).c_str())) {
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-      ImGui::SetTooltip("Unload all compiled and replaced shaders. The numbers shows how many shaders are being replaced at this moment in the game, from the custom loaded/compiled ones.");
-    }
     needs_unload_shaders = true;
     last_pressed_unload = true;
 #if 0  // Not necessary anymore with "last_pressed_unload"
@@ -5104,6 +5124,9 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 #endif
     const std::unique_lock lock(s_mutex_loading);
     pipelines_to_reload.clear();
+  }
+  if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+      ImGui::SetTooltip("Unload all compiled and replaced shaders. The numbers shows how many shaders are being replaced at this moment in the game, from the custom loaded/compiled ones.");
   }
   ImGui::SameLine();
 #endif // DEVELOPMENT || TEST
@@ -5439,7 +5462,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             reshade::set_config_value(runtime, NAME, "DLSSSuperResolution", dlss_sr);
         }
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-            ImGui::SetTooltip("This replaces the game's native AA and dynamic resolution scaling implementations.\nSelect \"SMAA 2TX\" or \"TAA\" in the game's AA settings for DLSS/DLAA to engage (a tick will appear here when it's engaged and a warning if it failed).\n\nRequires compatible Nvidia GPUs.");
+            ImGui::SetTooltip("This replaces the game's native AA and dynamic resolution scaling implementations.\nSelect \"SMAA 2TX\" or \"TAA\" in the game's AA settings for DLSS/DLAA to engage.\nA tick will appear here when it's engaged and a warning might appear if it failed.\n\nRequires compatible Nvidia GPUs.");
         }
         ImGui::SameLine();
         if (dlss_sr != true && dlss_sr_supported) {

@@ -9,6 +9,7 @@ SamplerState ssArkFullscreenTex_s : register(s0);
 Texture2D<float4> ArkFullscreenTex : register(t0);
 
 // ArkFullscreenTexturePS
+// This runs after AA and PostCompositesAA. It possibly writes directly on the swapchain.
 void main(
   float4 v0 : SV_Position0,
   float4 inBaseTC : TEXCOORD0,
@@ -24,7 +25,7 @@ void main(
 	// LUMA FT: Alpha mask (or simply an optimization threshold to avoid drawing pixels with alpha that is near zero and thus not perceivable)
 	clip(outColor.w - fAlphaTest);
 
-//TODOFT2: when does this run? Does this need linearization? Supposedly after AA.
+//TODOFT2: Does this need linearization? In all cases?
 //Does this need proper alpha blending with the UI? Should this use the UI or game paper white?
 #if POST_PROCESS_SPACE_TYPE == 1
 	if (LumaUIData.WritingOnSwapchain)

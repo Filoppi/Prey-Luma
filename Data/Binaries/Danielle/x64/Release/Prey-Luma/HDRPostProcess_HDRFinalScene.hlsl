@@ -101,6 +101,7 @@ float ComputeExposure(float fIlluminance, float4 HDREyeAdaptation)
 }
 
 #if _RT_SAMPLE2
+//TODOFT: re-do this... it's bad? Actually it's the LUTs modulation, when close to an enemy, but only with the lighting mod...
 void ApplyArkDistanceSat(inout float3 _cImage, int3 _pixelCoord)
 {
 	float fDepth = GetLinearDepth(depthTex.Load(_pixelCoord), true);
