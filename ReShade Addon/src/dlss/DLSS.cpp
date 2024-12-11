@@ -221,18 +221,18 @@ bool NGX::DLSS::Init(ID3D11Device* device, IDXGIAdapter* adapter)
 {
 	if (!data && device)
 	{
-		data = new DLSSData();
-
 		const wchar_t* dataPath = L".";
 		NVSDK_NGX_Result result = NVSDK_NGX_D3D11_Init_with_ProjectID(projectID, NVSDK_NGX_ENGINE_TYPE_CUSTOM, engineVersion, dataPath, device);
 
 		if (NVSDK_NGX_SUCCEED(result))
 		{
+			data = new DLSSData();
+
 			result = NVSDK_NGX_D3D11_GetCapabilityParameters(&data->capabilitiesParams);
 			assert(NVSDK_NGX_SUCCEED(result));
 		}
 
-		if (data->capabilitiesParams != nullptr)
+		if (data && data->capabilitiesParams != nullptr)
 		{
 			int superSamplingAvailable = 0;
 			// The documentation mentions to use the "NVSDK_NGX_Parameter_SuperSampling_Available" parameter,
