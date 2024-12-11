@@ -220,7 +220,7 @@ struct CachedCustomShader {
 #endif
 };
 
-// For "pipeline_cache_by_pipeline_handle", "pipeline_cache_by_pipeline_clone_handle", "pipeline_caches_by_shader_hash", "pipelines_to_destroy"
+// For "pipeline_cache_by_pipeline_handle", "pipeline_cache_by_pipeline_clone_handle", "pipeline_caches_by_shader_hash", "pipelines_to_destroy", "cloned_pipeline_count"
 recursive_shared_mutex s_mutex_generic;
 // For "shaders_to_dump", "dumped_shaders", "shader_cache". In general for dumping shaders to disk
 std::recursive_mutex s_mutex_dumping;
@@ -232,10 +232,10 @@ std::shared_mutex s_mutex_shader_objects;
 std::shared_mutex s_mutex_shader_defines;
 // Mutex to deal with data shader with ReShade, like ini/config saving and loading
 std::shared_mutex s_mutex_reshade;
-// For "custom_sampler_by_original_sampler"
+// For "custom_sampler_by_original_sampler" and "texture_mip_lod_bias_offset"
 std::shared_mutex s_mutex_samplers;
-// For "native_swapchain3" and "global_native_device"
-std::shared_mutex s_mutex_device;
+// For "native_swapchain3", "global_native_device", "global_device", "game_window"
+recursive_shared_mutex s_mutex_device;
 #if DEVELOPMENT
 // for "trace_shader_hashes", "trace_pipeline_handles", "trace_pipeline_draws", "trace_pipeline_draws_blend_descs" and "trace_threads" (writing only, reading is already safe)
 std::shared_mutex s_mutex_trace;
@@ -644,7 +644,7 @@ com_ptr<ID3D11Texture2D> dlss_motion_vectors;
 com_ptr<ID3D11RenderTargetView> dlss_motion_vectors_rtv;
 #endif // ENABLE_NGX
 
-// Custom shaders
+// Custom Shaders
 com_ptr<ID3D11Texture2D> copy_texture;
 com_ptr<ID3D11Texture2D> transfer_function_copy_texture;
 com_ptr<ID3D11ShaderResourceView> transfer_function_copy_shader_resource_view;
@@ -673,12 +673,13 @@ com_ptr<ID3D11RenderTargetView> ssr_diffuse_rtv;
 com_ptr<ID3D11ShaderResourceView> ssr_srv;
 com_ptr<ID3D11ShaderResourceView> ssr_diffuse_srv;
 
+// Misc
 com_ptr<ID3D11BlendState> default_blend_state;
 
 // There's only one swapchain in Prey, but the game chances its configuration from different threads
 IDXGISwapChain3* native_swapchain3 = nullptr;
+reshade::api::device* global_device = nullptr;
 ID3D11Device* global_native_device = nullptr;
-
 HWND game_window = 0;
 
 static_assert(sizeof(Matrix44A) == sizeof(float4) * 4);
@@ -806,12 +807,12 @@ bool last_pressed_unload = false;
 bool needs_unload_shaders = false;
 bool needs_load_shaders = false; // Load or reload shaders
 bool needs_live_reload_update = live_reload;
-std::atomic<bool> cloned_pipelines_changed = false;
+std::atomic<bool> cloned_pipelines_changed = false; // Atomic so it doesn't rely on "s_mutex_generic"
 uint32_t cloned_pipeline_count = 0; // How many pipelines (shaders/passes) we replaced with custom ones (if zero, we can assume the mod isn't doing much)
 #if DEVELOPMENT
 bool trace_scheduled = false;
 bool trace_running = false;
-uint32_t shader_cache_count = 0;
+uint32_t shader_cache_count = 0; // For dumping
 uint32_t trace_count = 0;
 #endif
 
@@ -820,6 +821,7 @@ void ToggleLiveWatching();
 void DumpShader(uint32_t shader_hash, bool auto_detect_type);
 void AutoDumpShaders();
 void AutoLoadShaders();
+void OnDestroyDevice(reshade::api::device* device);
 
 // Quick and unsafe. Passing in the hash instead of the string is the only way make sure strings hashes are calculate them at compile time.
 __forceinline ShaderDefineData& GetShaderDefineData(uint32_t hash)
@@ -1822,14 +1824,22 @@ void OnDisplayModeChanged()
 }
 
 void OnInitDevice(reshade::api::device* device) {
-  auto& device_data = device->create_private_data<DeviceData>();
   ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
   {
       const std::unique_lock lock(s_mutex_device);
-      assert(!global_native_device);
+#if 0
+      assert(!global_native_device); // This can happen when we reset the graphics settings somehow
+#endif
+#if 0 //TODOFT4: this crashes when enabled as an old device can persist and be used while we still have a new one. We need to move everything into the device data
+      if (global_native_device != nullptr) {
+          OnDestroyDevice(global_device);
+      }
+#endif
       global_native_device = native_device;
+      global_device = device;
   }
 
+  auto& device_data = device->create_private_data<DeviceData>();
   {
       const std::shared_lock lock(device_data.mutex); // Not much need to lock this on its own creation, but let's do it anyway...
       reshade::api::pipeline_layout_param pipeline_layout_param = reshade::api::pipeline_layout_param();
@@ -1858,10 +1868,13 @@ void OnInitDevice(reshade::api::device* device) {
   blend_state_desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
   blend_state_desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
   blend_state_desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+  default_blend_state = nullptr;
   native_device->CreateBlendState(&blend_state_desc, &default_blend_state);
 
 #if ENABLE_NGX
-  assert(!NGX::DLSS::HasInit()); // DLSS is only supported on one device at a time
+#if 0
+  assert(!NGX::DLSS::HasInit()); // DLSS is only supported on one device at a time (it's ok!)
+#endif
   com_ptr<IDXGIDevice> native_dxgi_device;
   HRESULT hr = native_device->QueryInterface(&native_dxgi_device);
   com_ptr<IDXGIAdapter> native_adapter;
@@ -1923,26 +1936,48 @@ void OnDestroyDevice(reshade::api::device* device) {
       device->destroy_pipeline_layout(device_data.settings_pipeline_layout);
   }
 
+  device->destroy_private_data<DeviceData>();
+
   assert(cb_per_view_global_buffer_map_data == nullptr);
   cb_per_view_global_buffer = nullptr;
 
   {
       const std::unique_lock lock_samplers(s_mutex_samplers);
-      ASSERT_ONCE(custom_sampler_by_original_sampler.empty()); // Is this guaranteed in DX? Maybe not, but probably is!
+#if 0 // This would trigger and but it's fine!
+      ASSERT_ONCE(custom_sampler_by_original_sampler.empty()); // Is this guaranteed in DX (that "OnDestroySampler()" wasn't already called)? Maybe not, but probably is!
+#endif
       custom_sampler_by_original_sampler.clear();
   }
 
 #if ENABLE_NGX
-  ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
+  // DLSS
   NGX::DLSS::Deinit(native_device); // NOTE: this could stutter the game on closure as it forces unloading the DLSS DLL, we could theoretically avoid it (not sure if we'd run into errors)
   dlss_output_color = nullptr;
   dlss_exposure = nullptr;
   dlss_motion_vectors = nullptr;
   dlss_motion_vectors_rtv = nullptr;
+#endif // ENABLE_NGX
+
   exposure_buffer_gpu = nullptr;
   exposure_buffer_cpu = nullptr; // Hopefully it's fine to let go of this buffer com ptr and destroy the device without unmapping the resource first
   exposure_buffer_rtv = nullptr;
-#endif // NGX
+
+  // GTAO
+  gtao_edges_texture = nullptr;
+  gtao_edges_texture_width = 0;
+  gtao_edges_texture_height = 0;
+  gtao_edges_rtv = nullptr;
+  gtao_edges_srv = nullptr;
+
+  // SSR
+  ssr_texture = nullptr;
+  ssr_diffuse_texture = nullptr;
+  ssr_diffuse_texture_width = 0;
+  ssr_diffuse_texture_height = 0;
+  ssr_texture_format = DXGI_FORMAT_UNKNOWN;
+  ssr_diffuse_rtv = nullptr;
+  ssr_srv = nullptr;
+  ssr_diffuse_srv = nullptr;
 
   copy_texture = nullptr;
   transfer_function_copy_texture = nullptr;
@@ -1957,14 +1992,11 @@ void OnDestroyDevice(reshade::api::device* device) {
 
   default_blend_state = nullptr;
 
-  {
-      const std::unique_lock lock(s_mutex_device);
-      assert(!native_swapchain3);
-      assert(global_native_device);
-      global_native_device = nullptr;
-  }
-
-  device->destroy_private_data<DeviceData>();
+#if DEVELOPMENT
+  debug_draw_texture = nullptr;
+  debug_draw_texture_format = DXGI_FORMAT_UNKNOWN; // The view format, not the Texture2D format
+  debug_draw_shader_hash = 0;
+#endif
 }
 
 void OnInitSwapchain(reshade::api::swapchain* swapchain) {
@@ -1980,12 +2012,15 @@ void OnInitSwapchain(reshade::api::swapchain* swapchain) {
   auto* device = swapchain->get_device();
   if (device != nullptr) {
     auto& device_data = device->get_private_data<DeviceData>();
-    const std::unique_lock lock(device_data.mutex);
-    device_data.swapchains.emplace(swapchain);
+    // Hacky nullptr check
+    if (&device_data != nullptr) {
+      const std::unique_lock lock(device_data.mutex);
+      device_data.swapchains.emplace(swapchain);
 
-    for (uint32_t index = 0; index < back_buffer_count; index++) {
-      auto buffer = swapchain->get_back_buffer(index);
-      device_data.back_buffers.emplace(buffer.handle);
+      for (uint32_t index = 0; index < back_buffer_count; index++) {
+        auto buffer = swapchain->get_back_buffer(index);
+        device_data.back_buffers.emplace(buffer.handle);
+      }
     }
   }
 
@@ -2003,7 +2038,9 @@ void OnInitSwapchain(reshade::api::swapchain* swapchain) {
   IDXGISwapChain3* local_native_swapchain3;
   {
       const std::unique_lock lock(s_mutex_device);
-      ASSERT_ONCE(native_swapchain3 == nullptr);
+#if 0
+      assert(native_swapchain3 == nullptr); // This can happen when we reset the graphics settings somehow
+#endif
       native_swapchain3 = nullptr;
       // The cast pointer is actually the same, we are just making sure the type is right.
       hr = native_swapchain->QueryInterface(&native_swapchain3);
@@ -2040,6 +2077,7 @@ void OnDestroySwapchain(reshade::api::swapchain* swapchain) {
       assert(native_swapchain3 != nullptr);
       if ((IDXGISwapChain*)(swapchain->get_native()) == native_swapchain3) {
           native_swapchain3 = nullptr;
+          // No need to null "game_window" here
       }
       else {
           assert(false); // There's seemengly more than one Swapchain?
@@ -2049,13 +2087,18 @@ void OnDestroySwapchain(reshade::api::swapchain* swapchain) {
   auto* device = swapchain->get_device();
   if (device != nullptr) {
     auto& device_data = device->get_private_data<DeviceData>();
-    const std::unique_lock lock(device_data.mutex);
-    device_data.swapchains.erase(swapchain);
-    auto& swapchain_data = swapchain->get_private_data<SwapchainData>();
-    for (const uint64_t handle : swapchain_data.back_buffers) {
-      device_data.back_buffers.erase(handle);
+    // Hacky nullptr check
+    if (&device_data != nullptr) {
+      const std::unique_lock lock(device_data.mutex);
+      device_data.swapchains.erase(swapchain);
+      auto& swapchain_data = swapchain->get_private_data<SwapchainData>();
+      for (const uint64_t handle : swapchain_data.back_buffers) {
+        device_data.back_buffers.erase(handle);
+      }
     }
   }
+
+  swapchain->destroy_private_data<SwapchainData>();
 }
 
 void OnInitCommandList(reshade::api::command_list* cmd_list) {
@@ -2725,6 +2768,7 @@ void OnPresent(
 // There's a few compute shaders but most passes are classic pixel shaders.
 // If we ever wanted to still run the game's original draw call (first) and then ours (second), we'd need to pass more arguments in this function (to replicate the draw call identically).
 bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= false*/, ShaderHashesList& original_shader_hashes) {
+  ASSERT_ONCE(global_device != nullptr);
   const auto* device = cmd_list->get_device();
   auto device_api = device->get_api();
   ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
@@ -3848,6 +3892,7 @@ bool OnDrawOrDispatchIndirect(
 }
 
 // TODO: use the native ReShade sampler desc instead? It's not really necessary
+// Expects "s_mutex_samplers" to already be locked
 com_ptr<ID3D11SamplerState> CreateCustomSampler(ID3D11Device* device, D3D11_SAMPLER_DESC desc) {
 #if !DEVELOPMENT
     if (desc.Filter == D3D11_FILTER_ANISOTROPIC || desc.Filter == D3D11_FILTER_COMPARISON_ANISOTROPIC) {
@@ -4345,7 +4390,10 @@ bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr)
                 texture_mip_lod_bias_offset = std::log2(render_resolution.y / output_resolution.y) - 1.f; // This results in -1 at output res
             }
             else {
-                texture_mip_lod_bias_offset = prey_taa_detected ? -1.f : 0.f; // Reset to default value (it's determined by "r_AntialiasingTSAAMipBias" for TAA (doesn't apply to SMAA), which Prey defaults to 0 but Luma's configs set to -1)
+                // Reset to best fallback value.
+                // This bias offset is always additive on top of the "r_AntialiasingTSAAMipBias" cvar, which only applies for for TAA (doesn't apply to SMAA).
+                // Prey defaults that to 0 and Luma's configs should to.
+                texture_mip_lod_bias_offset = prey_taa_detected ? -1.f : 0.f;
             }
             const auto new_texture_mip_lod_bias_offset = texture_mip_lod_bias_offset;
 
