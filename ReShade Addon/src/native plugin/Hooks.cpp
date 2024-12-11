@@ -66,7 +66,8 @@ namespace Hooks
 		}
 #endif
 
-		// Patch out the branch that clamps hFOV to 120.f
+		// Patch out the branch that clamps the "cl_hfov" cvar (horizontal FOV) to 120.f
+		// Note: since exposing "cl_fov" (vertical FOV) to the game's settings, this might not be necessary anymore as we never pass through the horizontal FOV cvar, but in case the game ever changed it on the spot, then this will remove the clamps again.
 		{
 			// OnHFOVChanged
 			const auto address = Offsets::GetAddress(Offsets::OnHFOVChanged);
@@ -161,6 +162,13 @@ namespace Hooks
 
 	void Hooks::Hook()
 	{
+		// Avoid hooking twice
+		if (_Hook_OnD3D11PostCreateDevice != nullptr)
+		{
+			assert(false); // Shouldn't happen (it can seemengly happen if ReShade loads and unloads, for example if the game failed to initialize properly, or if it re-created the DX device (usually the new one is created before the old one is destroyed, so ReShade stays alive))
+			return;
+		}
+
 		// Hook CD3D9Renderer::FlashRenderInternal because DXGI_SWAP_EFFECT_FLIP_DISCARD unbinds backbuffer during Present. So we need to call OMSetRenderTargets to bind it again every frame.
 #if 0 // Only needed by Kingdom Come Deliverance
 		{
@@ -491,17 +499,20 @@ namespace Hooks
 	{
 		// set colorspace
 		IDXGISwapChain3* swapChain3 = nullptr;
+		assert(Offsets::pCD3D9Renderer->m_devInfo.m_pSwapChain != nullptr);
 		Offsets::pCD3D9Renderer->m_devInfo.m_pSwapChain->QueryInterface(__uuidof(IDXGISwapChain3), reinterpret_cast<void**>(&swapChain3));
 
-		DXGI_COLOR_SPACE_TYPE colorSpace;
-		if (format == RE::ETEX_Format::eTF_R10G10B10A2) { // This format could be SDR too, but let's assume HDR10
-			colorSpace = DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;
-		} else {
-			colorSpace = DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;
-		}
+		if (swapChain3) {
+			DXGI_COLOR_SPACE_TYPE colorSpace;
+			if (format == RE::ETEX_Format::eTF_R10G10B10A2) { // This format could be SDR too, but let's assume HDR10
+				colorSpace = DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;
+			} else {
+				colorSpace = DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;
+			}
 
-		swapChain3->SetColorSpace1(colorSpace);
-		swapChain3->Release();
+			swapChain3->SetColorSpace1(colorSpace);
+			swapChain3->Release();
+		}
 
 		_Hook_OnD3D11PostCreateDevice();
 	}
