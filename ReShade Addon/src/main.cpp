@@ -5482,7 +5482,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
                         LoadCustomShaders({ pipeline_handle }, false, true);
                     }
                   }
-                  if (pipeline_pair->second->HasPixelShader()) {
+                  if (pipeline_pair->second->HasPixelShader() || pipeline_pair->second->HasComputeShader()) {
                       if (ImGui::Button("Debug Draw Shader")) {
                           debug_draw_pipeline = pipeline_pair->first; // Note: this is probably completely useless at the moment as we don't store the index of the pipeline instance the user had selected (e.g. "debug_draw_pipeline_target_instance")
                           debug_draw_shader_hash = pipeline_pair->second->shader_hashes[0];
@@ -5492,9 +5492,11 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
                           else
                               debug_draw_shader_hash_string[0] = 0;
                           debug_draw_texture = nullptr;
-#if 0 // Let the user settings persist for now, it seems more intuitive
+                          debug_draw_texture_format = DXGI_FORMAT_UNKNOWN;
+#if 1 // We could also let the user settings persist if we wished so
+                          debug_draw_pipeline_instance = 0;
                           debug_draw_pipeline_target_instance = -1;
-                          debug_draw_render_target_view = true;
+                          debug_draw_mode = pipeline_pair->second->HasPixelShader() ? DebugDrawMode::RenderTarget : (pipeline_pair->second->HasComputeShader() ? DebugDrawMode::UnorderedAccessView : DebugDrawMode::ShaderResource);
 #endif
                       }
                   }
