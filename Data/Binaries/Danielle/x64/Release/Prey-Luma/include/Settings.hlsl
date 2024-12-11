@@ -138,7 +138,9 @@
 #endif
 // Makes AO jitter a bit to add blend in more quality over time.
 // Requires TAA enabled to not look terrible.
+#ifndef ENABLE_SSAO_TEMPORAL
 #define ENABLE_SSAO_TEMPORAL 1
+#endif
 // 0 Vanilla
 // 1 High
 #ifndef BLOOM_QUALITY
@@ -197,14 +199,15 @@
 #define ENABLE_ARK_CUSTOM_POST_PROCESS (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
 #define ENABLE_LENS_OPTICS (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
 // Disable this for a softer image
+// (not really needed anymore as now we have "POST_TAA_SHARPENING_TYPE" for the TAA sharpening, which is the only one that usually runs)
 #if !defined(ENABLE_SHARPENING) || !DEVELOPMENT || !ENABLE_POST_PROCESS
 #undef ENABLE_SHARPENING
 #define ENABLE_SHARPENING (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
 #endif
 #define ENABLE_CHROMATIC_ABERRATION (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
-#if !defined(ENABLE_VIGNETTE) || !DEVELOPMENT || !ENABLE_POST_PROCESS
+#if !defined(ENABLE_VIGNETTE) || !ENABLE_POST_PROCESS
 #undef ENABLE_VIGNETTE
-#define ENABLE_VIGNETTE (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
+#define ENABLE_VIGNETTE (ENABLE_POST_PROCESS && 1)
 #endif
 // This is used for gameplay effects too, so it's best not disabled
 #if !defined(ENABLE_FILM_GRAIN) || !DEVELOPMENT || !ENABLE_POST_PROCESS

@@ -513,7 +513,7 @@ std::unordered_map<std::string, uint8_t> code_shaders_defines;
 // These default should ideally match shaders values, but it's not necessary because whathever the default values they have they will be overridden
 // TODO: add grey out conditions (another define, by name, whether its value is > 0), and also add min/max values range (to limit the user insertable values), and "category"
 std::vector<ShaderDefineData> shader_defines_data = {
-  {"DEVELOPMENT", DEVELOPMENT ? '1' : '0', true, DEVELOPMENT ? false : true, "Enables some development/debug features that are otherwise not allowed"},
+  {"DEVELOPMENT", DEVELOPMENT ? '1' : '0', true, DEVELOPMENT ? false : true, "Enables some development/debug features that are otherwise not allowed (get a TEST or DEVELOPMENT build if you want to use this)"},
   {"POST_PROCESS_SPACE_TYPE", '1', true, false, "0 - Gamma space\n1 - Linear space\n2 - Linear space until UI (then gamma space)\n\nSelect \"2\" if you want the UI to look exactly like it did in Vanilla\nSelect \"1\" for the highest possible quality (e.g. color accuracy, banding, DLSS)"},
   {"GAMMA_CORRECTION_TYPE", '1', true, false, "(HDR only) Emulates a specific SDR gamma\nThis is best left to \"1\" (Gamma 2.2) unless you have crushed blacks or overly saturated colors\n0 - sRGB\n1 - Gamma 2.2\n2 - sRGB (color hues) with gamma 2.2 luminance"},
   {"TONEMAP_TYPE", '1', false, false, "0 - Vanilla SDR\n1 - Luma HDR (Vanilla+)\n2 - Raw HDR (Untonemapped)\nThe HDR tonemapper works for SDR too\nThis games uses a filmic tonemapper, which slightly crushes blacks"},
@@ -532,6 +532,7 @@ std::vector<ShaderDefineData> shader_defines_data = {
 #if DEVELOPMENT || TEST // For now we don't want to give users this customization, the default value should be good for most users and most cases
   {"SSAO_RADIUS", '1', false, false, "0 - Small, 1 - Vanilla/Standard (suggested)\n2 - Large\nSmaller radiuses can look more stable but don't do as much\nLarger radiuses can look more realistic, but also over darkening and bring out screen space limitations more often (e.g. stuff de-occluding around the edges when turning the camera)\nOnly applies to GTAO"},
 #endif
+  {"ENABLE_SSAO_TEMPORAL", '1', false, false, "Disable if you don't use TAA to avoid seeing noise in Ambient Occlusion (though it won't have the same quality)\nYou can disable it for you use TAA too but it's not suggested"},
   {"BLOOM_QUALITY", '1', false, false, "0 - Vanilla\n1 - High"},
   {"SSR_QUALITY", '1', false, false, "Screen Space Reflections\n0 - Vanilla\n1 - High\n2 - Ultra\nThis can be fairly expensive so lower it if you are having performance issues"},
 #if DEVELOPMENT || TEST
@@ -541,9 +542,9 @@ std::vector<ShaderDefineData> shader_defines_data = {
   {"ENABLE_CAMERA_MOTION_BLUR", '0', false, false, "Camera Motion Blur can look pretty botched in Prey, and can mess with DLSS/TAA, it's turned off by default in Luma"},
   {"ENABLE_COLOR_GRADING_LUT", '1', false, false, "Allows you to disable color grading\nDon't disable it unless you know what you are doing"},
   {"POST_TAA_SHARPENING_TYPE", '2', false, false, "0 - None (disabled)\n1 - Vanilla (basic sharpening)\n2 - RCAS (AMD improved sharpening)"},
-#if DEVELOPMENT || TEST //TODOFT: Disabled for final users for now because these require the "DEVELOPMENT" flag to be used atm
-  {"ENABLE_SHARPENING", '1', false, false, "Allows you to disable sharpening\nDisabling it is not suggested, especially if you use TAA"},
   {"ENABLE_VIGNETTE", '1', false, false, "Allows you to disable vignette\nIt's not that prominent in Prey, it's only used in certain cases to convey gameplay information,\nso don't disable it unless you know what you are doing"},
+#if DEVELOPMENT || TEST // Disabled these final users because these require the "DEVELOPMENT" flag to be used and we don't want users to mess around with them (it's not what the mod wants to achieve)
+  {"ENABLE_SHARPENING", '1', false, false, "Allows you to disable sharpening globally\nDisabling it is not suggested, especially if you use TAA (you can use \"POST_TAA_SHARPENING_TYPE\" for that anyway)"},
   {"ENABLE_FILM_GRAIN", '1', false, false, "Allows you to disable color grading\nIt's not that prominent in Prey, it's only used in certain cases to convey gameplay information,\nso don't disable it unless you know what you are doing"},
 #endif
   {"ENABLE_DITHERING", '0', false, false, "Temporal dithering control\nIt doesn't seem to be needed in this game so Luma disabled it by default"},
