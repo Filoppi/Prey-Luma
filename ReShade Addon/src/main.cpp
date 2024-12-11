@@ -4846,6 +4846,23 @@ void OnReshadePresent(reshade::api::effect_runtime* runtime) {
   CheckForLiveUpdate();
 }
 
+bool OnReShadeSetEffectsState(reshade::api::effect_runtime* runtime, bool enabled) {
+    // Note that this is not called on startup (even if the ReShade effects are enabled by default)
+    // We were going to read custom keyboard events like this "GetAsyncKeyState(VK_ESCAPE) & 0x8000", but this seems like a better design
+    needs_unload_shaders = !enabled;
+    last_pressed_unload = !enabled;
+    needs_load_shaders = enabled; // This also re-compile shaders possibly
+    const std::unique_lock lock(s_mutex_loading);
+    pipelines_to_reload.clear();
+    return false; // You can return true to deny the change
+}
+
+void OnReShadeReloadedEffects(reshade::api::effect_runtime* runtime) {
+    if (!last_pressed_unload) {
+        OnReShadeSetEffectsState(runtime, true); // This will load and recompile all shaders
+    }
+}
+
 // Expects "s_mutex_dumping"
 void DumpShader(uint32_t shader_hash, bool auto_detect_type = true) {
   auto dump_path = GetShaderPath();
@@ -6418,7 +6435,12 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
 
       reshade::register_event<reshade::addon_event::present>(OnPresent);
 
-      reshade::register_event<reshade::addon_event::reshade_present>(OnReshadePresent);
+      reshade::register_event<reshade::addon_event::reshade_present>(OnReShadePresent);
+
+#if DEVELOPMENT || TEST // Currently Dev only as we don't need the average user to compare the mod on/off
+      reshade::register_event<reshade::addon_event::reshade_set_effects_state>(OnReShadeSetEffectsState);
+      reshade::register_event<reshade::addon_event::reshade_reloaded_effects>(OnReShadeReloadedEffects);
+#endif // DEVELOPMENT
 
       reshade::register_overlay(NAME, OnRegisterOverlay);
 
@@ -6465,7 +6487,12 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
 
       reshade::unregister_event<reshade::addon_event::present>(OnPresent);
 
-      reshade::unregister_event<reshade::addon_event::reshade_present>(OnReshadePresent);
+      reshade::unregister_event<reshade::addon_event::reshade_present>(OnReShadePresent);
+
+#if DEVELOPMENT || TEST
+      reshade::unregister_event<reshade::addon_event::reshade_set_effects_state>(OnReShadeSetEffectsState);
+      reshade::unregister_event<reshade::addon_event::reshade_reloaded_effects>(OnReShadeReloadedEffects);
+#endif // DEVELOPMENT
 
       reshade::unregister_overlay(NAME, OnRegisterOverlay);
 
