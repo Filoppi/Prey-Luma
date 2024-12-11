@@ -1,52 +1,54 @@
-Luma (Prey (2017) + Mooncrash) aims to rewrite the game post processing phase to improve the look of the game without drifting from the original artistic vision (believe me).
-The highlight feature is adding HDR support, though benefits are not restricted to HDR users, there's a lot more, and it's akin to a small Remastered.
+Luma (Prey (2017) + Mooncrash) aims to rewrite the game late rendering and post processing phases to improve the look of the game without drifting from the original artistic vision (believe me!).
+The highlight feature is adding HDR support, DLSS and new Ambient Occlusion, making it akin to a smallish Remastered.
 The mod works by hooking into the game's code and replacing shaders.
 
 Luma was created by Pumbo (graphics) and Ersh (reverse engineering).
 Join our discord here: https://discord.gg/DNGfMZgH3f
 
-List of features:
--Added HDR output (scRGB 16bit) (improved tonemapping)
--Increased buffers quality in SDR and HDR, reducing banding all around
--Upgraded quality and look of sun shaft effects and lens "optic" effects (e.g. lens flare)
--Improved the quality of dynamic shadow, especially from up close (they had broken filtering that causes them to be blocky)
--Added a more modern Ambient Occlusion solution (GTAO) (the original AO is also improved in quality)
--Added DLSS Super Resolution (on Nvidia GPUs) (OptiScaler can be used to inject FSR 3)
--Added RCAS sharpening after TAA (replacing the original basic sharpening implementation)
--Improved all of the native Anti Aliasing implementations
--Improved Motion Blur quality
--Improved Bloom quality
--Improved Ultrawide aspect ratio support (sun shafts and sun lens effects did not scale properly causing the sun to be huge in UW, bloom was stretched in UW, chromatic aberration was stretched in UW, ...)
--Improved Dynamic Resolution Scaling support (film grain, bloom, TAA, lens optics, ... did not scale properly with dynamic rendering resolutions, and it generally just did not look very nice)
--Improved Anisotropic Filtering (it was not set to 16x on all textures)
--Improved Swapchain flip model (more responsive)
--Improved Screen Space Reflections (they are not cropped anymore, and get progressively more diffuse with distance)
--More (e.g. the sun got progressively smaller at higher resolutions in some scenes, objects highlights didn't look right at higher resolutions, added optional HDR post process filter on video cutscenes)!
+# List of features:
+- Added HDR output (scRGB 16bit) (improved tonemapping, reworked all post processing effects)
+- Increased buffers quality in SDR and HDR, reducing banding all around
+- Improved the quality of dynamic shadow, especially from up close (they had broken filtering that causes them to be blocky)
+- Added a more modern Ambient Occlusion solution (GTAO) (the original AO is also improved in quality)
+- Improved Screen Space Reflections (they are not cropped close to the camera anymore, they now get progressively more diffuse with distance, they blend in and out of view more nicely etc etc, their math in general has been refactored for much better looking and more "physically accurate" results)
+- Added DLAA+DLSS Super Resolution (on Nvidia GPUs) (OptiScaler can be used to inject FSR 3) (this looks drastically better than the native TAA and has no noticeable ghosting)
+- Added RCAS sharpening after TAA (replacing the original basic sharpening implementation, making it look a lot more natural)
+- Improved all of the native Anti Aliasing implementations (e.g. SMAA/TAA)
+- Improved Anisotropic Filtering (it was not set to 16x on all textures that would benefit from it)
+- Improved quality and look of sun shaft effects and lens "optic" effects (e.g. lens flare)
+- Improved Motion Blur quality and fixes multiple issues with its motion vectors
+- Improved Bloom quality and fixes multiple issues with its generation (e.g. it was trailing at the edge of the screen)
+- Improved Ultrawide Aspect Ratio support (Bloom, AO, SSR, Sun Shafts, Lens Optics etc did not scale properly with it, e.g. causing the sun to be huge in UW or causing bloom to be stretched, chromatic aberration was stretched in UW) (the game now also exposes the vertical FOV instead of the horizontal one, which was limited to 120 and not ultrawide friendly)
+- Improved High Resolution support (the game was mostly developed for 1080p resolution, a multitude of effects did not scale properly to 4k, like the objects highlights overlay, or stars/sun sprites)
+- Improved Dynamic Resolution Scaling support (Film Grain, Bloom, TAA, AO, SSR, Sun Shafts, Lens Optics and many other effects did not scale properly with it, causing visible changes in the image when the resolution changed, and its upscaling implementation just did not look very nice)
+- Improved High Frame Rate support by unlocking the frame rate beyond 144 (you can change the limit in the menu now) (with DRS you can easily reach 240FPS now, thanks to tweaked settings that made it more stable)
+- Improved Swapchain flip model (more responsive for VRR)
+- More (e.g. added optional HDR post process filter on pre-rendered video, added settings to turn off Vignette or Camera Motion Blur)!
 
-How to use:
-Drop all the files into the game installation folder (including "autoexec.cfg" and "system.cfg"), except the "game.cfg" file that goes into the user data folder (this is optional, but suggested).
-Install the latest VC++ redist before using (https://aka.ms/vs/17/release/vc_redist.x64.exe).
-Before updating the mod, make sure to delete all its previous files. To uninstall, clear all the files (they are unique to the mod).
-Install ReShade 6.3.3+ (with Addons support) to use this mod (for DX11, preferably as dxgi.dll).
-Unless you are on Linux/Proton, delete the "d3dcompiler_47.dll" from the main binary folder, it's an outdated shader compiler bundled with the game for "no reason" (Windows will fall back on the latest version of it this way, but Proton doesn't distribute the file so leave it in).
-Preferably, keep your ".\renodx-dev\dump" folder and send them to the developers after long play sessions, so they can catch all the shaders and make them Luma compatible.
-Performance cost on modern GPUs is negligeable, especially when using DLSS SR + Dynamic Resolution Scaling.
-Set you "game.cfg" to read only to avoid the game clearing most settings from it if changing settings within the game menu, so it's suggested to change your resolution directly from config before booting the game.
-The mod is best used with all the graphics settings maxed out in the game, but any setting combination is supported too.
-The game's HDR uses the HDR calibration data from Windows 11 and display's EDID.
-The in game brightness slider is best left at default value.
+# How to install:
+- Drop all the files into the game installation folder (including "autoexec.cfg" and "system.cfg"), except the "game.cfg" file that goes into the user data folder (this is optional, but highly suggested for the best quality).
+- Install the latest VC++ redist before using (https://aka.ms/vs/17/release/vc_redist.x64.exe).
+- Install ReShade 6.3.3+ (with Addons support, for DX11, preferably as dxgi.dll).
+- Unless you are on Linux/Proton, delete the "d3dcompiler_47.dll" from the main binary folder, it's an outdated shader compiler bundled with the game for "no reason" (Windows will fall back on the latest version of it this way, but Proton doesn't distribute the file so leave it in).
 
-Issues and limitations:
--The Epic Games Store and Microsoft Store versions are not supported (the game data is across all game releases, so one could theoretically force use the Steam or GOG executables).
--The UI will look a bit different from Vanilla due to Luma using HDR/linear blending modes by default. Set "POST_PROCESS_SPACE_TYPE" to 0 or 2 in the advanced settings to make it behave like Vanilla.
--Anti Aliasing might show as "None" in the game settings menu even if it internally is engaged to TAA or SMAA 2TX (when changed from config) (setting it back to TAA will only affect the menu).
--MSAA or Super-sampling are not supported with Luma.
--Changing the resolution after starting the game is not suggested, as some effects get initialized for the original resolution without being resized (vanilla issue).
--FXAA and no AA is not suggested as they lack object highlights and have other bugs (e.g. FXAA can break the game when close to an enemy and looking at the sun) (vanilla issue).
--Sun shafts can disappear while they are still visible if the sun center gets occluded (this is a bug with the original game, it's slightly more noticeable with LUMA because sun shafts are stronger).
--Some objects in some levels disappear at certain camera angles (vanilla issue, lowering object details to high or below fixes it).
--Glass can flicker heavily when there's multiple layers of it (vanilla issue).
--Due to Windows limitations, the game cursor will follow the OS SDR White Level (SDR content brightness) instead of the game's UI paper white. Set the Windows SDR content brightness setting to 31 (out of 100) to make it match ~203 nits, as Luma is set to by default.
+# Information:
+- The performance cost on modern GPUs is negligeable, especially when using DLSS SR + Resolution Scaling (in fact, performance might drastically increase in that case).
+- The mod is best used with all the graphics settings maxed out in the game, but any setting combination is supported too.
+- Set you "game.cfg" to read only to avoid the game clearing most settings from it if changing settings within the game menu, so it's suggested to change your resolution directly from config before booting the game.
+- The game's HDR uses the HDR calibration data from Windows 11 and display's EDID.
+- The in game brightness slider is best left at default value.
+- Before updating the mod, make sure to delete all its previous files. To uninstall, clear all the files (they are unique to the mod).
+
+# Issues and limitations:
+- The Epic Games Store and Microsoft Store versions are not supported (the game data is across all game releases, so one could theoretically force use the Steam or GOG executables).
+- The UI will look a bit different from Vanilla due to Luma using HDR/linear blending modes by default. Set "POST_PROCESS_SPACE_TYPE" to 0 or 2 in the advanced settings to make it behave like Vanilla.
+- MSAA or Super-sampling are not supported with Luma.
+- Changing the resolution after starting the game is not suggested, as some effects get initialized for the original resolution without being resized (vanilla issue).
+- FXAA and no AA is not suggested as they lack object highlights and have other bugs (e.g. FXAA can break the game when close to an enemy and looking at the sun) (vanilla issue) (Luma hides FXAA from the settings).
+- Sun shafts can disappear while they are still visible if the sun center gets occluded (this is a bug with the original game, it's slightly more noticeable with LUMA because sun shafts are stronger).
+- Some objects in some levels disappear at certain camera angles (vanilla issue, lowering object details to high or below fixes it).
+- Glass can flicker heavily when there's multiple layers of it (vanilla issue).
+- Due to Windows limitations, the game cursor will follow the OS SDR White Level (SDR content brightness) instead of the game's UI paper white. Set the Windows SDR content brightness setting to 31 (out of 100) to make it match ~203 nits, as Luma is set to by default.
 
 Compatibility:
 This mod should work with any other mod for Prey, just be careful of what you install, because some of the most popular mods change very random stuff with the game, or its graphics config (they will still be compatible with Luma).

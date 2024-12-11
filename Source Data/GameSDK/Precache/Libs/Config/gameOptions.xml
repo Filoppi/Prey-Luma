@@ -1,0 +1,853 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ArkOptionLayout>
+  <Pages>
+    <ArkOptionLayoutPage Label="@ui_GameplayHead">
+      <SubPages>
+        <ArkOptionLayoutSubPage Label="@ui_GameSubMenu">
+          <Attributes>
+            <ArkOptionAttribute Action="pl_difficulty" Label="@ui_DifficultySetting" SetOnChange="true" HideOnFrontend="true" HideFromProfile="true">
+              <Widget>
+                <ArkOptionList>
+                  <Options>
+                    <ArkOption Label="@ui_DiffNormal" Value="0" />
+                    <ArkOption Label="@ui_DiffHard" Value="1" />
+                    <ArkOption Label="@ui_DiffVeryHard" Value="2" />
+                    <ArkOption Label="@ui_DiffSurvival" Value="3" />
+                    <ArkOption Label="Survival" Value="4" />
+                  </Options>
+                </ArkOptionList>
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="hud_subtitles" Label="@ui_SubtitlesSetting" SetOnChange="true" >
+              <Widget>
+                <ArkOptionList>
+                  <Options>
+                    <ArkOption Label="@ui_Off" Value="0" />
+                    <ArkOption Label="@ui_SubtitleMain" Value="1" />
+                    <ArkOption Label="@ui_SubtitleAll" Value="2" />
+                  </Options>
+                </ArkOptionList>
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="hud_tutorials" Label="@ui_TutorialSetting" SetOnChange="true" >
+              <Widget>
+                <ArkOptionList>
+                  <Options>
+                    <ArkOption Label="@ui_None" Value="0" />
+                    <ArkOption Label="@ui_NonTutorialPrompts" Value="1" />
+                    <ArkOption Label="@ui_TutorialAll" Value="2" />
+                  </Options>
+                </ArkOptionList>
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="i_forcefeedback" Label="@ui_Vibration" SetOnChange="true" >
+              <Widget>
+                <ArkOptionToggle>
+                  <Option0 Label="@ui_On" Value="1" />
+                  <Option1 Label="@ui_Off" Value="0" />
+                </ArkOptionToggle>
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="cl_bobAmount" Label="@ui_CameraBob" SetOnChange="true" >
+              <Widget>
+                <ArkOptionSlider Min="0" Max="2" Decimals="1" Unit="0.1" Normalize="true" />
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="cl_rollAmount" Label="@ui_CameraRoll" SetOnChange="true" >
+              <Widget>
+                <ArkOptionSlider Min="-1" Max="1" Decimals="2" Unit="0.1" Normalize="true" />
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="ui_hitDamage" Label="@ui_HitDamage" SetOnChange="true" >
+              <Widget>
+                <ArkOptionToggle>
+                  <Option0 Label="@ui_On" Value="1" />
+                  <Option1 Label="@ui_Off" Value="0" />
+                </ArkOptionToggle>
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="g_language" Label="@ui_TextLanguage" SetOnChange="true" HideInGame="true">
+              <Widget>
+                <ArkOptionTextLanguage />
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="hud_hide" Label="Toggle Hud" SetOnChange="true" >
+              <Widget>
+                <ArkOptionToggle>
+                  <Option0 Label="@ui_On" Value="0" />
+                  <Option1 Label="@ui_Off" Value="1" />
+                </ArkOptionToggle>
+              </Widget>
+            </ArkOptionAttribute>
+          </Attributes>
+        </ArkOptionLayoutSubPage>
+        <ArkOptionLayoutSubPage Label="@ui_InterfaceSubMenu">
+         <Attributes>
+          <ArkOptionAttribute Action="hud_showOptionalHud" Label="@ui_ShowOptionalHUD" SetOnChange="true" Default="1">
+           <Widget>
+            <ArkOptionToggle>
+             <Option0 Label="@ui_Off" Value="0"/>
+             <Option1 Label="@ui_On" Value="1"/>
+            </ArkOptionToggle>
+            </Widget>
+          </ArkOptionAttribute>
+          <ArkOptionAttribute Action="hud_tutorials" Label="@ui_TutorialSetting" SetOnChange="true" Default="2">
+           <Widget>
+             <ArkOptionList>
+              <Options>
+               <ArkOption Label="@ui_None" Value="0"/>
+               <ArkOption Label="@ui_NonTutorialPrompts" Value="1"/>
+               <ArkOption Label="@ui_TutorialAll" Value="2"/>
+              </Options>
+             </ArkOptionList>
+            </Widget>
+          </ArkOptionAttribute>
+          <ArkOptionAttribute Action="hud_reticleSetting" Label="@ui_ReticleSetting" SetOnChange="true" Default="1">
+            <Widget>
+             <ArkOptionList>
+              <Options>
+               <ArkOption Label="@ui_Off" Value="0"/>
+               <ArkOption Label="@ui_DefaultReticle" Value="1"/>
+               <ArkOption Label="@ui_DotReticle" Value="2"/>
+              </Options>
+             </ArkOptionList>
+            </Widget>
+          </ArkOptionAttribute>
+          <ArkOptionAttribute Action="hud_showPlayerState" Label="@ui_ShowPlayerState" SetOnChange="true" Default="1">
+           <Widget>
+            <ArkOptionToggle>
+             <Option0 Label="@ui_Off" Value="0"/>
+             <Option1 Label="@ui_On" Value="1"/>
+            </ArkOptionToggle>
+           </Widget>
+          </ArkOptionAttribute>
+          <ArkOptionAttribute Action="hud_showHitFeedback" Label="@ui_ShowHitFeedback" SetOnChange="true" Default="1">
+           <Widget>
+            <ArkOptionToggle>
+             <Option0 Label="@ui_Off" Value="0"/>
+             <Option1 Label="@ui_On" Value="1"/>
+            </ArkOptionToggle>
+           </Widget>
+          </ArkOptionAttribute>
+       <ArkOptionAttribute Action="hud_showPsiScanPrompt" Label="@ui_ShowPsiScanPrompt" SetOnChange="true" Default="1">
+       <Widget>
+        <ArkOptionToggle>
+         <Option0 Label="@ui_Off" Value="0"/>
+         <Option1 Label="@ui_On" Value="1"/>
+        </ArkOptionToggle>
+       </Widget>
+      </ArkOptionAttribute>
+      <ArkOptionAttribute Action="hud_showObjectiveMarkers" Label="@ui_ShowObjectiveMarkers" SetOnChange="true" Default="1">
+       <Widget>
+        <ArkOptionToggle>
+         <Option0 Label="@ui_Off" Value="0"/>
+         <Option1 Label="@ui_On" Value="1"/>
+        </ArkOptionToggle>
+       </Widget>
+      </ArkOptionAttribute>
+      <ArkOptionAttribute Action="hud_showHudLog" Label="@ui_ShowHudLog" SetOnChange="true" Default="1">
+       <Widget>
+        <ArkOptionToggle>
+         <Option0 Label="@ui_Off" Value="0"/>
+         <Option1 Label="@ui_On" Value="1"/>
+        </ArkOptionToggle>
+       </Widget>
+      </ArkOptionAttribute>
+      <ArkOptionAttribute Action="hud_showLegends" Label="@ui_ShowLegends" SetOnChange="true" Default="1">
+       <Widget>
+        <ArkOptionToggle>
+         <Option0 Label="@ui_Off" Value="0"/>
+         <Option1 Label="@ui_On" Value="1"/>
+        </ArkOptionToggle>
+       </Widget>
+      </ArkOptionAttribute>
+      <ArkOptionAttribute Action="ui_hitDamage" Label="@ui_HitDamage" SetOnChange="true" Default="1">
+       <Widget>
+        <ArkOptionToggle>
+         <Option0 Label="@ui_Off" Value="0"/>
+         <Option1 Label="@ui_On" Value="1"/>
+        </ArkOptionToggle>
+       </Widget>
+      </ArkOptionAttribute>
+      <ArkOptionAttribute Action="hud_showEnemyHealthBar" Label="@ui_ShowEnemyHealth" SetOnChange="true" Default="1">
+       <Widget>
+        <ArkOptionToggle>
+         <Option0 Label="@ui_Off" Value="0"/>
+         <Option1 Label="@ui_On" Value="1"/>
+        </ArkOptionToggle>
+       </Widget>
+      </ArkOptionAttribute>
+      <ArkOptionAttribute Action="hud_showEnemyMarkers" Label="@ui_ShowEnemyMarkers" SetOnChange="true" Default="1">
+       <Widget>
+        <ArkOptionToggle>
+         <Option0 Label="@ui_Off" Value="0"/>
+         <Option1 Label="@ui_On" Value="1"/>
+        </ArkOptionToggle>
+       </Widget>
+      </ArkOptionAttribute>
+     </Attributes>
+    </ArkOptionLayoutSubPage>
+        <ArkOptionLayoutSubPage Label="@ui_InteractSubMenu">
+          <Attributes>
+            <ArkOptionAttribute Action="cl_reticleSensitivityController" Label="@ui_CursorSpeed" SetOnChange="true" Default="0.38">
+              <Widget>
+                <ArkOptionSlider Min="0.1" Max="1.5" Decimals="3" Unit="0.014" Normalize="true" />
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="ui_examine_kiosks" Label="@ui_AutoExamineBasic" SetOnChange="true" >
+              <Widget>
+                <ArkOptionToggle>
+                  <Option0 Label="@ui_On" Value="1" />
+                  <Option1 Label="@ui_Off" Value="0" />
+                </ArkOptionToggle>
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="ui_examine_workstation" Label="@ui_AutoExamineWork" SetOnChange="true" >
+              <Widget>
+                <ArkOptionToggle>
+                  <Option0 Label="@ui_On" Value="1" />
+                  <Option1 Label="@ui_Off" Value="0" />
+                </ArkOptionToggle>
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="ui_examine_securitystation" Label="@ui_AutoExamineSecurity" SetOnChange="true" >
+              <Widget>
+                <ArkOptionToggle>
+                  <Option0 Label="@ui_On" Value="1" />
+                  <Option1 Label="@ui_Off" Value="0" />
+                </ArkOptionToggle>
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="ui_examine_keypad" Label="@ui_AutoExamineKeypads" SetOnChange="true" >
+              <Widget>
+                <ArkOptionToggle>
+                  <Option0 Label="@ui_On" Value="1" />
+                  <Option1 Label="@ui_Off" Value="0" />
+                </ArkOptionToggle>
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="ui_examine_keycard" Label="@ui_AutoExamineKeycards" SetOnChange="true" >
+              <Widget>
+                <ArkOptionToggle>
+                  <Option0 Label="@ui_On" Value="1" />
+                  <Option1 Label="@ui_Off" Value="0" />
+                </ArkOptionToggle>
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="ui_examine_fabricator" Label="@ui_AutoExamineFabricators" SetOnChange="true" >
+              <Widget>
+                <ArkOptionToggle>
+                  <Option0 Label="@ui_On" Value="1" />
+                  <Option1 Label="@ui_Off" Value="0" />
+                </ArkOptionToggle>
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="ui_examine_operatordispenser" Label="@ui_AutoExamineOperators" SetOnChange="true" >
+              <Widget>
+                <ArkOptionToggle>
+                  <Option0 Label="@ui_On" Value="1" />
+                  <Option1 Label="@ui_Off" Value="0" />
+                </ArkOptionToggle>
+              </Widget>
+            </ArkOptionAttribute>
+          </Attributes>
+        </ArkOptionLayoutSubPage>
+      </SubPages>
+    </ArkOptionLayoutPage>
+    <ArkOptionLayoutPage Label="@ui_ControlsSettingsTitle">
+      <SubPages>
+        <ArkOptionLayoutSubPage Label="@ui_KeyboardMapping" Keybinds="true" Platform="PC">
+          <Attributes>
+            <ArkOptionAttribute Action="default.moveforward" Label="@ui_MoveForward">
+              <Subactions>
+                <ArkOptionSubAction Action="hacking.hack_moveup" />
+                <ArkOptionSubAction Action="menu.menu_up" />
+                <ArkOptionSubAction Action="menu.menu_map_pan_up" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="default.moveback" Label="@ui_MoveBackward">
+              <Subactions>
+                <ArkOptionSubAction Action="hacking.hack_movedown" />
+                <ArkOptionSubAction Action="menu.menu_down" />
+                <ArkOptionSubAction Action="menu.menu_map_pan_down" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="default.moveleft" Label="@ui_MoveLeft">
+              <Subactions>
+                <ArkOptionSubAction Action="hacking.hack_moveleft" />
+                <ArkOptionSubAction Action="menu.menu_left" />
+                <ArkOptionSubAction Action="menu.menu_map_pan_left" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="default.moveright" Label="@ui_MoveRight">
+              <Subactions>
+                <ArkOptionSubAction Action="hacking.hack_moveright" />
+                <ArkOptionSubAction Action="menu.menu_right" />
+                <ArkOptionSubAction Action="menu.menu_map_pan_right" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.use" Label="@ui_UseCarry">
+              <Subactions>
+                <ArkOptionSubAction Action="player.carry" />
+                <ArkOptionSubAction Action="hacking.hack_final4" />
+                <ArkOptionSubAction Action="world_ui_examination.use" />
+                <ArkOptionSubAction Action="examination.use" />
+                <ArkOptionSubAction Action="menu.menu_take_stow" />
+                <ArkOptionSubAction Action="menu.menu_take_all" />
+				<ArkOptionSubAction Action="focusmode.mouse_cancel_focusmode_type2" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.attack1" Label="@ui_Attack">
+              <Subactions>
+                <ArkOptionSubAction Action="player.fire_turret" />
+                <ArkOptionSubAction Action="mimic_grab.attack1" />
+                <ArkOptionSubAction Action="focusmode.mouse_execute_power_type2" />
+                <ArkOptionSubAction Action="focusmode.mouse_select_item" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.worldui_examine" Label="@ui_ExamineScope">
+              <Subactions>
+                <ArkOptionSubAction Action="psi_scanning_fanfare.toggles_scope" />
+				<ArkOptionSubAction Action="world_ui_examination.worldui_examine" />
+                <ArkOptionSubAction Action="player.toggle_scope" />
+                <ArkOptionSubAction Action="player.mimic_swap_camera" />
+                <ArkOptionSubAction Action="menu.menu_split" />
+                <ArkOptionSubAction Action="hacking.hack_final1" />
+              </Subactions>
+            </ArkOptionAttribute>
+			<ArkOptionAttribute Action="player.enter_focusmode" Label="@ui_FocusMode">
+			  <Subactions>
+			    <ArkOptionSubAction Action="focusmode.mouse_cancel_focusmode_type2" />
+			  </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.jump" Label="@ui_Jump" />
+            <ArkOptionAttribute Action="player.sneak" Label="@ui_Sneak">
+              <Subactions>
+			    <ArkOptionSubAction Action="focusmode.sneak" />
+                <ArkOptionSubAction Action="hacking.hack_final3" />
+                <ArkOptionSubAction Action="focusmode.use_food_item" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.select_equipped_power" Label="@ui_SelectEquippedPower">
+              <Subactions>
+                <ArkOptionSubAction Action="focusmode.mouse_execute_power_type1" />
+                <ArkOptionSubAction Action="focusmode.mouse_cancel_focusmode_type2" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="menu.menu_dialog_cancel" Label="@ui_Cancel">
+              <Subactions>
+                <ArkOptionSubAction Action="focusmode.mouse_cancel_focusmode_type2" />
+                <ArkOptionSubAction Action="psi_scanning_fanfare.scanner_exit_fanfare" />
+                <ArkOptionSubAction Action="world_ui_examination.examination_back" />
+                <ArkOptionSubAction Action="examination.examination_back" />
+                <ArkOptionSubAction Action="menu.menu_external_exit" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.sprint" Label="@ui_Sprint">
+              <Subactions>
+                <ArkOptionSubAction Action="menu.menu_switchpage_left" />
+                <ArkOptionSubAction Action="focusmode.sprint" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.leanleft" Label="@ui_LeanLeft">
+              <Subactions>
+                <ArkOptionSubAction Action="focusmode.leanleft" />
+                <ArkOptionSubAction Action="focusmode.use_psi_item" />
+                <ArkOptionSubAction Action="menu.menu_switchtab_left" />
+                <ArkOptionSubAction Action="menu.pdaprevpage" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.leanright" Label="@ui_LeanRight">
+              <Subactions>
+                <ArkOptionSubAction Action="focusmode.leanright" />
+                <ArkOptionSubAction Action="focusmode.use_healing_item" />
+                <ArkOptionSubAction Action="menu.menu_switchtab_right" />
+                <ArkOptionSubAction Action="menu.pdanextpage" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.reload" Label="@ui_Reload">
+              <Subactions>
+                <ArkOptionSubAction Action="menu.menu_examine" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.equip_last_weapon" Label="@ui_EquipLastWeapon">
+              <Subactions>
+                <ArkOptionSubAction Action="menu.menu_switchpage_right" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.toggle_flashlight" Label="@ui_Flashlight" />
+            <ArkOptionAttribute Action="player.play_audiolog" Label="@ui_Play_Audiolog" />
+            <ArkOptionAttribute Action="player.scanner_lock_target" Label="@ui_ScannerLock">
+              <Subactions>
+                <ArkOptionSubAction Action="hacking.hack_final2" />
+                <ArkOptionSubAction Action="menu.menu_drop" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.toggleinventory" Label="@ui_ToggleInventory">
+              <Subactions>
+                <ArkOptionSubAction Action="menu.toggleinventory" />
+                <ArkOptionSubAction Action="world_ui_examination.toggleinventory" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.toggleobjectives" Label="@ui_ToggleObjectives">
+              <Subactions>
+                <ArkOptionSubAction Action="menu.toggleobjectives" />
+                <ArkOptionSubAction Action="world_ui_examination.toggleobjectives" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.toggleabilities" Label="@ui_ToggleAbilities">
+              <Subactions>
+                <ArkOptionSubAction Action="menu.toggleabilities" />
+                <ArkOptionSubAction Action="world_ui_examination.toggleabilities" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.togglemap" Label="@ui_ToggleMap">
+              <Subactions>
+                <ArkOptionSubAction Action="menu.togglemap" />
+                <ArkOptionSubAction Action="world_ui_examination.togglemap" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.toggledata" Label="@ui_ToggleData">
+              <Subactions>
+                <ArkOptionSubAction Action="menu.toggledata" />
+                <ArkOptionSubAction Action="world_ui_examination.toggledata" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.togglestatus" Label="@ui_ToggleStatus">
+              <Subactions>
+                <ArkOptionSubAction Action="menu.togglestatus" />
+                <ArkOptionSubAction Action="world_ui_examination.togglestatus" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.loot_search" Label="@ui_SearchContainer">
+              <Subactions>
+                <ArkOptionSubAction Action="menu.menu_use" />
+                <ArkOptionSubAction Action="menu.menu_external_consume" />
+                <ArkOptionSubAction Action="player.specialUse" />
+                <ArkOptionSubAction Action="examination.specialUse" />
+                <ArkOptionSubAction Action="examination.loot_search" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.loot_navup" Label="@ui_arrowkey_up">
+              <Subactions>
+                <ArkOptionSubAction Action="examination.loot_navup" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.loot_navdown" Label="@ui_arrowkey_down">
+              <Subactions>
+                <ArkOptionSubAction Action="examination.loot_navdown" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.loot_navleft" Label="@ui_arrowkey_left">
+              <Subactions>
+                <ArkOptionSubAction Action="examination.loot_navleft" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.loot_navright" Label="@ui_arrowkey_right">
+              <Subactions>
+                <ArkOptionSubAction Action="examination.loot_navright" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.numkey0" Label="@ui_NumKey0">
+              <Subactions>
+                <ArkOptionSubAction Action="menu.numkey0" />
+                <ArkOptionSubAction Action="focusmode.numkey0" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.numkey1" Label="@ui_NumKey1">
+              <Subactions>
+                <ArkOptionSubAction Action="menu.numkey1" />
+                <ArkOptionSubAction Action="focusmode.numkey1" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.numkey2" Label="@ui_NumKey2">
+              <Subactions>
+                <ArkOptionSubAction Action="menu.numkey2" />
+                <ArkOptionSubAction Action="focusmode.numkey2" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.numkey3" Label="@ui_NumKey3">
+              <Subactions>
+                <ArkOptionSubAction Action="menu.numkey3" />
+                <ArkOptionSubAction Action="focusmode.numkey3" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.numkey4" Label="@ui_NumKey4">
+              <Subactions>
+                <ArkOptionSubAction Action="menu.numkey4" />
+                <ArkOptionSubAction Action="focusmode.numkey4" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.numkey5" Label="@ui_NumKey5">
+              <Subactions>
+                <ArkOptionSubAction Action="menu.numkey5" />
+                <ArkOptionSubAction Action="focusmode.numkey5" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.numkey6" Label="@ui_NumKey6">
+              <Subactions>
+                <ArkOptionSubAction Action="menu.numkey6" />
+                <ArkOptionSubAction Action="focusmode.numkey6" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.numkey7" Label="@ui_NumKey7">
+              <Subactions>
+                <ArkOptionSubAction Action="menu.numkey7" />
+                <ArkOptionSubAction Action="focusmode.numkey7" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.numkey8" Label="@ui_NumKey8">
+              <Subactions>
+                <ArkOptionSubAction Action="menu.numkey8" />
+                <ArkOptionSubAction Action="focusmode.numkey8" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.numkey9" Label="@ui_NumKey9">
+              <Subactions>
+                <ArkOptionSubAction Action="menu.numkey9" />
+                <ArkOptionSubAction Action="focusmode.numkey9" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="player.keypad0" Label="@ui_numpad0" />
+            <ArkOptionAttribute Action="player.keypad1" Label="@ui_numpad1" />
+            <ArkOptionAttribute Action="player.keypad2" Label="@ui_numpad2" />
+            <ArkOptionAttribute Action="player.keypad3" Label="@ui_numpad3" />
+            <ArkOptionAttribute Action="player.keypad4" Label="@ui_numpad4" />
+            <ArkOptionAttribute Action="player.keypad5" Label="@ui_numpad5" />
+            <ArkOptionAttribute Action="player.keypad6" Label="@ui_numpad6" />
+            <ArkOptionAttribute Action="player.keypad7" Label="@ui_numpad7" />
+            <ArkOptionAttribute Action="player.keypad8" Label="@ui_numpad8" />
+            <ArkOptionAttribute Action="player.keypad9" Label="@ui_numpad9" />
+            <ArkOptionAttribute Action="default.ui_start_pause" Label="@ui_Pause" />
+          </Attributes>
+        </ArkOptionLayoutSubPage>
+        <ArkOptionLayoutSubPage Label="@ui_MouseSettingsTitle" Platform="PC">
+          <Attributes>
+            <ArkOptionAttribute Action="cl_invertMouse" Label="@ui_InvertMouseTT"  SetOnChange="true" Platform="PC">
+              <Widget>
+                <ArkOptionToggle>
+                  <Option0 Label="@ui_On" Value="1" />
+                  <Option1 Label="@ui_Off" Value="0" />
+                </ArkOptionToggle>
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="cl_sensitivity" Label="@ui_MouseSensitivity" Default="0.0015" SetOnChange="true" Platform="PC">
+              <Widget>
+                <ArkOptionSlider Min="0.0005" Max="0.0105" Decimals="4" Unit="0.0001" Normalize="true" />
+              </Widget>
+            </ArkOptionAttribute>
+          </Attributes>
+        </ArkOptionLayoutSubPage>
+        <ArkOptionLayoutSubPage Label="@ui_MainCaps" LabelPS4="@ui_MainCapsPS4" Warning="@ui_SteamControllerNotice">
+          <Attributes>
+            <ArkOptionAttribute Action="cl_invertController" Label="@ui_InvertControllerTT"  SetOnChange="true">
+              <Widget>
+                <ArkOptionToggle>
+                  <Option0 Label="@ui_On" Value="1" />
+                  <Option1 Label="@ui_Off" Value="0" />
+                </ArkOptionToggle>
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="cl_sensitivityController" Label="@ui_ControllerSensitivity"  SetOnChange="true">
+              <Widget>
+                <ArkOptionSlider Min="2" Max="12" Decimals="1" Unit="0.1" Normalize="true" />
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="hud_forceControllerGlyphs" Label="@ui_ForceControllerGlyphs"  SetOnChange="true" Platform="PC">
+              <Widget>
+                <ArkOptionToggle>
+                  <Option0 Label="@ui_On" Value="1" />
+                  <Option1 Label="@ui_Off" Value="0" />
+                </ArkOptionToggle>
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="i_useSteamController" Label="@ui_EnableSteamController"  SetOnChange="true" Platform="PC" WriteConfigFile="true">
+              <Widget>
+                <ArkOptionToggle>
+                  <Option0 Label="@ui_On" Value="1" />
+                  <Option1 Label="@ui_Off" Value="0" />
+                </ArkOptionToggle>
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="controlmap" Label="@ui_GamepadMap">
+              <Widget>
+                <ArkOptionControlMap />
+              </Widget>
+            </ArkOptionAttribute>
+          </Attributes>
+        </ArkOptionLayoutSubPage>
+      </SubPages>
+    </ArkOptionLayoutPage>
+    <ArkOptionLayoutPage Label="@ui_Video">
+      <SubPages>
+        <ArkOptionLayoutSubPage Label="@ui_BasicSettings" WriteConfigFile="true" RequiresApply="true">
+          <Attributes>
+            <ArkOptionAttribute Action="r_overrideDXGIOutput" Label="@ui_Monitor" SetOnChange="true" Platform="PC">
+              <Widget>
+                <ArkOptionMonitor />
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="resolution" Label="@ui_Resolution" SetOnChange="true" Platform="PC">
+              <Widget>
+                <ArkOptionResolution />
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="r_fullscreen" Label="@ui_DisplayMode" SetOnChange="true" Platform="PC">
+              <Widget>
+                <ArkOptionDropDown>
+                  <Options>
+                    <ArkOption Label="@ui_Windowed" Value="0" />
+                    <ArkOption Label="@ui_Fullscreen" Value="1" />
+                    <ArkOption Label="@ui_FullWindowed" Value="2" />
+                  </Options>
+                </ArkOptionDropDown>
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="sys_MaxFPS" Label="Max FPS" Default="60" SetOnChange="true">
+              <Widget>
+                <ArkOptionSlider Min="30" Max="240" Decimals="0" Unit="1" Normalize="false" />
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="r_vsync" Label="@ui_Vsync" Default="0" SetOnChange="true" Platform="PC">
+              <Widget>
+                <ArkOptionToggle>
+                  <Option0 Label="@ui_On" Value="1" />
+                  <Option1 Label="@ui_Off" Value="0" />
+                </ArkOptionToggle>
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="brightness" Label="@ui_Brightness" SetOnChange="true">
+              <Widget>
+                <ArkOptionButton />
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="sys_spec" Label="@ui_SpecPreset" Default="-1" SetOnChange="true" Platform="PC" WaitForTextureReload="true">
+              <Widget>
+                <ArkOptionList>
+                  <Options>
+                    <ArkOption Label="@ui_SpecCustom" Value="0" Hidden="true" />
+                    <ArkOption Label="@ui_SpecLow" Value="1" />
+                    <ArkOption Label="@ui_SpecMedium" Value="2" />
+                    <ArkOption Label="@ui_SpecHigh" Value="3" />
+                    <ArkOption Label="@ui_SpecVeryHigh" Value="4" />
+                  </Options>
+                </ArkOptionList>
+              </Widget>
+            </ArkOptionAttribute>
+          </Attributes>
+        </ArkOptionLayoutSubPage>
+        <ArkOptionLayoutSubPage Label="@ui_AdvancedSettings" WriteConfigFile="true" Platform="PC" RequiresApply="true" Warning="@ui_advancewarning">
+          <Attributes>
+            <!-- This can't go beyond 120 (there's a clamp when its set in the engine, though Luma removes it), still the Hor FOV is dependant on the ultrawide aspect ratio and makes no sense to have
+            <ArkOptionAttribute Action="cl_hfov" Label="@ui_HorizontalFieldOfView" SetOnChange="true" Default="85.5656" Platform="PC">
+              <Widget>
+                <ArkOptionSlider Min="60" Max="160" Decimals="2" Unit="0.125" Normalize="false" />
+              </Widget>
+            </ArkOptionAttribute>
+            -->
+            <!-- This can't go beyond 120 (there's a clamp when its set in the engine) -->
+            <ArkOptionAttribute Action="cl_fov" Label="Vertical FOV" SetOnChange="true" Default="55" Platform="PC">
+              <Widget>
+                <ArkOptionSlider Min="40" Max="120" Decimals="2" Unit="0.125" Normalize="false" />
+              </Widget>
+            </ArkOptionAttribute>
+            <!-- This can go beyond 120 but then it wouldn't match the scene vertical FOV. We wouldn't expose it if it wasn't for lens distortion effects happening after rendering (which require the same increase in scene and weapon FOVs), as nobody should change it otherwise -->
+            <ArkOptionAttribute Action="r_drawnearfov" Label="Weapon Vertical FOV" SetOnChange="true" Default="55" Platform="PC">
+              <Widget>
+                <ArkOptionSlider Min="40" Max="120" Decimals="2" Unit="0.125" Normalize="false" />
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="r_motionblur" Label="Motion Blur" Default="2" SetOnChange="true">
+              <Widget>
+                <ArkOptionList>
+                  <Options>
+                    <ArkOption Label="@ui_Off" Value="0" />
+                    <ArkOption Label="@ui_SpecLow" Value="1" />
+                    <ArkOption Label="@ui_SpecHigh" Value="2" />
+                  </Options>
+                </ArkOptionList>
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="sys_spec_Shadows" Label="@ui_QualityShadows" Default="4" SetOnChange="true">
+              <Widget>
+                <ArkOptionList>
+                  <Options>
+                    <ArkOption Label="@ui_SpecLow" Value="1" />
+                    <ArkOption Label="@ui_SpecMedium" Value="2" />
+                    <ArkOption Label="@ui_SpecHigh" Value="3" />
+                    <ArkOption Label="@ui_SpecVeryHigh" Value="4" />
+                  </Options>
+                </ArkOptionList>
+              </Widget>
+              <Subactions>
+                <ArkOptionSubAction Action="sys_spec 0" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="sys_spec_Texture" Label="@ui_QualityTexture" Default="4" SetOnChange="true" WaitForTextureReload="true">
+              <Widget>
+                <ArkOptionList>
+                  <Options>
+                    <ArkOption Label="@ui_SpecLow" Value="1" />
+                    <ArkOption Label="@ui_SpecMedium" Value="2" />
+                    <ArkOption Label="@ui_SpecHigh" Value="3" />
+                    <ArkOption Label="@ui_SpecVeryHigh" Value="4" />
+                  </Options>
+                </ArkOptionList>
+              </Widget>
+              <Subactions>
+                <ArkOptionSubAction Action="sys_spec 0" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="r_TexMaxAnisotropy" Label="@ui_QualityAniso" Default="16" SetOnChange="true">
+              <Widget>
+                <ArkOptionList>
+                  <Options>
+                    <ArkOption Label="@ui_Spec2x" Value="2" />
+                    <ArkOption Label="@ui_Spec4x" Value="4" />
+                    <ArkOption Label="@ui_Spec8x" Value="8" />
+                    <ArkOption Label="@ui_Spec16x" Value="16" />
+                  </Options>
+                </ArkOptionList>
+              </Widget>
+              <Subactions>
+                <ArkOptionSubAction Action="sys_spec 0" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="r_AntialiasingMode" Label="@ui_Antialiasing" SetOnChange="true" Default="4" Platform="PC">
+              <Widget>
+                <ArkOptionList>
+                  <Options>
+                    <ArkOption Label="@ui_Off" Value="0" />
+                    <!-- FXAA is broken (even in Vanilla), objects highlights don't appear
+                    <ArkOption Label="FXAA (bad and broken)" Value="5" />
+                    -->
+                    <ArkOption Label="SMAA 1X" Value="1" />
+                    <!--This mode just adds blurrying with no real TAA upscaling
+                    <ArkOption Label="SMAA 1TX" Value="2" />
+                    -->
+                    <!--Disabled as it looks bad (Edge Sharpeining + TAA done after does not work), and it's slower to replace with DLSS
+                    <ArkOption Label="SMAA 2TX (Redirects to TAA with DLSS)" Value="3" />
+                    -->
+                    <ArkOption Label="TAA (DLSS Compatible)" Value="4" />
+                  </Options>
+                </ArkOptionList>
+              </Widget>
+            </ArkOptionAttribute>
+            <!-- Development only, not useful for the final user
+            <ArkOptionAttribute Action="r_AntialiasingTAAPattern" Label="TAA Pattern" Default="10" SetOnChange="true">
+              <Widget>
+                <ArkOptionSlider Min="2" Max="12" Decimals="1" Unit="1" Normalize="false" />
+              </Widget>
+            </ArkOptionAttribute>
+            -->
+            <!-- Optional sharpening. Luma already has AMD RCAS running after TAA, which should be enough, but this adds a second sharpening pass for users that wanted it. This can go beyond 1 but it looks terrible -->
+            <ArkOptionAttribute Action="r_Sharpening" Label="Additional Sharpening" Default="0" SetOnChange="true">
+              <Widget>
+                <ArkOptionSlider Min="0.0" Max="1.0" Decimals="2" Unit="0.05" Normalize="true" />
+              </Widget>
+            </ArkOptionAttribute>
+            <!-- Not compatible with LUMA (probably because it upgrades textures to formats that don't support MSAA (in case it used that), or simply their code was hardcoded for certain texture formats
+            <ArkOptionAttribute Action="r_supersampling" Label="Supersampling (Experimental)" SetOnChange="true" Platform="PC">
+              <Widget>
+                <ArkOptionList>
+                  <Options>
+                    <ArkOption Label="@ui_Off" Value="0" />
+                    <ArkOption Label="2x2" Value="2" />
+                  </Options>
+                </ArkOptionList>
+              </Widget>
+            </ArkOptionAttribute>
+            -->
+            <ArkOptionAttribute Action="r_arkssdo" Label="@ui_ssdo" SetOnChange="true" Default="2" WaitForTextureReload="true">
+              <Widget>
+                <ArkOptionList>
+                  <Options>
+                    <ArkOption Label="@ui_off" Value="0" />
+                    <ArkOption Label="@ui_halfres" Value="1" />
+                    <ArkOption Label="@ui_fullres" Value="2" />
+                  </Options>
+                </ArkOptionList>
+              </Widget>
+              <Subactions>
+                <ArkOptionSubAction Action="sys_spec 0" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="r_arkssr" Label="@ui_ssr" SetOnChange="true" Default="2" WaitForTextureReload="true">
+              <Widget>
+                <ArkOptionList>
+                  <Options>
+                    <ArkOption Label="@ui_off" Value="0" />
+                    <ArkOption Label="@ui_halfres" Value="1" />
+                    <ArkOption Label="@ui_fullres" Value="2" />
+                  </Options>
+                </ArkOptionList>
+              </Widget>
+              <Subactions>
+                <ArkOptionSubAction Action="sys_spec 0" />
+              </Subactions>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="osm_enabled" Label="@ui_drsenable" Default="0" SetOnChange="true" Platform="PC">
+             <Widget>
+              <ArkOptionToggle>
+               <Option0 Label="@ui_Off" Value="0"/>
+               <Option1 Label="@ui_On" Value="1"/>
+              </ArkOptionToggle>
+             </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="osm_targetFPS" Label="@ui_drstargetfps" SetOnChange="true" Default="60" Platform="PC">
+             <Widget>
+              <ArkOptionSlider Min="30" Max="240" Decimals="0" Unit="1.0" Normalize="false"/>
+             </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="osm_targetPercentLowerTolerance" Label="Adaptive Resolution FPS Lower Tolerance" SetOnChange="true" Default="10" Platform="PC">
+             <Widget>
+              <!--This can go as low as 0 but it makes no sense to set it so really, it makes it rubber band, Prey's default is 3 but that's too low-->
+              <ArkOptionSlider Min="0" Max="100" Decimals="0" Unit="1.0" Normalize="false"/>
+             </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="osm_targetPercentUpperTolerance" Label="Adaptive Resolution FPS Upper Tolerance" SetOnChange="true" Default="10" Platform="PC">
+             <Widget>
+              <!--This can go as low as 0 but it makes no sense to set it so really, it makes it rubber band, Prey's default is 4 but that's too low-->
+              <ArkOptionSlider Min="0" Max="100" Decimals="0" Unit="1.0" Normalize="false"/>
+             </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="osm_fbMinScale" Label="Adaptive Resolution Minimum Scale" SetOnChange="true" Default="0.5" Platform="PC">
+             <Widget>
+              <!--The UI seems to show a max of 7 decimap points, with the 8th one being read but cropped, we need the exact 1/3 value to be as accurate as possible for DLSS (though it's not smooth below 0.5 with DLSS)-->
+              <ArkOptionSlider Min="0.33333333" Max="1.0" Decimals="3" Unit="0.001" Normalize="false"/>
+             </Widget>
+            </ArkOptionAttribute>
+          </Attributes>
+        </ArkOptionLayoutSubPage>
+      </SubPages>
+    </ArkOptionLayoutPage>
+    <ArkOptionLayoutPage Label="@ui_AudioTitle">
+      <SubPages>
+        <ArkOptionLayoutSubPage Label="">
+          <Attributes>
+            <ArkOptionAttribute Action="s_MusicVolume" Label="@ui_MusicVolume" SetOnChange="true" >
+              <Widget>
+                <ArkOptionSlider Min="0.0" Max="1.0" Decimals="2" Unit="0.01" Normalize="true" />
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="s_DialogVolume" Label="@ui_SpeechVolume" SetOnChange="true" >
+              <Widget>
+                <ArkOptionSlider Min="0.0" Max="1.0" Decimals="2" Unit="0.01" Normalize="true" />
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="s_SFXVolume" Label="@ui_FXVolume" SetOnChange="true" >
+              <Widget>
+                <ArkOptionSlider Min="0.0" Max="1.0" Decimals="2" Unit="0.01" Normalize="true" />
+              </Widget>
+            </ArkOptionAttribute>
+            <ArkOptionAttribute Action="g_languageAudio" Label="@ui_AudioLanguage" SetOnChange="true" HideInGame="true">
+              <Widget>
+                <ArkOptionAudioLanguage />
+              </Widget>
+            </ArkOptionAttribute>
+          </Attributes>
+        </ArkOptionLayoutSubPage>
+      </SubPages>
+    </ArkOptionLayoutPage>
+  </Pages>
+</ArkOptionLayout>
