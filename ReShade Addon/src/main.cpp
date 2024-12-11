@@ -237,7 +237,7 @@ std::shared_mutex s_mutex_samplers;
 // For "native_swapchain3" and "global_native_device"
 std::shared_mutex s_mutex_device;
 #if DEVELOPMENT
-// for "trace_shader_hashes", "trace_pipeline_handles", "trace_pipeline_draws" and "trace_threads" (writing only, reading is already safe)
+// for "trace_shader_hashes", "trace_pipeline_handles", "trace_pipeline_draws", "trace_pipeline_draws_blend_descs" and "trace_threads" (writing only, reading is already safe)
 std::shared_mutex s_mutex_trace;
 #endif
 
@@ -304,6 +304,7 @@ std::unordered_set<uint32_t> dumped_shaders;
 #if DEVELOPMENT
 std::vector<uint64_t> trace_pipeline_handles; // The actual list of pipelines that run within the traced frame
 std::vector<uint32_t> trace_pipeline_draws; // How many times the last bound pipeline drew
+std::vector<D3D11_BLEND_DESC> trace_pipeline_draws_blend_descs;
 std::vector<std::thread::id> trace_threads; // The thread that drew (set) each pipeline
 std::vector<uint32_t> trace_shader_hashes; // Just used to filter out what shaders we've already listed
 #endif
@@ -2337,6 +2338,7 @@ void OnBindPipeline(
   if (add_pipeline_trace) {
     trace_pipeline_handles.push_back(cached_pipeline->pipeline.handle);
     trace_pipeline_draws.push_back(0);
+    trace_pipeline_draws_blend_descs.push_back(D3D11_BLEND_DESC{});
     trace_threads.push_back(std::this_thread::get_id());
   }
 
@@ -2732,10 +2734,22 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
 #if DEVELOPMENT
   if (trace_running) {
       const std::unique_lock lock_trace(s_mutex_trace);
-      // Hack to find the last matching index of "trace_pipeline_draws" given that there's different command lists doing draw calls in multiple threads cuncurrently
+      // Hack to find the last matching index of "trace_pipeline_draws" and "trace_pipeline_draws_blend_descs" given that there's different command lists doing draw calls in multiple threads cuncurrently
       for (int i = trace_threads.size() - 1; i >= 0; i--) {
           if (trace_threads[i] == std::this_thread::get_id()) {
               trace_pipeline_draws[i]++;
+
+              if (!is_dispatch) {
+                  com_ptr<ID3D11BlendState> blend_state;
+                  native_device_context->OMGetBlendState(&blend_state, nullptr, nullptr);
+                  if (blend_state) {
+                      D3D11_BLEND_DESC blend_desc;
+                      blend_state->GetDesc(&blend_desc);
+                      // We always cache the last one used by the pipeline, hopefully it didn't change between draw calls
+                      trace_pipeline_draws_blend_descs[i] = blend_desc;
+                      // We don't care for the alpha blend operation (source alpha * dest alpha) as alpha is never read back from destination
+                  }
+              }
               break;
           }
       }
@@ -4824,11 +4838,13 @@ void OnReShadePresent(reshade::api::effect_runtime* runtime) {
     trace_count = trace_pipeline_handles.size();
     trace_running = false;
   } else if (trace_scheduled) {
+    // Split the trace logic over "two" frames
     trace_scheduled = false;
     {
         const std::unique_lock lock_trace(s_mutex_trace);
         trace_pipeline_handles.clear();
         trace_pipeline_draws.clear();
+        trace_pipeline_draws_blend_descs.clear();
         trace_threads.clear();
         trace_shader_hashes.clear();
     }
@@ -5209,7 +5225,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
     static int32_t selected_index = -1;
     bool changed_selected = false;
     ImGui::PushID("##ShadersTab");
-    auto handle_shader_tab = ImGui::BeginTabItem(std::format("Traced Shaders ({})", trace_count).c_str());
+    bool handle_shader_tab = trace_count > 0 && ImGui::BeginTabItem(std::format("Traced Shaders ({})", trace_count).c_str());
     ImGui::PopID();
     if (handle_shader_tab) {
       if (ImGui::BeginChild("HashList", ImVec2(100, -FLT_MIN), ImGuiChildFlags_ResizeX)) {
@@ -5217,7 +5233,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
           if (!trace_running) {
             const std::shared_lock lock(s_mutex_generic);
             for (auto index = 0; index < trace_count; index++) {
-              auto pipeline_handle = trace_pipeline_handles.at(index);
+              auto pipeline_handle = trace_pipeline_handles.at(index); // We don't really need "s_mutex_trace" here as when that data is being written ImGUI isn't running
               auto thread_id =  trace_threads.at(index)._Get_underlying_id(); // Possibly compiler dependent but whatever, cast to int alternatively
               auto draw_calls = trace_pipeline_draws.at(index);
               const bool is_selected = selected_index == index;
@@ -5400,7 +5416,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
           }
           
           ImGui::PushID("##SettingsTabItem");
-          const bool open_settings_tab_item = ImGui::BeginTabItem("Settings");
+          const bool open_settings_tab_item = ImGui::BeginTabItem("Info & Settings");
           ImGui::PopID();
           if (open_settings_tab_item) {
             if (selected_index >= 0 && trace_pipeline_handles.size() >= selected_index + 1) {
@@ -5414,10 +5430,9 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
                     if (pipeline_pair->second->cloned && ImGui::Button("Unload")) {
                         UnloadCustomShaders({ pipeline_handle }, false, false);
                     }
-                    if (!pipeline_pair->second->cloned && ImGui::Button("Load")) {
+                    if (ImGui::Button(pipeline_pair->second->cloned ? "Recompile" : "Load")) {
                         LoadCustomShaders({ pipeline_handle }, false, true);
                     }
-                    // NOTE: we could also have a "Compile" (single shader) button here but it's not necessary
                   }
                   if (pipeline_pair->second->HasPixelShader()) {
                       if (ImGui::Button("Debug Draw Shader")) {
@@ -5433,6 +5448,44 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
                           debug_draw_pipeline_target_instance = -1;
                           debug_draw_render_target_view = true;
 #endif
+                      }
+                  }
+                  if (pipeline_pair->second->HasPixelShader()) {
+                      // Show blend state here:
+                      auto blend_desc = trace_pipeline_draws_blend_descs.at(selected_index);
+                      	// 0 No alpha blend (or other unknown blend types that we can ignore)
+	                    // 1 Straight alpha blend: "result = (source.RGB * source.A) + (dest.RGB * (1 - source.A))" or "result = lerp(dest.RGB, source.RGB, source.A)"
+	                    // 2 Pre-multiplied alpha blend (alpha is also pre-multiplied, not just rgb): "result = source.RGB + (dest.RGB * (1 - source.A))"
+	                    // 3 Additive alpha blend (source is "Straight alpha" while destination is retained at 100%): "result = (source.RGB * source.A) + dest.RGB"
+	                    // 4 Additive blend (source and destination are simply summed up, ignoring the alpha): result = source.RGB + dest.RGB
+                      bool has_drawn_text = false;
+                      // Only show render target 0 for now (Prey only uses that, almost always)
+                      if (blend_desc.RenderTarget[0].BlendEnable) {
+                          if (blend_desc.RenderTarget[0].BlendOp == D3D11_BLEND_OP::D3D11_BLEND_OP_ADD) {
+                              if (blend_desc.RenderTarget[0].SrcBlend == D3D11_BLEND::D3D11_BLEND_ONE && blend_desc.RenderTarget[0].DestBlend == D3D11_BLEND::D3D11_BLEND_ONE) {
+                                  ImGui::Text("Blend Mode: Additive Color");
+                                  has_drawn_text = true;
+                              }
+                              else if (blend_desc.RenderTarget[0].SrcBlend == D3D11_BLEND::D3D11_BLEND_SRC_ALPHA && blend_desc.RenderTarget[0].DestBlend == D3D11_BLEND::D3D11_BLEND_ONE) {
+                                  ImGui::Text("Blend Mode: Additive Alpha");
+                                  has_drawn_text = true;
+                              }
+                              else if (blend_desc.RenderTarget[0].SrcBlend == D3D11_BLEND::D3D11_BLEND_ONE && blend_desc.RenderTarget[0].DestBlend == D3D11_BLEND::D3D11_BLEND_INV_SRC_ALPHA) {
+                                  ImGui::Text("Blend Mode: Premultiplied Alpha");
+                                  has_drawn_text = true;
+                              }
+                              else if (blend_desc.RenderTarget[0].SrcBlend == D3D11_BLEND::D3D11_BLEND_SRC_ALPHA && blend_desc.RenderTarget[0].DestBlend == D3D11_BLEND::D3D11_BLEND_INV_SRC_ALPHA) {
+                                  ImGui::Text("Blend Mode: Straight Alpha");
+                                  has_drawn_text = true;
+                              }
+                          }
+                          if (!has_drawn_text) {
+                              ImGui::Text("Blend Mode: Unknown");
+                              has_drawn_text = true;
+                          }
+                      }
+                      if (!has_drawn_text) {
+                          ImGui::Text("Blend Mode: Disabled");
                       }
                   }
                 }
