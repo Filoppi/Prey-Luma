@@ -38,10 +38,6 @@ namespace DKUtil
 // This also probably results in DirectX debug layer warnings due to possibly the same texture being bound as render target and (pixel) shader resource at the same time (though we wouldn't be using it as shader resource).
 #define FORCE_DLSS_SMAA_SLIMMED_DOWN_HISTORY 0
 
-// Injects the TAA jitter values in the TAA cbuffers.
-// Not necessary anymore, we directly intercept them through cbuffer writes. Only compatible with the Steam version of the base game.
-#define INJECT_TAA_JITTERS 0
-
 namespace Hooks
 {
 	// Note: if we wanted, we could replace this format and re-live patch all the functions. After the user changes the game resolution once, all textures would be re-generated with the new format.
@@ -72,11 +68,6 @@ namespace Hooks
 		static RE::CTexture* Hook_CreateRenderTarget_PrevBackBuffer1A(const char* a_name, int a_nWidth, int a_nHeight, void* a_cClear, RE::ETEX_Type a_eTT, RE::ETextureFlags a_nFlags, RE::ETEX_Format a_eTF, int a_nCustomID);
 		static bool          Hook_CreateRenderTarget_PrevBackBuffer0B(RE::CTexture* a_this, RE::ETEX_Format a_eTF, void* a_cClear);
 		static bool          Hook_CreateRenderTarget_PrevBackBuffer1B(RE::CTexture* a_this, RE::ETEX_Format a_eTF, void* a_cClear);
-#if INJECT_TAA_JITTERS
-		static void          Hook_UpdateBuffer(RE::CConstantBuffer* a_this, void* a_src, size_t a_size, uint32_t a_numDataBlocks);
-
-		//static inline std::add_pointer_t<decltype(Hook_UpdateBuffer)>        _Hook_UpdateBuffer;
-#endif
 
 		static void PatchSwapchainDesc(DXGI_SWAP_CHAIN_DESC& a_desc);
 		static inline RE::CTexture* ptexTonemapTarget;

@@ -7,6 +7,8 @@
 #include <cstring>
 #include <cassert>
 #include <set>
+#include <wrl/client.h>
+#include <d3d11.h>
 
 // Should be <= the max (last) of NVSDK_NGX_PerfQuality_Value
 #define NUM_PERF_QUALITY_MODES 6
@@ -26,20 +28,21 @@
 // Low ghosting at the cost of a tiny bit of sharpness. Works at any quality mode.
 #define DLSS_FORCE_F_RENDER_PRESET 1
 
-namespace
+namespace NGX
 {
 	const char* projectID = "d8238c51-1f2f-438d-a309-38c16e33c716"; // This needs to be a GUID. We generated a unique one. This isn't registered by NV.
 	const char* engineVersion = "1.0";
 
 	// DLSS "instance" per output resolution (and other settings)
 	// These never need to be manually destroyed
-	struct DLSSInstance
+	struct DLSSInternalInstance
 	{
 		NVSDK_NGX_Handle* superSamplingFeature = nullptr;
 		NVSDK_NGX_Parameter* runtimeParams = nullptr;
+		Microsoft::WRL::ComPtr<ID3D11DeviceContext>	commandList;
 	};
 
-	struct DLSSData
+	struct DLSSInstanceData
 	{
 		bool							isSupported = false;
 		unsigned int					renderWidth = 0;
@@ -49,14 +52,19 @@ namespace
 		bool							hdr = false;
 		float							sharpness = DLSS_DEFAULT_SHARPNESS; // Optimal value
 
-		DLSSInstance					instance = {};
-		std::set<NVSDK_NGX_Handle*>	uniqueHandles;
-		std::set<NVSDK_NGX_Parameter*> uniqueParameters;
+		DLSSInternalInstance			instance = {}; // Note that there could be more of these if we ever wished
+		std::set<NVSDK_NGX_Handle*>		uniqueHandles;
+		std::set<NVSDK_NGX_Parameter*>	uniqueParameters;
 		// Current global capabilities params (independent from the current settings/res).
-		NVSDK_NGX_Parameter* capabilitiesParams = nullptr;
+		NVSDK_NGX_Parameter*			capabilitiesParams = nullptr;
+		Microsoft::WRL::ComPtr<ID3D11Device>	device;
 
-		virtual ~DLSSData()
+		virtual ~DLSSInstanceData()
 		{
+			// Just to be explicit
+			device.Reset();
+			instance.commandList.Reset();
+
 			// We need to release these at the end, otherwise DLSS crashes as it holds references to them (there's probably a way to release them as they come but it doesn't really matter)
 			for (NVSDK_NGX_Handle* handle : uniqueHandles)
 			{
@@ -79,7 +87,7 @@ namespace
 			}
 		}
 
-		DLSSInstance CreateSuperSamplingFeature(ID3D11DeviceContext* commandList, unsigned int outputWidth, unsigned int outputHeight, unsigned int renderWidth, unsigned int renderHeight, int qualityValue)
+		DLSSInternalInstance CreateSuperSamplingFeature(ID3D11DeviceContext* commandList, unsigned int outputWidth, unsigned int outputHeight, unsigned int renderWidth, unsigned int renderHeight, int qualityValue)
 		{
 			NVSDK_NGX_Parameter* runtimeParams = nullptr;
 			// Note: this could fail on outdated drivers
@@ -87,7 +95,7 @@ namespace
 			assert(NVSDK_NGX_SUCCEED(paramResult));
 			if (NVSDK_NGX_FAILED(paramResult))
 			{
-				return DLSSInstance();
+				return DLSSInternalInstance();
 			}
 
 			NVSDK_NGX_Handle* feature = nullptr;
@@ -210,15 +218,19 @@ namespace
 			// If this mode creation failed, it's likely it will always fail anyway.
 			assert(NVSDK_NGX_SUCCEED(createResult));
 
-			return DLSSInstance{ feature, runtimeParams };
+			return DLSSInternalInstance{ feature, runtimeParams, commandList };
 		}
 	};
-
-	DLSSData* data = nullptr;
 }
 
-bool NGX::DLSS::Init(ID3D11Device* device, IDXGIAdapter* adapter)
+bool NGX::DLSS::Init(DLSSInstanceData*& data, ID3D11Device* device, IDXGIAdapter* adapter)
 {
+	if (data)
+	{
+		Deinit(data); // This will also null the pointer
+	}
+
+	// We expect Deinit() to be called first if the device/adapter changed
 	if (!data && device)
 	{
 		const wchar_t* dataPath = L".";
@@ -226,7 +238,8 @@ bool NGX::DLSS::Init(ID3D11Device* device, IDXGIAdapter* adapter)
 
 		if (NVSDK_NGX_SUCCEED(result))
 		{
-			data = new DLSSData();
+			data = new DLSSInstanceData();
+			data->device = device;
 
 			result = NVSDK_NGX_D3D11_GetCapabilityParameters(&data->capabilitiesParams);
 			assert(NVSDK_NGX_SUCCEED(result));
@@ -265,37 +278,53 @@ bool NGX::DLSS::Init(ID3D11Device* device, IDXGIAdapter* adapter)
 	return data != nullptr && data->isSupported;
 }
 
-void NGX::DLSS::Deinit(ID3D11Device* device)
+void NGX::DLSS::Deinit(DLSSInstanceData*& data, ID3D11Device* optional_device)
 {
 	if (data != nullptr)
 	{
+		if (optional_device == nullptr)
+		{
+			optional_device = data->device.Get();
+		}
+		else
+		{
+			assert(data->device.Get() == optional_device);
+		}
+
+		// Needs to be done before "NVSDK_NGX_D3D11_Shutdown1()"
 		delete data;
 		data = nullptr;
 
-		assert(NVSDK_NGX_SUCCEED(NVSDK_NGX_D3D11_Shutdown1(device)));
+		assert(NVSDK_NGX_SUCCEED(NVSDK_NGX_D3D11_Shutdown1(optional_device)));
 	}
 }
 
-bool NGX::DLSS::HasInit()
+bool NGX::DLSS::HasInit(const DLSSInstanceData* data)
 {
 	return data != nullptr;
 }
 
-bool NGX::DLSS::IsSupported()
+bool NGX::DLSS::IsSupported(const DLSSInstanceData* data)
 {
 	return data && data->isSupported;
 }
 
-bool NGX::DLSS::UpdateSettings(ID3D11Device* device, ID3D11DeviceContext* commandList, unsigned int outputWidth, unsigned int outputHeight, unsigned int renderWidth, unsigned int renderHeight, bool hdr, bool dynamicResolution)
+bool NGX::DLSS::UpdateSettings(DLSSInstanceData* data, ID3D11DeviceContext* commandList, unsigned int outputWidth, unsigned int outputHeight, unsigned int renderWidth, unsigned int renderHeight, bool hdr, bool dynamicResolution)
 {
 	// Early exit if DLSS is not supported by hardware or driver.
-	if (!device || !commandList || !data || !data->isSupported)
+	if (!commandList || !data || !data->isSupported)
 		return false;
+
+#ifndef NDEBUG
+	Microsoft::WRL::ComPtr<ID3D11Device> device;
+	commandList->GetDevice(device.GetAddressOf());
+	assert(data->device.Get() == device.Get());
+#endif
 
 	// No need to re-instantiate DLSS "features" if all the params are the same
 	if ((int)outputWidth == data->outputWidth && (int)outputHeight == data->outputHeight
 		&& (int)renderWidth == data->renderWidth && (int)renderHeight == data->renderHeight
-		&& hdr == data->hdr)
+		&& hdr == data->hdr && data->instance.commandList.Get() == commandList)
 	{
 		return true;
 	}
@@ -304,7 +333,7 @@ bool NGX::DLSS::UpdateSettings(ID3D11Device* device, ID3D11DeviceContext* comman
 
 	int qualityMode = static_cast<int>(NVSDK_NGX_PerfQuality_Value_Balanced); // Default to balanced if none is found
 
-	unsigned int bestModeDelta = std::numeric_limits<unsigned int>::max();
+	unsigned int bestModeDelta = (std::numeric_limits<double>::max)(); // Wrap it around () because "max" might already be defined as macro
 
 	// Instead of first picking a quality mode and then finding the best render resolution for it,
 	// we find the most suitable quality mode for the resolutions we fed in.
@@ -365,6 +394,7 @@ bool NGX::DLSS::UpdateSettings(ID3D11Device* device, ID3D11DeviceContext* comman
 
 	data->hdr = hdr;
 
+	data->instance.commandList.Reset(); // Just to be explicit
 	data->instance = data->CreateSuperSamplingFeature(commandList, outputWidth, outputHeight, renderWidth, renderHeight, qualityMode);
 	data->uniqueHandles.insert(data->instance.superSamplingFeature);
 	data->uniqueParameters.insert(data->instance.runtimeParams);
@@ -378,10 +408,11 @@ bool NGX::DLSS::UpdateSettings(ID3D11Device* device, ID3D11DeviceContext* comman
 	return data->instance.superSamplingFeature != nullptr && data->instance.runtimeParams != nullptr;
 }
 
-bool NGX::DLSS::Draw(ID3D11DeviceContext* commandList, ID3D11Resource* outputColor, ID3D11Resource* sourceColor, ID3D11Resource* motionVectors, ID3D11Resource* depthBuffer, ID3D11Resource* exposure, float preExposure, float jitterX, float jitterY, bool reset, unsigned int renderWidth, unsigned int renderHeight)
+bool NGX::DLSS::Draw(const DLSSInstanceData* data, ID3D11DeviceContext* commandList, ID3D11Resource* outputColor, ID3D11Resource* sourceColor, ID3D11Resource* motionVectors, ID3D11Resource* depthBuffer, ID3D11Resource* exposure, float preExposure, float jitterX, float jitterY, bool reset, unsigned int renderWidth, unsigned int renderHeight)
 {
 	assert(data->isSupported);
 	assert(data->instance.superSamplingFeature != nullptr && data->instance.runtimeParams != nullptr);
+	assert(data->instance.commandList.Get() == commandList);
 
 	NVSDK_NGX_D3D11_DLSS_Eval_Params evalParams;
 	memset(&evalParams, 0, sizeof(evalParams));

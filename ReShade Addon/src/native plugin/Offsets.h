@@ -128,7 +128,7 @@ public:
 	static inline uintptr_t baseAddress;
 	static inline GameVersion gameVersion;
 	static inline RE::CD3D9Renderer* pCD3D9Renderer = nullptr;
-	static inline uint32_t* cvar_r_AntialiasingMode = nullptr; // "INJECT_TAA_JITTERS"
+	static inline uint32_t* cvar_r_AntialiasingMode = nullptr;
 
 	static uintptr_t Get(const std::array<uintptr_t, static_cast<uint8_t>(GameVersion::COUNT)>& a_offsetArray) {
 		return a_offsetArray[static_cast<size_t>(gameVersion)];
@@ -195,7 +195,7 @@ public:
 
 		pCD3D9Renderer = reinterpret_cast<RE::CD3D9Renderer*>(GetAddress(CD3D9Renderer));
 		if (gameVersion == Offsets::GameVersion::PreySteam) {
-			cvar_r_AntialiasingMode = reinterpret_cast<uint32_t*>(baseAddress + 0x2B1C750);
+			cvar_r_AntialiasingMode = reinterpret_cast<uint32_t*>(baseAddress + 0x2B1C750); // TODO: expose this to ImGUI so we can tell the user if DLSS can engage correctly or not?
 		}
 
 		return true;

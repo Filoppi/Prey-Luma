@@ -190,7 +190,7 @@ template<typename F> struct Matrix44_tpl
 	//! AxB = rotation B followed by rotation A.
 	//! This operation takes 48 mults and 36 adds.
 	//! Example:
-	//!   Matrix44 m44=CreateRotationX33(1.94192f);;
+	//!   Matrix44 m44=CreateRotationX33(1.94192f);
 	//!   Matrix44 m44=CreateRotationZ33(3.14192f);
 	//!   Matrix44 result=m44*m44;
 	friend  ILINE Matrix44_tpl<F> operator*(const Matrix44_tpl<F>& l, const Matrix44_tpl<F>& r)

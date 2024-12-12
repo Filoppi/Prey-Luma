@@ -455,15 +455,6 @@ namespace Hooks
 			}
 		}
 #endif
-
-#if INJECT_TAA_JITTERS
-		// TAA jitter
-		if (Offsets::gameVersion == Offsets::GameVersion::PreySteam) {
-			// Hook CConstantBuffer::UpdateBuffer to push jitter offset instead of the unused fxaa params
-			const auto address = Offsets::baseAddress + 0xF99FE0;
-			_Hook_UpdateBuffer = dku::Hook::write_call(address + 0x1AAA, Hook_UpdateBuffer);
-		}
-#endif
 	}
 
 	void Hooks::Unhook()
@@ -662,21 +653,6 @@ namespace Hooks
 		OriginalFunction originalFunc = *hookHandle_CreateRenderTarget_PrevBackBuffer1B;
 		return originalFunc(a_this, a_eTF, a_cClear);
 	}
-
-#if INJECT_TAA_JITTERS
-	void Hooks::Hook_UpdateBuffer(RE::CConstantBuffer* a_this, void* a_src, size_t a_size, uint32_t a_numDataBlocks)
-	{
-		if (*Offsets::cvar_r_AntialiasingMode != 5) {
-			// push jitter offsets instead of unused fxaa params
-			auto constants = reinterpret_cast<RE::PostAAConstants*>(a_src);
-			constants->fxaaParams.x = Offsets::pCD3D9Renderer->m_vProjMatrixSubPixoffset.x;
-			constants->fxaaParams.y = Offsets::pCD3D9Renderer->m_vProjMatrixSubPixoffset.y;
-		}
-
-		// run original
-		_Hook_UpdateBuffer(a_this, a_src, a_size, a_numDataBlocks);
-	}
-#endif
 
 	void Hooks::PatchSwapchainDesc(DXGI_SWAP_CHAIN_DESC& a_desc)
 	{

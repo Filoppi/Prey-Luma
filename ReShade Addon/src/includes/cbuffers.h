@@ -7,8 +7,8 @@ namespace
 {
     struct uint2
     {
-        UINT x;
-        UINT y;
+        uint32_t x;
+        uint32_t y;
 
         friend bool operator==(const uint2& lhs, const uint2& rhs)
         {
@@ -97,7 +97,7 @@ namespace
         float     CV_PADDING0;
         float     CV_PADDING1;
     };
-    constexpr UINT CBPerViewGlobal_buffer_size = 1024; // This is how much CryEngine allocates for buffers that hold this
+    constexpr uint32_t CBPerViewGlobal_buffer_size = 1024; // This is how much CryEngine allocates for buffers that hold this
     static_assert(CBPerViewGlobal_buffer_size > sizeof(CBPerViewGlobal));
 
     struct LumaFrameDevSettings {
