@@ -162,25 +162,6 @@ namespace Hooks
 
 	void Hooks::Hook()
 	{
-		// Avoid hooking twice
-		if (_Hook_OnD3D11PostCreateDevice != nullptr)
-		{
-			assert(false); // Shouldn't happen (it can seemengly happen if ReShade loads and unloads, for example if the game failed to initialize properly, or if it re-created the DX device (usually the new one is created before the old one is destroyed, so ReShade stays alive))
-			return;
-		}
-
-		// Hook CD3D9Renderer::FlashRenderInternal because DXGI_SWAP_EFFECT_FLIP_DISCARD unbinds backbuffer during Present. So we need to call OMSetRenderTargets to bind it again every frame.
-#if 0 // Only needed by Kingdom Come Deliverance
-		{
-			uintptr_t vtable = Offsets::baseAddress + 0x1DD2E08;
-			auto      Hook = dku::Hook::AddVMTHook(&vtable, 0x13B, FUNC_INFO(Hook_FlashRenderInternal));
-
-			using FlashRenderInternal_t = std::add_pointer_t<void(RE::CD3D9Renderer*, void*, bool, bool)>;
-			_Hook_FlashRenderInternal = Hook->GetOldFunction<FlashRenderInternal_t>();
-			Hook->Enable();
-		}
-#endif
-
 		// Patch swapchain desc to change DXGI_FORMAT from RGBA8 and DXGI_SWAP_EFFECT to DXGI_SWAP_EFFECT_FLIP_DISCARD
 		{
 			struct Patch : Xbyak::CodeGenerator
@@ -198,32 +179,42 @@ namespace Hooks
 			patch.ready();
 
 			auto offset = std::make_pair(Offsets::Get(Offsets::SwapchainDesc_Start), Offsets::Get(Offsets::SwapchainDesc_End));
-			auto hook = dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::SwapchainDesc_Func), offset, &patch);
-			hook->Enable();
+			asmPatchHandle_swapchain = std::move(dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::SwapchainDesc_Func), offset, &patch));
+			asmPatchHandle_swapchain->Enable();
 		}
 
 		// Hook swapchain creation and set colorspace
 		{
-			_Hook_OnD3D11PostCreateDevice = dku::Hook::write_call(Offsets::GetAddress(Offsets::OnD3D11PostCreateDevice), Hook_OnD3D11PostCreateDevice);
+			hookHandle_OnD3D11PostCreateDevice = std::move(dku::Hook::AddRelHook<5, true>(Offsets::GetAddress(Offsets::OnD3D11PostCreateDevice), DKUtil::Hook::unrestricted_cast<std::uintptr_t>(Hook_OnD3D11PostCreateDevice)));
+			hookHandle_OnD3D11PostCreateDevice->Enable();
 		}
 
 #if ADD_NEW_RENDER_TARGETS
 		// Replicate how the game treats render targets
 		{
 			// Hook SD3DPostEffectsUtils::CreateRenderTarget for $SceneDiffuse in CDeferredShading::CreateDeferredMaps
-			_Hook_CreateRenderTarget_SceneDiffuse = dku::Hook::write_call(Offsets::GetAddress(Offsets::CreateRenderTarget_SceneDiffuse), Hook_CreateRenderTarget_SceneDiffuse);
+			hookHandle_CreateRenderTarget_SceneDiffuse = std::move(dku::Hook::AddRelHook<5, true>(Offsets::GetAddress(Offsets::CreateRenderTarget_SceneDiffuse), DKUtil::Hook::unrestricted_cast<std::uintptr_t>(Hook_CreateRenderTarget_SceneDiffuse)));
+			hookHandle_CreateRenderTarget_SceneDiffuse->Enable();
 
 			// Hook CTexture::CreateTextureObject for $SceneDiffuse
-			_Hook_CreateTextureObject_SceneDiffuse = dku::Hook::write_call(Offsets::GetAddress(Offsets::CreateTextureObject_SceneDiffuse), Hook_CreateTextureObject_SceneDiffuse);
+			hookHandle_CreateTextureObject_SceneDiffuse = std::move(dku::Hook::AddRelHook<5, true>(Offsets::GetAddress(Offsets::CreateTextureObject_SceneDiffuse), DKUtil::Hook::unrestricted_cast<std::uintptr_t>(Hook_CreateTextureObject_SceneDiffuse)));
+			hookHandle_CreateTextureObject_SceneDiffuse->Enable();
 		}
 #endif
 
 		// Hook PrevBackBuffer0/1 creation to set UAV flags
 		{
-			_Hook_CreateRenderTarget_PrevBackBuffer0A = dku::Hook::write_call(Offsets::GetAddress(Offsets::CreateRenderTarget_PrevBackBuffer0A), Hook_CreateRenderTarget_PrevBackBuffer0A);
-			_Hook_CreateRenderTarget_PrevBackBuffer1A = dku::Hook::write_call(Offsets::GetAddress(Offsets::CreateRenderTarget_PrevBackBuffer1A), Hook_CreateRenderTarget_PrevBackBuffer1A);
-			_Hook_CreateRenderTarget_PrevBackBuffer0B = dku::Hook::write_call(Offsets::GetAddress(Offsets::CreateRenderTarget_PrevBackBuffer0B), Hook_CreateRenderTarget_PrevBackBuffer0B);
-			_Hook_CreateRenderTarget_PrevBackBuffer1B = dku::Hook::write_call(Offsets::GetAddress(Offsets::CreateRenderTarget_PrevBackBuffer1B), Hook_CreateRenderTarget_PrevBackBuffer1B);
+			hookHandle_CreateRenderTarget_PrevBackBuffer0A = std::move(dku::Hook::AddRelHook<5, true>(Offsets::GetAddress(Offsets::CreateRenderTarget_PrevBackBuffer0A), DKUtil::Hook::unrestricted_cast<std::uintptr_t>(Hook_CreateRenderTarget_PrevBackBuffer0A)));
+			hookHandle_CreateRenderTarget_PrevBackBuffer0A->Enable();
+
+			hookHandle_CreateRenderTarget_PrevBackBuffer1A = std::move(dku::Hook::AddRelHook<5, true>(Offsets::GetAddress(Offsets::CreateRenderTarget_PrevBackBuffer1A), DKUtil::Hook::unrestricted_cast<std::uintptr_t>(Hook_CreateRenderTarget_PrevBackBuffer1A)));
+			hookHandle_CreateRenderTarget_PrevBackBuffer1A->Enable();
+
+			hookHandle_CreateRenderTarget_PrevBackBuffer0B = std::move(dku::Hook::AddRelHook<5, true>(Offsets::GetAddress(Offsets::CreateRenderTarget_PrevBackBuffer0B), DKUtil::Hook::unrestricted_cast<std::uintptr_t>(Hook_CreateRenderTarget_PrevBackBuffer0B)));
+			hookHandle_CreateRenderTarget_PrevBackBuffer0B->Enable();
+
+			hookHandle_CreateRenderTarget_PrevBackBuffer1B = std::move(dku::Hook::AddRelHook<5, true>(Offsets::GetAddress(Offsets::CreateRenderTarget_PrevBackBuffer1B), DKUtil::Hook::unrestricted_cast<std::uintptr_t>(Hook_CreateRenderTarget_PrevBackBuffer1B)));
+			hookHandle_CreateRenderTarget_PrevBackBuffer1B->Enable();
 		}
 
 #if ADD_NEW_RENDER_TARGETS
@@ -248,8 +239,8 @@ namespace Hooks
 				patch.ready();
 
 				auto offset = std::make_pair(Offsets::Get(Offsets::TonemapTarget1_Start), Offsets::Get(Offsets::TonemapTarget1_End));
-				auto hook = dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::TonemapTarget1_Func), offset, &patch);
-				hook->Enable();
+				asmPatchHandle_tonemapTarget1 = std::move(dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::TonemapTarget1_Func), offset, &patch));
+				asmPatchHandle_tonemapTarget1->Enable();
 			}
 
 			// Read TonemapTarget instead of SceneDiffuse
@@ -271,8 +262,8 @@ namespace Hooks
 				patch.ready();
 
 				auto offset = std::make_pair(Offsets::Get(Offsets::TonemapTarget2_Start), Offsets::Get(Offsets::TonemapTarget2_End));
-				auto hook = dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::TonemapTarget2_Func), offset, &patch);
-				hook->Enable();
+				asmPatchHandle_tonemapTarget2 = std::move(dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::TonemapTarget2_Func), offset, &patch));
+				asmPatchHandle_tonemapTarget2->Enable();
 			}
 
 			// Read TonemapTarget instead of SceneDiffuse #2?
@@ -294,8 +285,8 @@ namespace Hooks
 				patch.ready();
 
 				auto offset = std::make_pair(Offsets::Get(Offsets::TonemapTarget3_Start), Offsets::Get(Offsets::TonemapTarget3_End));
-				auto hook = dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::TonemapTarget3_Func), offset, &patch);
-				hook->Enable();
+				asmPatchHandle_tonemapTarget3 = std::move(dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::TonemapTarget3_Func), offset, &patch));
+				asmPatchHandle_tonemapTarget3->Enable();
 			}
 
 			// Read TonemapTarget instead of SceneDiffuse #3?
@@ -317,8 +308,8 @@ namespace Hooks
 				patch.ready();
 
 				auto offset = std::make_pair(Offsets::Get(Offsets::TonemapTarget4_Start), Offsets::Get(Offsets::TonemapTarget4_End));
-				auto hook = dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::TonemapTarget4_Func), offset, &patch);
-				hook->Enable();
+				asmPatchHandle_tonemapTarget4 = std::move(dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::TonemapTarget4_Func), offset, &patch));
+				asmPatchHandle_tonemapTarget4->Enable();
 			}
 
 			// Read PostAATarget instead of SceneNormalsMap
@@ -340,8 +331,8 @@ namespace Hooks
 				patch.ready();
 
 				auto offset = std::make_pair(Offsets::Get(Offsets::PostAATarget1_Start), Offsets::Get(Offsets::PostAATarget1_End));
-				auto hook = dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::PostAATarget1_Func), offset, &patch);
-				hook->Enable();
+				asmPatchHandle_postAATarget1 = std::move(dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::PostAATarget1_Func), offset, &patch));
+				asmPatchHandle_postAATarget1->Enable();
 			}
 
 			// Use PostAATarget instead of SceneNormalsMap #1
@@ -363,8 +354,8 @@ namespace Hooks
 				patch.ready();
 
 				auto offset = std::make_pair(Offsets::Get(Offsets::PostAATarget2_Start), Offsets::Get(Offsets::PostAATarget2_End));
-				auto hook = dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::PostAATarget2_Func), offset, &patch);
-				hook->Enable();
+				asmPatchHandle_postAATarget2 = std::move(dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::PostAATarget2_Func), offset, &patch));
+				asmPatchHandle_postAATarget2->Enable();
 			}
 
 			// Use PostAATarget instead of SceneNormalsMap #2 (CPostAAStage::DoFinalComposition)
@@ -396,8 +387,8 @@ namespace Hooks
 				patch.ready();
 
 				auto offset = std::make_pair(Offsets::Get(Offsets::PostAATarget3_Start), Offsets::Get(Offsets::PostAATarget3_End));
-				auto hook = dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::PostAATarget3_Func), offset, &patch);
-				hook->Enable();
+				asmPatchHandle_postAATarget3 = std::move(dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::PostAATarget3_Func), offset, &patch));
+				asmPatchHandle_postAATarget3->Enable();
 			}
 
 			// Use UpscaleTarget instead of SceneSpecular (CPostAAStage::DoFinalComposition)
@@ -418,8 +409,8 @@ namespace Hooks
 				Patch patch(reinterpret_cast<uintptr_t>(&ptexUpscaleTarget));
 				patch.ready();
 				auto offset = std::make_pair(Offsets::Get(Offsets::UpscaleTarget1_Start), Offsets::Get(Offsets::UpscaleTarget1_End));
-				auto hook = dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::UpscaleTarget1_Func), offset, &patch);
-				hook->Enable();
+				asmPatchHandle_upscaleTarget1 = std::move(dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::UpscaleTarget1_Func), offset, &patch));
+				asmPatchHandle_upscaleTarget1->Enable();
 			}
 
 			// Use UpscaleTarget instead of SceneSpecular #2 (CD3D9Renderer::RT_SwitchToNativeResolutionBackbuffer)
@@ -436,8 +427,8 @@ namespace Hooks
 				patch.ready();
 
 				auto offset = std::make_pair(Offsets::Get(Offsets::UpscaleTarget2_Start), Offsets::Get(Offsets::UpscaleTarget2_End));
-				auto hook = dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::UpscaleTarget2_Func), offset, &patch);
-				hook->Enable();
+				asmPatchHandle_upscaleTarget2 = std::move(dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::UpscaleTarget2_Func), offset, &patch));
+				asmPatchHandle_upscaleTarget2->Enable();
 			}
 
 			// Use UpscaleTarget instead of SceneSpecular #3 (CD3D9Renderer::RT_SwitchToNativeResolutionBackbuffer)
@@ -459,8 +450,8 @@ namespace Hooks
 				patch.ready();
 
 				auto offset = std::make_pair(Offsets::Get(Offsets::UpscaleTarget3_Start), Offsets::Get(Offsets::UpscaleTarget3_End));
-				auto hook = dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::UpscaleTarget3_Func), offset, &patch);
-				hook->Enable();
+				asmPatchHandle_upscaleTarget3 = std::move(dku::Hook::AddASMPatch(Offsets::GetAddress(Offsets::UpscaleTarget3_Func), offset, &patch));
+				asmPatchHandle_upscaleTarget3->Enable();
 			}
 		}
 #endif
@@ -475,6 +466,46 @@ namespace Hooks
 #endif
 	}
 
+	void Hooks::Unhook()
+	{
+		{
+			asmPatchHandle_swapchain->Disable();
+		}
+
+		{
+			hookHandle_OnD3D11PostCreateDevice->Disable();
+		}
+
+#if ADD_NEW_RENDER_TARGETS
+		{
+			hookHandle_CreateRenderTarget_SceneDiffuse->Disable();
+			hookHandle_CreateTextureObject_SceneDiffuse->Disable();
+		}
+#endif
+
+		{
+			hookHandle_CreateRenderTarget_PrevBackBuffer0A->Disable();
+			hookHandle_CreateRenderTarget_PrevBackBuffer1A->Disable();
+			hookHandle_CreateRenderTarget_PrevBackBuffer0B->Disable();
+			hookHandle_CreateRenderTarget_PrevBackBuffer1B->Disable();
+		}
+
+#if ADD_NEW_RENDER_TARGETS
+		{
+			asmPatchHandle_tonemapTarget1->Disable();
+			asmPatchHandle_tonemapTarget2->Disable();
+			asmPatchHandle_tonemapTarget3->Disable();
+			asmPatchHandle_tonemapTarget4->Disable();
+			asmPatchHandle_postAATarget1->Disable();
+			asmPatchHandle_postAATarget2->Disable();
+			asmPatchHandle_postAATarget3->Disable();
+			asmPatchHandle_upscaleTarget1->Disable();
+			asmPatchHandle_upscaleTarget2->Disable();
+			asmPatchHandle_upscaleTarget3->Disable();
+		}
+#endif
+	}
+
 	ID3D11DeviceContext* GetDeviceContext(RE::CD3D9Renderer* a_renderer)
 	{
 		if (a_renderer->m_nAsyncDeviceState) {
@@ -483,16 +514,6 @@ namespace Hooks
 			}
 		}
 		return a_renderer->m_pDeviceContext;
-	}
-
-	void Hooks::Hook_FlashRenderInternal(RE::CD3D9Renderer* a_this, void* pPlayer, bool bStereo, bool bDoRealRender)
-	{
-		if (bDoRealRender) {
-			auto context = GetDeviceContext(a_this);
-			context->OMSetRenderTargets(1, &a_this->m_pBackBuffer, a_this->m_pNativeZSurface);
-		}
-
-		_Hook_FlashRenderInternal(a_this, pPlayer, bStereo, bDoRealRender);
 	}
 
 	void Hooks::Hook_OnD3D11PostCreateDevice()
@@ -514,13 +535,18 @@ namespace Hooks
 			swapChain3->Release();
 		}
 
-		_Hook_OnD3D11PostCreateDevice();
+		using OriginalFunction = void(*)();
+		OriginalFunction originalFunc = *hookHandle_OnD3D11PostCreateDevice;
+		originalFunc();
 	}
 
 	// Hook SD3DPostEffectsUtils::CreateRenderTarget for $SceneDiffuse in CDeferredShading::CreateDeferredMaps
 	bool Hooks::Hook_CreateRenderTarget_SceneDiffuse(const char* a_szTexName, RE::CTexture*& a_pTex, int a_iWidth, int a_iHeight, void* a_cClear, bool a_bUseAlpha, bool a_bMipMaps, RE::ETEX_Format a_eTF, int a_nCustomID, RE::ETextureFlags a_nFlags)
 	{
-		bool bReturn = _Hook_CreateRenderTarget_SceneDiffuse(a_szTexName, a_pTex, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, a_eTF, a_nCustomID, a_nFlags);
+		using OriginalFunction = bool(*)(const char*, RE::CTexture*&, int, int, void*, bool, bool, RE::ETEX_Format, int, RE::ETextureFlags);
+		OriginalFunction originalFunc = *hookHandle_CreateRenderTarget_SceneDiffuse;
+
+		bool bReturn = originalFunc(a_szTexName, a_pTex, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, a_eTF, a_nCustomID, a_nFlags);
 
 #if ADD_NEW_RENDER_TARGETS
 		// These are expected to have the following flags: FT_DONT_RELEASE, FT_DONT_STREAM, FT_USAGE_RENDERTARGET.
@@ -533,9 +559,9 @@ namespace Hooks
 #if FORCE_DLSS_SMAA_UAV && 0
 		nPostAAFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS | RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
 #endif
-		_Hook_CreateRenderTarget_SceneDiffuse("$TonemapTarget", ptexTonemapTarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, a_nFlags);
-		_Hook_CreateRenderTarget_SceneDiffuse("$PostAATarget", ptexPostAATarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, nPostAAFlags);
-		_Hook_CreateRenderTarget_SceneDiffuse("$UpscaleTarget", ptexUpscaleTarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, a_nFlags);
+		originalFunc("$TonemapTarget", ptexTonemapTarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, a_nFlags);
+		originalFunc("$PostAATarget", ptexPostAATarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, nPostAAFlags);
+		originalFunc("$UpscaleTarget", ptexUpscaleTarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, a_nFlags);
 #endif
 
 		return bReturn;
@@ -544,7 +570,9 @@ namespace Hooks
 	// Hook CTexture::CreateTextureObject for $SceneDiffuse
 	RE::CTexture* Hooks::Hook_CreateTextureObject_SceneDiffuse(const char* a_name, uint32_t a_nWidth, uint32_t a_nHeight, int a_nDepth, RE::ETEX_Type a_eTT, RE::ETextureFlags a_nFlags, RE::ETEX_Format a_eTF, int a_nCustomID, uint8_t a9)
 	{
-		RE::CTexture* pTex = _Hook_CreateTextureObject_SceneDiffuse(a_name, a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, a_eTF, a_nCustomID, a9);
+		using OriginalFunction = RE::CTexture*(*)(const char*, uint32_t, uint32_t, int, RE::ETEX_Type, RE::ETextureFlags, RE::ETEX_Format, int, uint8_t);
+		OriginalFunction originalFunc = *hookHandle_CreateTextureObject_SceneDiffuse;
+		RE::CTexture* pTex = originalFunc(a_name, a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, a_eTF, a_nCustomID, a9);
 
 #if ADD_NEW_RENDER_TARGETS
 #if SUPPORT_MSAA
@@ -554,9 +582,9 @@ namespace Hooks
 #if FORCE_DLSS_SMAA_UAV && 0
 		nPostAAFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS | RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
 #endif
-		ptexTonemapTarget = _Hook_CreateTextureObject_SceneDiffuse("$TonemapTarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, format, -1, a9);
-		ptexPostAATarget = _Hook_CreateTextureObject_SceneDiffuse("$PostAATarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, nPostAAFlags, format, -1, a9);
-		ptexUpscaleTarget = _Hook_CreateTextureObject_SceneDiffuse("$UpscaleTarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, format, -1, a9);
+		ptexTonemapTarget = originalFunc("$TonemapTarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, format, -1, a9);
+		ptexPostAATarget = originalFunc("$PostAATarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, nPostAAFlags, format, -1, a9);
+		ptexUpscaleTarget = originalFunc("$UpscaleTarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, format, -1, a9);
 #endif
 
 		return pTex;
@@ -582,7 +610,9 @@ namespace Hooks
 #if FORCE_DLSS_SMAA_UAV
 		a_nFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS | RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
 #endif
-		auto _ptexPrevBackBuffer = _Hook_CreateRenderTarget_PrevBackBuffer0A(a_name, a_nWidth, a_nHeight, a_cClear, a_eTT, a_nFlags, a_eTF, a_nCustomID);
+		using OriginalFunction = RE::CTexture*(*)(const char*, int, int, void*, RE::ETEX_Type, RE::ETextureFlags, RE::ETEX_Format, int);
+		OriginalFunction originalFunc = *hookHandle_CreateRenderTarget_PrevBackBuffer0A;
+		auto _ptexPrevBackBuffer = originalFunc(a_name, a_nWidth, a_nHeight, a_cClear, a_eTT, a_nFlags, a_eTF, a_nCustomID);
 #if FORCE_DLSS_SMAA_SLIMMED_DOWN_HISTORY
 		ptexPrevBackBuffer = _ptexPrevBackBuffer;
 #endif
@@ -602,7 +632,9 @@ namespace Hooks
 #if FORCE_DLSS_SMAA_UAV
 		a_nFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS | RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
 #endif
-		auto _ptexPrevBackBuffer = _Hook_CreateRenderTarget_PrevBackBuffer1A(a_name, a_nWidth, a_nHeight, a_cClear, a_eTT, a_nFlags, a_eTF, a_nCustomID);
+		using OriginalFunction = RE::CTexture*(*)(const char*, int, int, void*, RE::ETEX_Type, RE::ETextureFlags, RE::ETEX_Format, int);
+		OriginalFunction originalFunc = *hookHandle_CreateRenderTarget_PrevBackBuffer1A;
+		auto _ptexPrevBackBuffer = originalFunc(a_name, a_nWidth, a_nHeight, a_cClear, a_eTT, a_nFlags, a_eTF, a_nCustomID);
 #if FORCE_DLSS_SMAA_SLIMMED_DOWN_HISTORY
 		ptexPrevBackBuffer = _ptexPrevBackBuffer;
 #endif
@@ -615,7 +647,9 @@ namespace Hooks
 #if FORCE_DLSS_SMAA_UAV
 		a_this->m_nFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS | RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
 #endif
-		return _Hook_CreateRenderTarget_PrevBackBuffer0B(a_this, a_eTF, a_cClear);
+		using OriginalFunction = bool(*)(RE::CTexture*, RE::ETEX_Format, void*);
+		OriginalFunction originalFunc = *hookHandle_CreateRenderTarget_PrevBackBuffer0B;
+		return originalFunc(a_this, a_eTF, a_cClear);
 	}
 
 	// Hook CTexture::CreateRenderTarget for $PrevBackBuffer1 in SPostEffectsUtils::Create - recreation
@@ -624,7 +658,9 @@ namespace Hooks
 #if FORCE_DLSS_SMAA_UAV
 		a_this->m_nFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS | RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
 #endif
-		return _Hook_CreateRenderTarget_PrevBackBuffer1B(a_this, a_eTF, a_cClear);
+		using OriginalFunction = bool(*)(RE::CTexture*, RE::ETEX_Format, void*);
+		OriginalFunction originalFunc = *hookHandle_CreateRenderTarget_PrevBackBuffer1B;
+		return originalFunc(a_this, a_eTF, a_cClear);
 	}
 
 #if INJECT_TAA_JITTERS
@@ -658,6 +694,11 @@ namespace Hooks
 	{
 		Patches::Patch();
 		Hooks::Hook();
+	}
+
+	void Uninstall()
+	{
+		Hooks::Unhook();
 	}
 }
 

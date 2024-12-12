@@ -1,6 +1,16 @@
 #pragma once
 
+#include <memory>
 #include <type_traits>
+
+namespace DKUtil
+{
+	namespace Hook
+	{
+		struct RelHookHandle;
+		struct ASMPatchHandle;
+	}
+}
 
 #include "Offsets.h"
 #include "RE.h"
@@ -51,9 +61,9 @@ namespace Hooks
 	{
 	public:
 		static void Hook();
+		static void Unhook();
 
 	private:
-		static void          Hook_FlashRenderInternal(RE::CD3D9Renderer* a_this, void* pPlayer, bool bStereo, bool bDoRealRender);
 		static void          Hook_OnD3D11PostCreateDevice();
 		static bool          Hook_CreateRenderTarget_SceneDiffuse(const char* a_szTexName, RE::CTexture*& a_pTex, int a_iWidth, int a_iHeight, void* a_cClear, bool a_bUseAlpha, bool a_bMipMaps, RE::ETEX_Format a_eTF, int a_nCustomID, RE::ETextureFlags a_nFlags);
 		static RE::CTexture* Hook_CreateTextureObject_SceneDiffuse(const char* a_name, uint32_t a_nWidth, uint32_t a_nHeight, int a_nDepth, RE::ETEX_Type a_eTT, RE::ETextureFlags a_nFlags, RE::ETEX_Format a_eTF, int a_nCustomID, uint8_t a9);
@@ -64,25 +74,37 @@ namespace Hooks
 		static bool          Hook_CreateRenderTarget_PrevBackBuffer1B(RE::CTexture* a_this, RE::ETEX_Format a_eTF, void* a_cClear);
 #if INJECT_TAA_JITTERS
 		static void          Hook_UpdateBuffer(RE::CConstantBuffer* a_this, void* a_src, size_t a_size, uint32_t a_numDataBlocks);
-#endif
 
-		static inline std::add_pointer_t<decltype(Hook_FlashRenderInternal)> _Hook_FlashRenderInternal;
-		static inline std::add_pointer_t<decltype(Hook_OnD3D11PostCreateDevice)> _Hook_OnD3D11PostCreateDevice;
-		static inline std::add_pointer_t<decltype(Hook_CreateRenderTarget_SceneDiffuse)> _Hook_CreateRenderTarget_SceneDiffuse;
-		static inline std::add_pointer_t<decltype(Hook_CreateTextureObject_SceneDiffuse)> _Hook_CreateTextureObject_SceneDiffuse;
-		static inline std::add_pointer_t<decltype(Hook_CreateRenderTarget_PrevBackBuffer0A)> _Hook_CreateRenderTarget_PrevBackBuffer0A;
-		static inline std::add_pointer_t<decltype(Hook_CreateRenderTarget_PrevBackBuffer1A)> _Hook_CreateRenderTarget_PrevBackBuffer1A;
-		static inline std::add_pointer_t<decltype(Hook_CreateRenderTarget_PrevBackBuffer0B)> _Hook_CreateRenderTarget_PrevBackBuffer0B;
-		static inline std::add_pointer_t<decltype(Hook_CreateRenderTarget_PrevBackBuffer1B)> _Hook_CreateRenderTarget_PrevBackBuffer1B;
-#if INJECT_TAA_JITTERS
-		static inline std::add_pointer_t<decltype(Hook_UpdateBuffer)>        _Hook_UpdateBuffer;
+		//static inline std::add_pointer_t<decltype(Hook_UpdateBuffer)>        _Hook_UpdateBuffer;
 #endif
 
 		static void PatchSwapchainDesc(DXGI_SWAP_CHAIN_DESC& a_desc);
 		static inline RE::CTexture* ptexTonemapTarget;
 		static inline RE::CTexture* ptexPostAATarget;
 		static inline RE::CTexture* ptexUpscaleTarget;
+
+		static inline std::unique_ptr<DKUtil::Hook::RelHookHandle> hookHandle_OnD3D11PostCreateDevice = nullptr;
+		static inline std::unique_ptr<DKUtil::Hook::RelHookHandle> hookHandle_CreateRenderTarget_SceneDiffuse = nullptr;
+		static inline std::unique_ptr<DKUtil::Hook::RelHookHandle> hookHandle_CreateTextureObject_SceneDiffuse = nullptr;
+		static inline std::unique_ptr<DKUtil::Hook::RelHookHandle> hookHandle_CreateRenderTarget_PrevBackBuffer0A = nullptr;
+		static inline std::unique_ptr<DKUtil::Hook::RelHookHandle> hookHandle_CreateRenderTarget_PrevBackBuffer1A = nullptr;
+		static inline std::unique_ptr<DKUtil::Hook::RelHookHandle> hookHandle_CreateRenderTarget_PrevBackBuffer0B = nullptr;
+		static inline std::unique_ptr<DKUtil::Hook::RelHookHandle> hookHandle_CreateRenderTarget_PrevBackBuffer1B = nullptr;
+
+		static inline std::unique_ptr<DKUtil::Hook::ASMPatchHandle> asmPatchHandle_swapchain = nullptr;
+		static inline std::unique_ptr<DKUtil::Hook::ASMPatchHandle> asmPatchHandle_tonemapTarget1 = nullptr;
+		static inline std::unique_ptr<DKUtil::Hook::ASMPatchHandle> asmPatchHandle_tonemapTarget2 = nullptr;
+		static inline std::unique_ptr<DKUtil::Hook::ASMPatchHandle> asmPatchHandle_tonemapTarget3 = nullptr;
+		static inline std::unique_ptr<DKUtil::Hook::ASMPatchHandle> asmPatchHandle_tonemapTarget4 = nullptr;
+		static inline std::unique_ptr<DKUtil::Hook::ASMPatchHandle> asmPatchHandle_postAATarget1 = nullptr;
+		static inline std::unique_ptr<DKUtil::Hook::ASMPatchHandle> asmPatchHandle_postAATarget2 = nullptr;
+		static inline std::unique_ptr<DKUtil::Hook::ASMPatchHandle> asmPatchHandle_postAATarget3 = nullptr;
+		static inline std::unique_ptr<DKUtil::Hook::ASMPatchHandle> asmPatchHandle_upscaleTarget1 = nullptr;
+		static inline std::unique_ptr<DKUtil::Hook::ASMPatchHandle> asmPatchHandle_upscaleTarget2 = nullptr;
+		static inline std::unique_ptr<DKUtil::Hook::ASMPatchHandle> asmPatchHandle_upscaleTarget3 = nullptr;
+
 	};
 
 	void Install();
+	void Uninstall();
 }

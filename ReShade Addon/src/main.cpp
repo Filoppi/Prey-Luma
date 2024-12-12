@@ -6647,6 +6647,8 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
     }
     case DLL_PROCESS_DETACH:
     {
+      NativePlugin::Uninit();
+
       reshade::unregister_event<reshade::addon_event::init_command_list>(OnInitCommandList);
 
       reshade::unregister_event<reshade::addon_event::init_device>(OnInitDevice);

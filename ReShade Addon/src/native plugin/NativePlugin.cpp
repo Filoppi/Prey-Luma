@@ -49,6 +49,11 @@ namespace NativePlugin
 		Hooks::Install();
 	}
 
+    void Uninit()
+    {
+        Hooks::Uninstall();
+    }
+
     void SetHaltonSequencePhases(unsigned int renderResY, unsigned int outputResY, unsigned int basePhases)
     {
         Hooks::Patches::SetHaltonSequencePhases(renderResY, outputResY, basePhases);
