@@ -1,4 +1,4 @@
-Luma (Prey (2017) + Mooncrash) aims to rewrite the game late rendering and post processing phases to improve the look of the game without drifting from the original artistic vision (believe me!).
+Luma is a Prey (2017) + Mooncrash DLC mod that re-writes the game's late rendering and post processing phases to improve the game's look without drifting from the artistic vision (believe me!).
 The highlight feature is adding HDR support, DLSS and new Ambient Occlusion, making it akin to a smallish Remastered.
 The mod works by hooking into the game's code and replacing shaders.
 
@@ -15,7 +15,7 @@ Join our discord here: https://discord.gg/DNGfMZgH3f
 - Added RCAS sharpening after TAA (replacing the original basic sharpening implementation, making it look a lot more natural)
 - Improved all of the native Anti Aliasing implementations (e.g. SMAA/TAA)
 - Improved Anisotropic Filtering (it was not set to 16x on all textures that would benefit from it)
-- Improved quality and look of sun shaft effects and lens "optic" effects (e.g. lens flare)
+- Improved quality and look of the Sun, Sun Shaft effects and Lens "Optics" effects (e.g. lens flare)
 - Improved Motion Blur quality and fixes multiple issues with its motion vectors
 - Improved Bloom quality and fixes multiple issues with its generation (e.g. it was trailing at the edge of the screen)
 - Improved Ultrawide Aspect Ratio support (Bloom, AO, SSR, Sun Shafts, Lens Optics etc did not scale properly with it, e.g. causing the sun to be huge in UW or causing bloom to be stretched, chromatic aberration was stretched in UW) (the game now also exposes the vertical FOV instead of the horizontal one, which was limited to 120 and not ultrawide friendly)
@@ -28,16 +28,17 @@ Join our discord here: https://discord.gg/DNGfMZgH3f
 # How to install:
 - Drop all the files into the game installation folder (including "autoexec.cfg" and "system.cfg"), except the "game.cfg" file that goes into the user data folder (this is optional, but highly suggested for the best quality).
 - Install the latest VC++ redist before using (https://aka.ms/vs/17/release/vc_redist.x64.exe).
-- Install ReShade 6.3.3+ (with Addons support, for DX11, preferably as dxgi.dll).
+- Install ReShade 6.3.3+ (with Addons support, for DX11, preferably as dxgi.dll) (you can disable the "Generic Depth" and "Effects Runtime Sync" Addons for performance gains).
 - Unless you are on Linux/Proton, delete the "d3dcompiler_47.dll" from the main binary folder, it's an outdated shader compiler bundled with the game for "no reason" (Windows will fall back on the latest version of it this way, but Proton doesn't distribute the file so leave it in).
 
 # Information:
 - The performance cost on modern GPUs is negligeable, especially when using DLSS SR + Resolution Scaling (in fact, performance might drastically increase in that case).
 - The mod is best used with all the graphics settings maxed out in the game, but any setting combination is supported too.
-- Set you "game.cfg" to read only to avoid the game clearing most settings from it if changing settings within the game menu, so it's suggested to change your resolution directly from config before booting the game.
+- Set you "game.cfg" to read only to avoid the game clearing most settings from it if changing settings within the game menu, so it's suggested to change your resolution and other settings directly from config before booting the game, or they will get overwritten every time.
 - The game's HDR uses the HDR calibration data from Windows 11 and display's EDID.
 - The in game brightness slider is best left at default value.
 - Before updating the mod, make sure to delete all its previous files. To uninstall, clear all the files (they are unique to the mod).
+- The game runs in HDR mode even when targeting SDR. Most ReShade shaders/effects still don't properly support HDR yet, so avoid using them.
 
 # Issues and limitations:
 - The Epic Games Store and Microsoft Store versions are not supported (the game data is across all game releases, so one could theoretically force use the Steam or GOG executables).

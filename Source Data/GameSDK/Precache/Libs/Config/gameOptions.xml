@@ -786,11 +786,12 @@
                 <ArkOptionSubAction Action="sys_spec 0" />
               </Subactions>
             </ArkOptionAttribute>
+            <!-- For some reason this toogle appear with ON/OFF flipped in the UI -->
             <ArkOptionAttribute Action="osm_enabled" Label="@ui_drsenable" Default="0" SetOnChange="true" Platform="PC">
              <Widget>
               <ArkOptionToggle>
-               <Option0 Label="@ui_Off" Value="0"/>
                <Option1 Label="@ui_On" Value="1"/>
+               <Option0 Label="@ui_Off" Value="0"/>
               </ArkOptionToggle>
              </Widget>
             </ArkOptionAttribute>

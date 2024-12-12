@@ -178,9 +178,11 @@
 #ifndef ENABLE_POST_PROCESS
 #define ENABLE_POST_PROCESS 1
 #endif
+// The game already has a setting for this
 #define ENABLE_MOTION_BLUR (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
 #define ENABLE_BLOOM (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
-#define ENABLE_SSAO (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
+// The game already has a setting for this
+#define ENABLE_SSAO (!DEVELOPMENT || 1)
 // Spacial (not temporal) SSAO denoising. Needs to be enabled for it to look good.
 #define ENABLE_SSAO_DENOISE (!DEVELOPMENT || 1)
 // Disables all kinds of AA (SMAA, FXAA, TAA, ...) (disabling "ENABLE_SHARPENING" is also suggested if disabling AA). Doesn't affect DLSS.

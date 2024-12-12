@@ -221,7 +221,7 @@ void main(float4 WPos : SV_Position0, float4 inBaseTC : TEXCOORD0, out float4 ou
 #endif
   )
 {
-#if TEST_SSAO && 0 // Debug view world space normals (requires a special view mode to directly show this buffer)
+#if TEST_SSAO && 0 // Debug view world space normals (requires a special view mode to directly show this buffer) // Needs "SSAO_TYPE >= 1"
 	outBentNormalsAndOcclusion = float4(DecodeGBufferNormal(_tex0_D3D11.Load(float3(WPos.xy, 0))) * 0.5 + 0.5, 0.f);
 	edges = 0;
 	return;
@@ -237,7 +237,7 @@ void main(float4 WPos : SV_Position0, float4 inBaseTC : TEXCOORD0, out float4 ou
 #undef SSAO_RADIUS
 #define SSAO_RADIUS 1
 
-#if TEST_SSAO && 0
+#if TEST_SSAO && 0 // Compare old and new AO // Needs "SSAO_TYPE >= 1"
 	if (inBaseTC.x > 0.5)
 	{
 		outBentNormalsAndOcclusion = GTAO(WPos, inBaseTC, edges);
@@ -281,7 +281,7 @@ void main(float4 WPos : SV_Position0, float4 inBaseTC : TEXCOORD0, out float4 ou
 		float angle = (PI_X2 * (progress * spiralLapses)) + spiralAngleOffset;
 		kernel[i] = float2(radius * cos(angle), radius * sin(angle));
 	};
-#endif
+#endif // SSAO_QUALITY <= 0
 
 	int3 pixCoord = int3(WPos.xy, 0);
 
