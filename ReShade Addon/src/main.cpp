@@ -2844,7 +2844,6 @@ void OnPresent(
 //TODOFT5: restore objects quality setting in the game's menu?
 //TODOFT5: I should make the game.cfg file write locked in the zip already
 //TODOFT (TODO): make sure DLSS lets scRGB colors pass through...
-//TODOFT: do one last test on all jitters with DLSS to see if motion vectors are right in motion with DRS (it seems to be?). Could it be the MVs buffer isn't high quality enough (the format)?
 //TODOFT: add a new RT to draw UI on top (pre-multiplied alpha everywhere), so we could compose it smartly, possibly in the final linearization pass.
 
 // Return false to prevent the original draw call from running (e.g. if you replaced it or just want to skip it)
@@ -3599,17 +3598,25 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
                               D3D11_TEXTURE2D_DESC object_velocity_texture_desc;
                               object_velocity_buffer->GetDesc(&object_velocity_texture_desc);
                               ASSERT_ONCE((object_velocity_texture_desc.BindFlags & D3D11_BIND_RENDER_TARGET) == D3D11_BIND_RENDER_TARGET);
+#if 1 // Use the higher quality for MVs, the game's one were R16G16F. This has a ~1% cost on performance but helps with reducing shimmering on fine lines (stright lines looking segmented, like Bart's hair or Shark's teeth) when the camera is moving in a linear fashion
+                              object_velocity_texture_desc.Format = DXGI_FORMAT_R32G32_FLOAT;
+#else
+                              object_velocity_texture_desc.Format = DXGI_FORMAT_R16G16_FLOAT;
+#endif
 
                               // Update the "dlss_output_changed" flag if we hadn't already (we wouldn't have had a previous copy to compare against above)
-                              if (dlss_output_supports_uav) {
+                              bool dlss_motion_vectors_changed = dlss_output_changed;
+                              if (dlss_output_supports_uav)
+                              {
                                   if (device_data.dlss_motion_vectors.get()) {
                                       D3D11_TEXTURE2D_DESC dlss_motion_vectors_desc;
                                       device_data.dlss_motion_vectors->GetDesc(&dlss_motion_vectors_desc);
                                       dlss_output_changed = dlss_motion_vectors_desc.Width != output_texture_desc.Width || dlss_motion_vectors_desc.Height != output_texture_desc.Height;
+                                      dlss_motion_vectors_changed = dlss_output_changed;
                                   }
                               }
                               // We assume the conditions of this texture (and its render target view) changing are the same as "dlss_output_changed"
-                              if (!device_data.dlss_motion_vectors.get() || dlss_output_changed) {
+                              if (!device_data.dlss_motion_vectors.get() || dlss_motion_vectors_changed) {
                                   device_data.dlss_motion_vectors = nullptr; // Make sure we discard the previous one
                                   hr = native_device->CreateTexture2D(&object_velocity_texture_desc, nullptr, &device_data.dlss_motion_vectors);
                                   ASSERT_ONCE(SUCCEEDED(hr));

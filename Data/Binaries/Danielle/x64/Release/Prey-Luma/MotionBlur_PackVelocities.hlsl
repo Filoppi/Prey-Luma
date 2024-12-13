@@ -28,6 +28,7 @@ float2 AdjustVelocityObjects(float2 VelocityObjects)
 //TODOFT3: upgrade MB patches size to be smaller? So it's higher quality? It seems pretty awful atm.
 // LUMA FT: this doesn't exactly produce motion vectors, but simply some patches of movement intensity.
 // It's run in big patches (e.g. 6, 14 or 24 patches), depending on the quality of MB, that probably doesn't scale properly with aspect ratio.
+// Note that this outputs on a 8bit UNORM texture, with or without Luma, hence it's low quality.
 pixout PackVelocitiesPS(vtxOut IN)
 {	
 	pixout OUT = (pixout)0;
