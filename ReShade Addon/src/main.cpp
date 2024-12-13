@@ -309,6 +309,29 @@ static constexpr unsigned int crc_table[256] = {
     0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
 };
 
+const char* GetFormatName(DXGI_FORMAT format) {
+    // TODO: add more formats here
+    switch (format) {
+    case DXGI_FORMAT::DXGI_FORMAT_R8_UNORM:      return "R8 UNORM";
+    case DXGI_FORMAT::DXGI_FORMAT_R32_FLOAT:      return "R32 FLOAT";
+    case DXGI_FORMAT::DXGI_FORMAT_R32G32_FLOAT:      return "R32G32 FLOAT";
+    case DXGI_FORMAT::DXGI_FORMAT_R8G8B8A8_TYPELESS:      return "R8G8B8A8 TYPELESS";
+    case DXGI_FORMAT::DXGI_FORMAT_R8G8B8A8_UNORM:      return "R8G8B8A8 UNORM";
+    case DXGI_FORMAT::DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:      return "R8G8B8A8 UNORM SRGB";
+    case DXGI_FORMAT::DXGI_FORMAT_B8G8R8A8_UNORM:      return "B8G8R8A8 UNORM";
+    case DXGI_FORMAT::DXGI_FORMAT_B8G8R8X8_UNORM:      return "B8G8R8X8 UNORM";
+    case DXGI_FORMAT::DXGI_FORMAT_B8G8R8A8_TYPELESS:      return "B8G8R8A8 TYPELESS";
+    case DXGI_FORMAT::DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:      return "B8G8R8A8 UNORM SRGB";
+    case DXGI_FORMAT::DXGI_FORMAT_B8G8R8X8_TYPELESS:      return "B8G8R8X8 TYPELESS";
+    case DXGI_FORMAT::DXGI_FORMAT_B8G8R8X8_UNORM_SRGB:      return "B8G8R8X8 UNORM";
+    case DXGI_FORMAT::DXGI_FORMAT_R16G16B16A16_TYPELESS:      return "R16G16B16A16 TYPELESS";
+    case DXGI_FORMAT::DXGI_FORMAT_R16G16B16A16_FLOAT:      return "R16G16B16A16 FLOAT";
+    case DXGI_FORMAT::DXGI_FORMAT_R11G11B10_FLOAT:      return "R11G11B10 FLOAT";
+    case DXGI_FORMAT::DXGI_FORMAT_UNKNOWN:      return "Unknown";
+    }
+    return nullptr;
+}
+
 constexpr uint32_t string_view_crc32(std::string_view str) {
 #if 0 //TODOFT: delete
     if (!std::is_constant_evaluated())
@@ -344,10 +367,10 @@ std::shared_mutex s_mutex_shader_defines;
 std::shared_mutex s_mutex_reshade;
 // For "custom_sampler_by_original_sampler" and "texture_mip_lod_bias_offset"
 std::shared_mutex s_mutex_samplers;
-// For "native_swapchain3", "global_native_device", "global_device_data", "game_window"
+// For "global_native_devices", "global_device_datas", "game_window"
 recursive_shared_mutex s_mutex_device;
 #if DEVELOPMENT
-// for "trace_shader_hashes", "trace_pipeline_handles", "trace_pipeline_draws", "trace_pipeline_draws_blend_descs" and "trace_threads" (writing only, reading is already safe)
+// for "trace_shader_hashes", "trace_pipeline_handles", "trace_pipeline_draws", "trace_pipeline_draws_blend_descs", "trace_pipeline_draws_rtv_format", "trace_pipeline_draws_rt_format", "trace_pipeline_draws_rt_size", and "trace_threads" (writing only, reading is already safe)
 std::shared_mutex s_mutex_trace;
 #endif
 
@@ -429,7 +452,19 @@ struct __declspec(uuid("cfebf6d4-d184-4e1a-ac14-09d088e560ca")) DeviceData {
 
   std::unordered_set<reshade::api::swapchain*> swapchains;
   std::unordered_set<uint64_t> back_buffers;
-  ID3D11Device* native_device; // Doesn't need mutex, always valid
+  ID3D11Device* native_device; // Doesn't need mutex, always valid given it's a ptr to itself
+
+  com_ptr<IDXGISwapChain3> GetMainNativeSwapchain() const
+  {
+      ASSERT_ONCE(swapchains.size() == 1);
+      if (swapchains.empty()) return nullptr;
+      IDXGISwapChain* native_swapchain = (IDXGISwapChain*)((*swapchains.begin())->get_native());
+      com_ptr<IDXGISwapChain3> native_swapchain3;
+      // The cast pointer is actually the same, we are just making sure the type is right.
+      HRESULT hr = native_swapchain->QueryInterface(&native_swapchain3);
+      ASSERT_ONCE(SUCCEEDED(hr));
+      return native_swapchain3;
+  }
 
   reshade::api::pipeline_layout settings_pipeline_layout;
   reshade::api::pipeline_layout shared_data_pipeline_layout;
@@ -660,16 +695,19 @@ bool needs_load_shaders = false; // Load/compile or reload/recompile shaders
 bool needs_live_reload_update = live_reload;
 
 // There's only one swapchain and one device in Prey, but the game chances its configuration from different threads.
-// A new device+swapchain can be created if the user resets the settings as the old one is still rendering.
-IDXGISwapChain3* native_swapchain3 = nullptr;
-ID3D11Device* global_native_device = nullptr;
-DeviceData* global_device_data = nullptr;
+// A new device+swapchain can be created if the user resets the settings as the old one is still rendering (or is it?).
+// These are raw pointers that did not add a reference to the counter.
+std::vector<ID3D11Device*> global_native_devices; //TODOFT: delete, unused?
+std::vector<DeviceData*> global_devices_data;
 HWND game_window = 0; // This is fixed forever (in almost all games, and Prey)
 
 #if DEVELOPMENT
 std::vector<uint64_t> trace_pipeline_handles; // The actual list of pipelines that run within the traced frame
 std::vector<uint32_t> trace_pipeline_draws; // How many times the last bound pipeline drew
 std::vector<D3D11_BLEND_DESC> trace_pipeline_draws_blend_descs;
+std::vector<DXGI_FORMAT> trace_pipeline_draws_rtv_format;
+std::vector<DXGI_FORMAT> trace_pipeline_draws_rt_format;
+std::vector<uint2> trace_pipeline_draws_rt_size;
 std::vector<std::thread::id> trace_threads; // The thread that drew (set) each pipeline
 std::vector<uint32_t> trace_shader_hashes; // Just used to filter out what shaders we've already listed
 bool trace_scheduled = false;
@@ -1746,8 +1784,13 @@ void CALLBACK HandleEventCallback(DWORD error_code, DWORD bytes_transferred, LPO
 #if _DEBUG && LOG_VERBOSE
   reshade::log::message(reshade::log::level::info, "Live editing callback");
 #endif
-  // TODO: verify this is safe. Replacing shaders from another thread at a random time could break as we need to wait one frame or the pipeline binding could hang.
-  LoadCustomShaders(*global_device_data);
+  {
+      const std::shared_lock lock(s_mutex_device);
+      // TODO: verify this is safe. Replacing shaders from another thread at a random time could break as we need to wait one frame or the pipeline binding could hang.
+      for (auto global_device_data : global_devices_data) {
+          LoadCustomShaders(*global_device_data);
+      }
+  }
   // Trigger the watch again as the event is only triggered once
   ToggleLiveWatching();
 }
@@ -1836,7 +1879,10 @@ void ToggleLiveWatching() {
       reshade::log::message(reshade::log::level::error, s.str().c_str());
     }
 
-    LoadCustomShaders(*global_device_data);
+    const std::shared_lock lock(s_mutex_device);
+    for (auto global_device_data : global_devices_data) {
+        LoadCustomShaders(*global_device_data);
+    }
   } else {
 #if _DEBUG && LOG_VERBOSE
     reshade::log::message(reshade::log::level::info, "Cancelling live");
@@ -1852,24 +1898,22 @@ void OnDisplayModeChanged()
   GetShaderDefineData(AUTO_HDR_VIDEOS_HASH).editable = cb_luma_frame_settings.DisplayMode != 0;
 }
 
+// Prey seems to create new devices when resetting the game settings (either manually from the menu, or on boot in case the config had invalid ones), but then the new devices might not actually be used?
 void OnInitDevice(reshade::api::device* device) {
   ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
   auto& device_data = device->create_private_data<DeviceData>();
   device_data.native_device = native_device;
   {
       const std::unique_lock lock(s_mutex_device);
-#if 0
-      assert(!global_native_device); // This can happen when we reset the graphics settings, a new one is created before the old one is destroyed, but only one at a time persists
-#endif
       // Inherit a minimal set of states from the possible previous device. Any other state wouldn't be relevant or could be outdated, so we might as well reset all to default.
-      if (global_device_data) {
-          device_data.output_resolution = global_device_data->output_resolution;
-          device_data.render_resolution = global_device_data->render_resolution;
-          device_data.previous_render_resolution = global_device_data->render_resolution;
+      if (!global_devices_data.empty()) {
+          device_data.output_resolution = global_devices_data[0]->output_resolution;
+          device_data.render_resolution = global_devices_data[0]->render_resolution;
+          device_data.previous_render_resolution = global_devices_data[0]->render_resolution;
       }
       // In case there already was a device, we could copy some states from it, but given that the previous device might still be rendering a frame and is in a "random" state, let's keep them completely independent
-      global_native_device = native_device;
-      global_device_data = &device_data;
+      global_native_devices.push_back(native_device);
+      global_devices_data.push_back(&device_data);
   }
 
   {
@@ -1938,19 +1982,24 @@ void OnInitDevice(reshade::api::device* device) {
 
 void OnDestroyDevice(reshade::api::device* device) {
   ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
+  auto& device_data = device->get_private_data<DeviceData>(); // No need to lock the data mutex here, it could be concurrently used at this point
   {
     const std::unique_lock lock(s_mutex_device);
-#if 0
-    assert(!native_swapchain3); // Hopefully this is forcefully garbage collected when the device is destroyed (it is!)
-    assert(global_native_device); // This can happen when we reset the graphics settings, a new one is created before the old one is destroyed, but only one at a time persists
-#endif
-    if (global_native_device == native_device) {
-      global_native_device = nullptr;
-      global_device_data = nullptr;
+    if (std::vector<ID3D11Device*>::iterator position = std::find(global_native_devices.begin(), global_native_devices.end(), native_device); position != global_native_devices.end()) {
+        global_native_devices.erase(position);
+    }
+    else {
+        ASSERT_ONCE(false);
+    }
+    if (std::vector<DeviceData*>::iterator position = std::find(global_devices_data.begin(), global_devices_data.end(), &device_data); position != global_devices_data.end()) {
+        global_devices_data.erase(position);
+    }
+    else {
+        ASSERT_ONCE(false);
     }
   }
 
-  auto& device_data = device->get_private_data<DeviceData>(); // No need to lock the data mutex here, it could be concurrently used at this point
+  ASSERT_ONCE(device_data.swapchains.empty()); // Hopefully this is forcefully garbage collected when the device is destroyed (it is!)
 
   {
       const std::shared_lock lock(device_data.mutex);
@@ -1969,9 +2018,7 @@ void OnDestroyDevice(reshade::api::device* device) {
 
   {
       const std::unique_lock lock_samplers(s_mutex_samplers);
-#if 0
-      ASSERT_ONCE(device_data.custom_sampler_by_original_sampler.empty()); // Is this guaranteed in DX (that "OnDestroySampler()" wasn't already called)? Maybe not, but probably is!
-#endif
+      ASSERT_ONCE(device_data.custom_sampler_by_original_sampler.empty()); // These should be guaranteed to have been cleared already ("OnDestroySampler()")
       device_data.custom_sampler_by_original_sampler.clear();
   }
 
@@ -1982,6 +2029,9 @@ void OnDestroyDevice(reshade::api::device* device) {
       trace_pipeline_handles.clear();
       trace_pipeline_draws.clear();
       trace_pipeline_draws_blend_descs.clear();
+      trace_pipeline_draws_rtv_format.clear();
+      trace_pipeline_draws_rt_format.clear();
+      trace_pipeline_draws_rt_size.clear();
       trace_threads.clear();
       trace_shader_hashes.clear();
   }
@@ -1994,9 +2044,36 @@ void OnDestroyDevice(reshade::api::device* device) {
   device->destroy_private_data<DeviceData>();
 }
 
+#if DEVELOPMENT
+bool OnCreateSwapchain(reshade::api::swapchain_desc& desc, void* hwnd) {
+#if 0 // Enforce for edge cases
+    if (LDR_textures_upgrade_format != RE::ETEX_Format::eTF_R16G16B16A16F)
+#endif
+    {
+        desc.present_flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+        if (LDR_textures_upgrade_format == RE::ETEX_Format::eTF_R8G8B8A8) {
+            desc.back_buffer.texture.format = reshade::api::format::r8g8b8a8_unorm;
+        }
+        else if (LDR_textures_upgrade_format == RE::ETEX_Format::eTF_R10G10B10A2) {
+            desc.back_buffer.texture.format = reshade::api::format::r10g10b10a2_unorm;
+        }
+        else { // Also applies to R11G11B10F
+            desc.back_buffer.texture.format = reshade::api::format::r16g16b16a16_float;
+        }
+        return true;
+    }
+    return false;
+}
+#endif // DEVELOPMENT
+
 void OnInitSwapchain(reshade::api::swapchain* swapchain) {
+  IDXGISwapChain* native_swapchain = (IDXGISwapChain*)(swapchain->get_native());
   const size_t back_buffer_count = swapchain->get_back_buffer_count();
+  auto* device = swapchain->get_device();
+  auto& device_data = device->get_private_data<DeviceData>();
   auto& swapchain_data = swapchain->create_private_data<SwapchainData>();
+  ASSERT_ONCE(&device_data != nullptr); // Hacky nullptr check (should ever be able to happen)
+
   {
     const std::unique_lock lock(swapchain_data.mutex); // Not much need to lock this on its own creation, but let's do it anyway...
     for (uint32_t index = 0; index < back_buffer_count; index++) {
@@ -2004,22 +2081,24 @@ void OnInitSwapchain(reshade::api::swapchain* swapchain) {
       swapchain_data.back_buffers.emplace(buffer.handle);
     }
   }
-  auto* device = swapchain->get_device();
-  auto& device_data = device->get_private_data<DeviceData>();
-  // Hacky nullptr check
-  if (&device_data != nullptr) {
-      const std::unique_lock lock(device_data.mutex);
-      device_data.swapchains.emplace(swapchain);
 
-      for (uint32_t index = 0; index < back_buffer_count; index++) {
-          auto buffer = swapchain->get_back_buffer(index);
-          device_data.back_buffers.emplace(buffer.handle);
-      }
+  IDXGISwapChain3* native_swapchain3;
+  // The cast pointer is actually the same, we are just making sure the type is right.
+  HRESULT hr = native_swapchain->QueryInterface(&native_swapchain3);
+  ASSERT_ONCE(SUCCEEDED(hr));
+
+  const std::unique_lock lock(device_data.mutex);
+  device_data.swapchains.emplace(swapchain);
+  ASSERT_ONCE(SUCCEEDED(device_data.swapchains.size() == 1)); // Having more than one swapchain per device is probably supported but unexpected
+
+  for (uint32_t index = 0; index < back_buffer_count; index++) {
+      auto buffer = swapchain->get_back_buffer(index);
+      device_data.back_buffers.emplace(buffer.handle);
   }
 
-  IDXGISwapChain* native_swapchain = (IDXGISwapChain*)(swapchain->get_native());
+  // We assume there's only one swapchain (there is!), given that the resolution would theoretically be by swapchain and not device
   DXGI_SWAP_CHAIN_DESC swapchain_desc;
-  HRESULT hr = native_swapchain->GetDesc(&swapchain_desc);
+  hr = native_swapchain->GetDesc(&swapchain_desc);
   ASSERT_ONCE(SUCCEEDED(hr));
   if (SUCCEEDED(hr)) {
       device_data.output_resolution.x = swapchain_desc.BufferDesc.Width;
@@ -2028,23 +2107,11 @@ void OnInitSwapchain(reshade::api::swapchain* swapchain) {
       device_data.render_resolution.y = device_data.output_resolution.y;
   }
 
-  IDXGISwapChain3* local_native_swapchain3;
-  {
-      const std::unique_lock lock(s_mutex_device);
-#if 0
-      assert(native_swapchain3 == nullptr); // This can happen when we reset the graphics settings somehow
-#endif
-      native_swapchain3 = nullptr;
-      // The cast pointer is actually the same, we are just making sure the type is right.
-      hr = native_swapchain->QueryInterface(&native_swapchain3);
-      ASSERT_ONCE(SUCCEEDED(hr));
-      local_native_swapchain3 = native_swapchain3;
-  }
   // This is basically where we verify and update the user display settings
-  if (local_native_swapchain3 != nullptr) {
+  if (native_swapchain3 != nullptr) {
       const std::unique_lock lock_reshade(s_mutex_reshade);
-      GetHDRMaxLuminance(local_native_swapchain3, device_data.default_user_peak_white, srgb_white_level);
-      IsHDRSupportedAndEnabled(swapchain_desc.OutputWindow, hdr_supported_display, hdr_enabled_display, local_native_swapchain3);
+      GetHDRMaxLuminance(native_swapchain3, device_data.default_user_peak_white, srgb_white_level);
+      IsHDRSupportedAndEnabled(swapchain_desc.OutputWindow, hdr_supported_display, hdr_enabled_display, native_swapchain3);
       game_window = swapchain_desc.OutputWindow; // This shouldn't really need any thread safety protection
 
       if (!hdr_enabled_display) {
@@ -2058,32 +2125,37 @@ void OnInitSwapchain(reshade::api::swapchain* swapchain) {
           cb_luma_frame_settings.ScenePeakWhite = device_data.default_user_peak_white;
       }
 
+#if DEVELOPMENT
+      {
+          DXGI_COLOR_SPACE_TYPE colorSpace;
+          if (LDR_textures_upgrade_format == RE::ETEX_Format::eTF_R8G8B8A8) {
+              colorSpace = DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+          }
+          else if (LDR_textures_upgrade_format == RE::ETEX_Format::eTF_R10G10B10A2) {
+              colorSpace = DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+          }
+          else { // Also applies to R11G11B10F
+              colorSpace = DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;
+          }
+          hr = native_swapchain3->SetColorSpace1(colorSpace);
+          ASSERT_ONCE(SUCCEEDED(hr));
+      }
+#endif // DEVELOPMENT
+
       // We release the resource because the swapchain lifespan is, and should be, controlled by the game.
       // We already have "OnDestroySwapchain()" to handle its destruction.
-      local_native_swapchain3->Release();
+      native_swapchain3->Release();
   }
 }
 
 void OnDestroySwapchain(reshade::api::swapchain* swapchain) {
-  {
-      const std::unique_lock lock(s_mutex_device);
-      assert(native_swapchain3 != nullptr);
-      if ((IDXGISwapChain*)(swapchain->get_native()) == native_swapchain3) {
-          native_swapchain3 = nullptr;
-          // No need to null "game_window" here
-      }
-      else {
-          assert(false); // There's seemengly more than one Swapchain?
-      }
-  }
-
   auto* device = swapchain->get_device();
   auto& device_data = device->get_private_data<DeviceData>();
-  // Hacky nullptr check
-  if (&device_data != nullptr) {
+  ASSERT_ONCE(&device_data != nullptr); // Hacky nullptr check (should ever be able to happen)
+  auto& swapchain_data = swapchain->get_private_data<SwapchainData>();
+  {
       const std::unique_lock lock(device_data.mutex);
       device_data.swapchains.erase(swapchain);
-      auto& swapchain_data = swapchain->get_private_data<SwapchainData>();
       for (const uint64_t handle : swapchain_data.back_buffers) {
           device_data.back_buffers.erase(handle);
       }
@@ -2381,6 +2453,9 @@ void OnBindPipeline(
     trace_pipeline_handles.push_back(cached_pipeline->pipeline.handle);
     trace_pipeline_draws.push_back(0);
     trace_pipeline_draws_blend_descs.push_back(D3D11_BLEND_DESC{});
+    trace_pipeline_draws_rtv_format.push_back(DXGI_FORMAT_UNKNOWN);
+    trace_pipeline_draws_rt_format.push_back(DXGI_FORMAT_UNKNOWN);
+    trace_pipeline_draws_rt_size.push_back(uint2{});
     trace_threads.push_back(std::this_thread::get_id());
   }
 
@@ -2504,15 +2579,12 @@ void OnPresent(
 #if DEVELOPMENT
     bool needs_debug_draw_texture = device_data.debug_draw_texture.get() != nullptr;
     // Disable linearization if we are not running on scRGB HDR (more handling is required, this is a quick workaround, we'd need to wait until the changes applied anyway)
-    if (LDR_textures_upgrade_format != RE::ETEX_Format::eTF_R16G16B16A16F) {
-        shader_defines_need_linearization = false;
-        shader_defines_need_gamma_correction = false;
-        display_mode_needs_gamma_correction = false;
-    }
+    bool expects_linear_output = LDR_textures_upgrade_format == RE::ETEX_Format::eTF_R16G16B16A16F;
 #else
+    constexpr bool expects_linear_output = true;
     constexpr bool needs_debug_draw_texture = false;
 #endif
-    if (shader_defines_need_linearization || shader_defines_need_gamma_correction || display_mode_needs_gamma_correction || device_data.cloned_pipeline_count == 0 || needs_debug_draw_texture) {
+    if (needs_debug_draw_texture || (expects_linear_output && (shader_defines_need_linearization || shader_defines_need_gamma_correction || display_mode_needs_gamma_correction || device_data.cloned_pipeline_count == 0))) {
         const std::shared_lock lock_shader_objects(s_mutex_shader_objects);
         if (device_data.copy_vertex_shader && device_data.transfer_function_copy_pixel_shader) {
             IDXGISwapChain* native_swapchain = (IDXGISwapChain*)(swapchain->get_native());
@@ -2803,6 +2875,26 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
                       // We always cache the last one used by the pipeline, hopefully it didn't change between draw calls
                       trace_pipeline_draws_blend_descs[i] = blend_desc;
                       // We don't care for the alpha blend operation (source alpha * dest alpha) as alpha is never read back from destination
+                  }
+
+                  com_ptr<ID3D11RenderTargetView> rtv;
+                  native_device_context->OMGetRenderTargets(1, &rtv, nullptr);
+                  if (rtv) {
+                      D3D11_RENDER_TARGET_VIEW_DESC rtv_desc;
+                      rtv->GetDesc(&rtv_desc);
+                      trace_pipeline_draws_rtv_format[i] = rtv_desc.Format;
+                      com_ptr<ID3D11Resource> rt_resource;
+                      rtv->GetResource(&rt_resource);
+                      if (rt_resource) {
+                          com_ptr<ID3D11Texture2D> rt_texture_2d;
+                          HRESULT hr = rt_resource->QueryInterface(&rt_texture_2d);
+                          if (SUCCEEDED(hr) && rt_texture_2d) {
+                              D3D11_TEXTURE2D_DESC rt_texture_2d_desc;
+                              rt_texture_2d->GetDesc(&rt_texture_2d_desc);
+                              trace_pipeline_draws_rt_format[i] = rt_texture_2d_desc.Format;
+                              trace_pipeline_draws_rt_size[i] = uint2{ rt_texture_2d_desc.Width, rt_texture_2d_desc.Height };
+                          }
+                      }
                   }
               }
               break;
@@ -3393,8 +3485,6 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
                       native_device_context->VSGetShader(&vs, nullptr, 0);
                       native_device_context->PSGetShader(&ps, nullptr, 0);
 #endif // TEST_DLSS
-
-                      const std::unique_lock lock(s_mutex_device); // Needed because a new device might be re-initializing DLSS
 
                       //TODOFT: we could do this async from the beginning of rendering (when we can detect res changes), to here, with a mutex, to avoid potential stutters when DRS first engages (same with creating DLSS textures?) or changes resolution? (we could allow for creating more than one DLSS feature???)
                       // Our DLSS implementation picks a quality mode based on a fixed rendering resolution, but we scale it back in case we detected the game is running DRS, otherwise we run DLAA.
@@ -4811,7 +4901,7 @@ bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource
                 //
                 // Prepare resources:
                 //
-                assert((source_desc.BindFlags & D3D11_BIND_SHADER_RESOURCE) != 0);
+                ASSERT_ONCE((source_desc.BindFlags & D3D11_BIND_SHADER_RESOURCE) != 0);
                 com_ptr<ID3D11ShaderResourceView> source_resource_texture_view;
                 D3D11_SHADER_RESOURCE_VIEW_DESC source_srv_desc;
                 source_srv_desc.Format = source_desc.Format;
@@ -4838,7 +4928,7 @@ bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource
                 source_srv_desc.Texture2D.MipLevels = 1;
                 source_srv_desc.Texture2D.MostDetailedMip = 0;
                 hr = native_device->CreateShaderResourceView(source_resource_texture.get(), &source_srv_desc, &source_resource_texture_view);
-                assert(SUCCEEDED(hr));
+                ASSERT_ONCE(SUCCEEDED(hr));
 
                 com_ptr<ID3D11Texture2D> proxy_target_resource_texture;
                 // We need to make a double copy if the target texture isn't a render target, unfortunately (we could intercept its creation and add the flag, or replace any further usage in this frame by redirecting all pointers
@@ -4862,7 +4952,7 @@ bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource
                         proxy_target_desc.Usage = D3D11_USAGE_DEFAULT;
                         device_data.copy_texture = nullptr;
                         hr = native_device->CreateTexture2D(&proxy_target_desc, nullptr, &device_data.copy_texture);
-                        assert(SUCCEEDED(hr));
+                        ASSERT_ONCE(SUCCEEDED(hr));
                     }
                     proxy_target_resource_texture = device_data.copy_texture;
                 }
@@ -4894,7 +4984,7 @@ bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource
                 target_rtv_desc.ViewDimension = D3D11_RTV_DIMENSION::D3D11_RTV_DIMENSION_TEXTURE2D;
                 target_rtv_desc.Texture2D.MipSlice = 0;
                 hr = native_device->CreateRenderTargetView(proxy_target_resource_texture.get(), &target_rtv_desc, &target_resource_texture_view);
-                assert(SUCCEEDED(hr));
+                ASSERT_ONCE(SUCCEEDED(hr));
 
                 DrawStateStack draw_state_stack;
                 draw_state_stack.Cache(native_device_context);
@@ -5219,6 +5309,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 
   ImGui::SameLine();
   ImGui::PushID("##DumpShaders");
+  // "ALLOW_SHADERS_DUMPING" is expected to be on here
   if (ImGui::Button(std::format("Dump Shaders ({})", shader_cache_count).c_str())) {
     const std::lock_guard<std::recursive_mutex> lock_dumping(s_mutex_dumping);
     // Force dump everything here
@@ -5574,11 +5665,30 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
                   if (pipeline_pair->second->HasPixelShader()) {
                       // Show blend state here:
                       auto blend_desc = trace_pipeline_draws_blend_descs.at(selected_index);
-                      	// 0 No alpha blend (or other unknown blend types that we can ignore)
-	                    // 1 Straight alpha blend: "result = (source.RGB * source.A) + (dest.RGB * (1 - source.A))" or "result = lerp(dest.RGB, source.RGB, source.A)"
-	                    // 2 Pre-multiplied alpha blend (alpha is also pre-multiplied, not just rgb): "result = source.RGB + (dest.RGB * (1 - source.A))"
-	                    // 3 Additive alpha blend (source is "Straight alpha" while destination is retained at 100%): "result = (source.RGB * source.A) + dest.RGB"
-	                    // 4 Additive blend (source and destination are simply summed up, ignoring the alpha): result = source.RGB + dest.RGB
+                      auto rtv_format = trace_pipeline_draws_rtv_format.at(selected_index);
+                      auto rt_format = trace_pipeline_draws_rt_format.at(selected_index);
+                      auto rt_size = trace_pipeline_draws_rt_size.at(selected_index);
+
+                      ImGui::Text("Size: %ux%u", rt_size.x, rt_size.y);
+
+                      if (GetFormatName(rt_format) != nullptr) {
+                          ImGui::Text("RT Format: %s", GetFormatName(rt_format));
+                      }
+                      else {
+                          ImGui::Text("RT Format: %u", rt_format);
+                      }
+                      if (GetFormatName(rtv_format) != nullptr) {
+                          ImGui::Text("RTV Format: %s", GetFormatName(rtv_format));
+                      }
+                      else {
+                          ImGui::Text("RTV Format: %u", rtv_format);
+                      }
+
+                      // 0 No alpha blend (or other unknown blend types that we can ignore)
+	                  // 1 Straight alpha blend: "result = (source.RGB * source.A) + (dest.RGB * (1 - source.A))" or "result = lerp(dest.RGB, source.RGB, source.A)"
+	                  // 2 Pre-multiplied alpha blend (alpha is also pre-multiplied, not just rgb): "result = source.RGB + (dest.RGB * (1 - source.A))"
+	                  // 3 Additive alpha blend (source is "Straight alpha" while destination is retained at 100%): "result = (source.RGB * source.A) + dest.RGB"
+	                  // 4 Additive blend (source and destination are simply summed up, ignoring the alpha): result = source.RGB + dest.RGB
                       bool has_drawn_text = false;
                       // Only show render target 0 for now (Prey only uses that, almost always)
                       if (blend_desc.RenderTarget[0].BlendEnable) {
@@ -5723,10 +5833,8 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             };
 
         {
-            const std::shared_lock lock(s_mutex_device);
             // Note: this is fast enough that we can check it every frame.
-            // There's probably no need for thread safety checks on "native_swapchain3", but we have a mutex anyway.
-            IsHDRSupportedAndEnabled(game_window, hdr_supported_display, hdr_enabled_display, native_swapchain3);
+            IsHDRSupportedAndEnabled(game_window, hdr_supported_display, hdr_enabled_display, device_data.GetMainNativeSwapchain().get());
         }
 
         int display_mode = cb_luma_frame_settings.DisplayMode;
@@ -5743,8 +5851,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         };
         ImGui::BeginDisabled(!hdr_supported_display);
         if (ImGui::SliderInt("Display Mode", &display_mode, 0, display_mode_max, preset_strings[display_mode], ImGuiSliderFlags_NoInput)) {
-            const std::shared_lock lock(s_mutex_device);
-            ChangeDisplayMode(display_mode, true, native_swapchain3);
+            ChangeDisplayMode(display_mode, true, device_data.GetMainNativeSwapchain().get());
         }
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -5756,8 +5863,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             ImGui::PushID("Display Mode");
             if (ImGui::SmallButton(ICON_FK_UNDO)) {
                 display_mode = hdr_enabled_display ? 1 : 0;
-                const std::shared_lock lock(s_mutex_device);
-                ChangeDisplayMode(display_mode, false, native_swapchain3);
+                ChangeDisplayMode(display_mode, false, device_data.GetMainNativeSwapchain().get());
             }
             ImGui::PopID();
         }
@@ -6023,8 +6129,13 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
                 }
             }
             if (device_data.debug_draw_texture || debug_draw_auto_clear_texture) {
-                // TODO: print the actual name of the format, not the index, and the texture size!
-                ImGui::Text("Debug Draw Info: Texture (View) Format: %u", device_data.debug_draw_texture_format);
+                // TODO: print the texture size?
+                if (GetFormatName(device_data.debug_draw_texture_format) != nullptr) {
+                    ImGui::Text("Debug Draw Info: Texture (View) Format: %s", GetFormatName(device_data.debug_draw_texture_format) != nullptr);
+                }
+                else {
+                    ImGui::Text("Debug Draw Info: Texture (View) Format: %u", device_data.debug_draw_texture_format);
+                }
             }
             ImGui::Checkbox("Debug Draw: Auto Clear Texture", &debug_draw_auto_clear_texture); // Is it persistent or not (in case the target texture stopped being found on newer frames). We could also "freeze" it and stop updating it, but we don't need that for now.
         }
@@ -6052,6 +6163,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
             LDR_textures_upgrade_format_int = 2;
         }
         bool textures_upgrade_format_changed = false;
+        // These expect the game to resize the swapchain to apply (we'd need to cache the requested and applied format to do it properly)
         if (ImGui::SliderInt("LDR Post Process Texture Upgrades Format", &LDR_textures_upgrade_format_int, 0, 3, ldr_formats[(uint32_t)LDR_textures_upgrade_format_int], ImGuiSliderFlags_NoInput)) {
             if (LDR_textures_upgrade_format_int == 0) {
                 LDR_textures_upgrade_format = RE::ETEX_Format::eTF_R8G8B8A8;
@@ -6074,6 +6186,23 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
         }
         if (textures_upgrade_format_changed) {
             NativePlugin::SetTexturesFormat(LDR_textures_upgrade_format, HDR_textures_upgrade_format);
+
+#if 0 //TODOFT: verify this is safe. Does the game cache the pointers to this somehow (probably not!)? Can we change it within Present()?
+            //Update: it doesn't work!
+            UINT flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+            DXGI_FORMAT format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+            if (LDR_textures_upgrade_format == RE::ETEX_Format::eTF_R8G8B8A8) {
+                format = DXGI_FORMAT_R8G8B8A8_UNORM;
+            }
+            else if (LDR_textures_upgrade_format == RE::ETEX_Format::eTF_R10G10B10A2) {
+                format = DXGI_FORMAT_R10G10B10A2_UNORM;
+            }
+            else { // Also applies to R11G11B10F
+                format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+            }
+            HRESULT hr = device_data.GetMainNativeSwapchain()->ResizeBuffers(0, 0, 0, format, flags); // Pass in zero to not change any values if not the format
+            ASSERT_ONCE(SUCCEEDED(hr));
+#endif
         }
 
         ImGui::NewLine();
@@ -6449,6 +6578,7 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
 void Init(bool async) {
   has_init = true;
 
+#if ALLOW_SHADERS_DUMPING
   // Add all the shaders we have already dumped to the dumped list to avoid live re-dumping them
   dumped_shaders.clear();
   std::set<std::filesystem::path> dumped_shaders_paths;
@@ -6495,6 +6625,7 @@ void Init(bool async) {
       }
     }
   }
+#endif // ALLOW_SHADERS_DUMPING
 
   // Define the pixel shader of some important passes we can use to determine where we are within the rendering pipeline:
 
@@ -6573,8 +6704,8 @@ void Init(bool async) {
       OnDisplayModeChanged();
 
       if (reshade::get_config_value(runtime, NAME, "ScenePeakWhite", cb_luma_frame_settings.ScenePeakWhite) && cb_luma_frame_settings.ScenePeakWhite <= 0.f) {
-          const std::shared_lock lock(s_mutex_device);
-          cb_luma_frame_settings.ScenePeakWhite = global_device_data ? global_device_data->default_user_peak_white : default_peak_white;
+          const std::shared_lock lock(s_mutex_device); // This is not completely safe as the write to "default_user_peak_white" isn't protected by this mutex but it's fine
+          cb_luma_frame_settings.ScenePeakWhite = global_devices_data.empty() ? default_peak_white : global_devices_data[0]->default_user_peak_white;
       }
       reshade::get_config_value(runtime, NAME, "ScenePaperWhite", cb_luma_frame_settings.ScenePaperWhite);
       reshade::get_config_value(runtime, NAME, "UIPaperWhite", cb_luma_frame_settings.UIPaperWhite);
@@ -6611,10 +6742,10 @@ void Init(bool async) {
           // This is needed to make sure this thread locks "s_mutex_loading" before any other function could
           async_shader_compilation_semaphore.release();
           CompileCustomShaders();
-          const std::unique_lock lock_device(s_mutex_device);
+          const std::shared_lock lock_device(s_mutex_device);
           // Create custom device shaders if the device has already been created before custom shaders were loaded on boot, independently of "block_draw_until_device_custom_shaders_creation".
-          // Note that this might be unsafe if "global_device_data" was already being destroyed in "OnDestroyDevice()" (I'm not sure you can create device resources anymore at that point).
-          if (global_device_data) {
+          // Note that this might be unsafe if "global_devices_data" was already being destroyed in "OnDestroyDevice()" (I'm not sure you can create device resources anymore at that point).
+          for (auto global_device_data : global_devices_data) {
               const std::unique_lock lock_shader_objects(s_mutex_shader_objects);
               if (!global_device_data->created_custom_shaders) {
                   CreateCustomDeviceShaders(global_device_data, std::nullopt, false);
@@ -6635,8 +6766,8 @@ void Uninit() {
     thread_auto_compiling.join();
   }
   {
-    const std::unique_lock lock(s_mutex_device);
-    if (global_device_data) {
+    const std::shared_lock lock(s_mutex_device);
+    for (auto global_device_data : global_devices_data) {
       if (global_device_data->thread_auto_loading.joinable()) {
         global_device_data->thread_auto_loading.join();
       }
@@ -6738,6 +6869,9 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
 
       reshade::register_event<reshade::addon_event::init_device>(OnInitDevice);
       reshade::register_event<reshade::addon_event::destroy_device>(OnDestroyDevice);
+#if DEVELOPMENT
+      reshade::register_event<reshade::addon_event::create_swapchain>(OnCreateSwapchain);
+#endif // DEVELOPMENT
       reshade::register_event<reshade::addon_event::init_swapchain>(OnInitSwapchain);
       reshade::register_event<reshade::addon_event::destroy_swapchain>(OnDestroySwapchain);
 
@@ -6793,6 +6927,9 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
 
       reshade::unregister_event<reshade::addon_event::init_device>(OnInitDevice);
       reshade::unregister_event<reshade::addon_event::destroy_device>(OnDestroyDevice);
+#if DEVELOPMENT
+      reshade::unregister_event<reshade::addon_event::create_swapchain>(OnCreateSwapchain);
+#endif // DEVELOPMENT
       reshade::unregister_event<reshade::addon_event::init_swapchain>(OnInitSwapchain);
       reshade::unregister_event<reshade::addon_event::destroy_swapchain>(OnDestroySwapchain);
 
@@ -6856,7 +6993,7 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved) {
       }
       // We can't lock "s_mutex_device" here, but we also know that if this ptr is valid, then there's no other thread able to run now and change it.
       // ReShade is unloaded when the last device is destroyed so we should have already received an event to clear this thread anyway.
-      if (global_device_data) {
+      for (auto global_device_data : global_devices_data) {
           if (global_device_data->thread_auto_loading.joinable()) {
               global_device_data->thread_auto_loading.detach();
               while (global_device_data->thread_auto_loading_running) {}

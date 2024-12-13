@@ -1,6 +1,6 @@
 
 // Returns false if failed or if HDR is not engaged (but the white luminance can still be used).
-bool GetHDRMaxLuminance(IDXGISwapChain3* swapChain, float& maxLuminance, float defaultMaxLuminance = 80.f /*Windows sRGB standard luminance*/)
+bool GetHDRMaxLuminance(IDXGISwapChain* swapChain, float& maxLuminance, float defaultMaxLuminance = 80.f /*Windows sRGB standard luminance*/)
 {
 	maxLuminance = defaultMaxLuminance;
     
