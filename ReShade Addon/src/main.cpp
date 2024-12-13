@@ -385,6 +385,8 @@ float dlss_custom_pre_exposure = 0.f; // Ignored at 0
 bool disable_taa_jitters = false;
 int force_taa_jitter_phases = 0; // Ignored if 0 (automatic mode), set to 1 to basically disable jitters
 int frame_sleep_ms = 0;
+RE::ETEX_Format LDR_textures_upgrade_format = RE::ETEX_Format::eTF_R16G16B16A16F;
+RE::ETEX_Format HDR_textures_upgrade_format = RE::ETEX_Format::eTF_R16G16B16A16F;
 #endif
 
 // Game specific constants:
@@ -2501,6 +2503,12 @@ void OnPresent(
     bool display_mode_needs_gamma_correction = cb_luma_frame_settings.DisplayMode == 0; // SDR on SDR Display on scRGB HDR Swapchain needs Gamma 2.2/sRGB mismatch correction
 #if DEVELOPMENT
     bool needs_debug_draw_texture = device_data.debug_draw_texture.get() != nullptr;
+    // Disable linearization if we are not running on scRGB HDR (more handling is required, this is a quick workaround, we'd need to wait until the changes applied anyway)
+    if (LDR_textures_upgrade_format != RE::ETEX_Format::eTF_R16G16B16A16F) {
+        shader_defines_need_linearization = false;
+        shader_defines_need_gamma_correction = false;
+        display_mode_needs_gamma_correction = false;
+    }
 #else
     constexpr bool needs_debug_draw_texture = false;
 #endif
@@ -6019,6 +6027,53 @@ void OnRegisterOverlay(reshade::api::effect_runtime* runtime) {
                 ImGui::Text("Debug Draw Info: Texture (View) Format: %u", device_data.debug_draw_texture_format);
             }
             ImGui::Checkbox("Debug Draw: Auto Clear Texture", &debug_draw_auto_clear_texture); // Is it persistent or not (in case the target texture stopped being found on newer frames). We could also "freeze" it and stop updating it, but we don't need that for now.
+        }
+
+        ImGui::NewLine();
+        //TODOFT: these aren't really working yet... figure out how to make them work or remove it
+        const char* ldr_formats[4] = {
+            "R8G8B8A8",
+            "R10G10B10A2",
+            "R11G11B10F",
+            "R16G16B16A16F",
+        };
+        const char* hdr_formats[2] = {
+            "R11G11B10F",
+            "R16G16B16A16F",
+        };
+        int LDR_textures_upgrade_format_int = 3;
+        if (LDR_textures_upgrade_format == RE::ETEX_Format::eTF_R8G8B8A8) {
+            LDR_textures_upgrade_format_int = 0;
+        }
+        else if (LDR_textures_upgrade_format == RE::ETEX_Format::eTF_R10G10B10A2) {
+            LDR_textures_upgrade_format_int = 1;
+        }
+        else if (LDR_textures_upgrade_format == RE::ETEX_Format::eTF_R11G11B10F) {
+            LDR_textures_upgrade_format_int = 2;
+        }
+        bool textures_upgrade_format_changed = false;
+        if (ImGui::SliderInt("LDR Post Process Texture Upgrades Format", &LDR_textures_upgrade_format_int, 0, 3, ldr_formats[(uint32_t)LDR_textures_upgrade_format_int], ImGuiSliderFlags_NoInput)) {
+            if (LDR_textures_upgrade_format_int == 0) {
+                LDR_textures_upgrade_format = RE::ETEX_Format::eTF_R8G8B8A8;
+            }
+            else if (LDR_textures_upgrade_format_int == 1) {
+                LDR_textures_upgrade_format = RE::ETEX_Format::eTF_R10G10B10A2;
+            }
+            else if (LDR_textures_upgrade_format_int == 2) {
+                LDR_textures_upgrade_format = RE::ETEX_Format::eTF_R11G11B10F;
+            }
+            else {
+                LDR_textures_upgrade_format = RE::ETEX_Format::eTF_R16G16B16A16F;
+            }
+            textures_upgrade_format_changed = true;
+        }
+        int HDR_textures_upgrade_format_int = (HDR_textures_upgrade_format == RE::ETEX_Format::eTF_R11G11B10F) ? 0 : 1;
+        if (ImGui::SliderInt("HDR Post Process Texture Upgrades Format", &HDR_textures_upgrade_format_int, 0, 1, hdr_formats[(uint32_t)HDR_textures_upgrade_format_int], ImGuiSliderFlags_NoInput)) {
+            HDR_textures_upgrade_format = HDR_textures_upgrade_format_int == 0 ? RE::ETEX_Format::eTF_R11G11B10F : RE::ETEX_Format::eTF_R16G16B16A16F;
+            textures_upgrade_format_changed = true;
+        }
+        if (textures_upgrade_format_changed) {
+            NativePlugin::SetTexturesFormat(LDR_textures_upgrade_format, HDR_textures_upgrade_format);
         }
 
         ImGui::NewLine();

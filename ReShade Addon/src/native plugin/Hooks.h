@@ -40,15 +40,18 @@ namespace DKUtil
 
 namespace Hooks
 {
-	// Note: if we wanted, we could replace this format and re-live patch all the functions. After the user changes the game resolution once, all textures would be re-generated with the new format.
-	// For example, we could opt in for HDR10 textures (R10G10B10A2UNORM) (which also implies changing the swapchain color space) (the alpha channel might be necessary in some textures though), or classic SDR R8G8B8A8UNORM.
-	constexpr RE::ETEX_Format format = RE::ETEX_Format::eTF_R16G16B16A16F; // Generic upgrade format
-	constexpr RE::ETEX_Format format16f = RE::ETEX_Format::eTF_R16G16B16A16F; // Specific FP16 format
+	constexpr RE::ETEX_Format defaultLDRPostProcessFormat = RE::ETEX_Format::eTF_R16G16B16A16F;
+	constexpr RE::ETEX_Format defaultHDRPostProcessFormat = RE::ETEX_Format::eTF_R16G16B16A16F;
 
 	class Patches
 	{
 	public:
+		// Global patch
 		static void Patch();
+
+		// Call this to change the texture formats "live", this will be reflected in the game once changing resolution or resetting the graphics settings to default (which creates a new DirectX device).
+		// Textures without alpha have might not work (untested).
+		static void SetTexturesFormats(RE::ETEX_Format _LDRPostProcessFormat = defaultLDRPostProcessFormat, RE::ETEX_Format _HDRPostProcessFormat = defaultHDRPostProcessFormat);
 
 		static void SetHaltonSequencePhases(unsigned int renderResY, unsigned int outputResY, unsigned int basePhases = 8);
 		static void SetHaltonSequencePhases(unsigned int phases = 8);

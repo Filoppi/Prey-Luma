@@ -62,6 +62,11 @@ namespace NativePlugin
     {
         Hooks::Patches::SetHaltonSequencePhases(phases);
     }
+
+    void SetTexturesFormat(RE::ETEX_Format LDRPostProcessFormat, RE::ETEX_Format HDRPostProcessFormat)
+    {
+        Hooks::Patches::SetTexturesFormats(LDRPostProcessFormat, HDRPostProcessFormat);
+    }
 }
 
 #include "includes/SharedEnd.h"

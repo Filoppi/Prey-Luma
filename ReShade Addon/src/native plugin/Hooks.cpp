@@ -9,30 +9,36 @@
 
 namespace Hooks
 {
-	void Patches::Patch()
+	RE::ETEX_Format LDRPostProcessFormat = defaultLDRPostProcessFormat;
+	RE::ETEX_Format HDRPostProcessFormat = defaultHDRPostProcessFormat;
+
+	void Patches::SetTexturesFormats(RE::ETEX_Format _LDRPostProcessFormat, RE::ETEX_Format _HDRPostProcessFormat)
 	{
+		LDRPostProcessFormat = _LDRPostProcessFormat;
+		HDRPostProcessFormat = _HDRPostProcessFormat;
+
 		// Patch internal CryEngine RGBA8 to RGBA16F (or whatever format)
 		{
 			// SPostEffectsUtils::Create
 			const auto address = Offsets::GetAddress(Offsets::SPostEffectsUtils_Create);
 
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_PrevFrameScaled_1), format);   // $PrevFrameScaled (recreate)
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_PrevFrameScaled_2), format);   // $PrevFrameScaled (initial)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_PrevFrameScaled_1), LDRPostProcessFormat);   // $PrevFrameScaled (recreate)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_PrevFrameScaled_2), LDRPostProcessFormat);   // $PrevFrameScaled (initial)
 
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaled_d2_1), format);   // $BackBufferScaled_d2 (recreate)
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaled_d2_2), format);   // $BackBufferScaled_d2 (initial)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaled_d2_1), LDRPostProcessFormat);   // $BackBufferScaled_d2 (recreate)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaled_d2_2), LDRPostProcessFormat);   // $BackBufferScaled_d2 (initial)
 
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaledTemp_d2_1), format);   // $BackBufferScaledTemp_d2 (recreate)
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaledTemp_d2_2), format);   // $BackBufferScaledTemp_d2 (initial)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaledTemp_d2_1), LDRPostProcessFormat);   // $BackBufferScaledTemp_d2 (recreate)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaledTemp_d2_2), LDRPostProcessFormat);   // $BackBufferScaledTemp_d2 (initial)
 
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaled_d4_1), format);   // $BackBufferScaled_d4 (recreate)
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaled_d4_2), format);   // $BackBufferScaled_d4 (initial)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaled_d4_1), LDRPostProcessFormat);   // $BackBufferScaled_d4 (recreate)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaled_d4_2), LDRPostProcessFormat);   // $BackBufferScaled_d4 (initial)
 
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaledTemp_d4_1), format);   // $BackBufferScaledTemp_d4 (recreate)
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaledTemp_d4_2), format);   // $BackBufferScaledTemp_d4 (initial)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaledTemp_d4_1), LDRPostProcessFormat);   // $BackBufferScaledTemp_d4 (recreate)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaledTemp_d4_2), LDRPostProcessFormat);   // $BackBufferScaledTemp_d4 (initial)
 
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaled_d8_1), format);   // $BackBufferScaled_d8 (recreate)
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaled_d8_2), format);   // $BackBufferScaled_d8 (initial)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaled_d8_1), LDRPostProcessFormat);   // $BackBufferScaled_d8 (recreate)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaled_d8_2), LDRPostProcessFormat);   // $BackBufferScaled_d8 (initial)
 		}
 
 		// Patch internal CryEngine RGBA8 to RGBA16F (or whatever format)
@@ -50,8 +56,8 @@ namespace Hooks
 			// CColorGradingControllerD3D::InitResources
 			const auto address = Offsets::GetAddress(Offsets::CColorGradingControllerD3D_InitResources);
 
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CColorGradingControllerD3D_InitResources_ColorGradingMergeLayer0), format16f);  // ColorGradingMergeLayer0
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CColorGradingControllerD3D_InitResources_ColorGradingMergeLayer1), format16f);  // ColorGradingMergeLayer1
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CColorGradingControllerD3D_InitResources_ColorGradingMergeLayer0), RE::ETEX_Format::eTF_R16G16B16A16F);  // ColorGradingMergeLayer0
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CColorGradingControllerD3D_InitResources_ColorGradingMergeLayer1), RE::ETEX_Format::eTF_R16G16B16A16F);  // ColorGradingMergeLayer1
 		}
 
 #if UPGRADE_INTERMEDIARY_TEXTURES //TODOFT: do we even need to upgrade these from R11G11B10F?
@@ -61,15 +67,40 @@ namespace Hooks
 			// CTexture::GenerateHDRMaps
 			const auto address = Offsets::GetAddress(Offsets::CTexture_GenerateHDRMaps);
 
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_BitsPerPixel), format16f);  // used to calculate bits per pixel
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_HDRTargetPrev), format16f);  // $HDRTargetPrev: used for screen space reflections (SSR), Water Volumes (? possibly not in Prey), SVO (? probably not in Prey), Motion Blur (if DoF is disabled?)
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_HDRTempBloom0), format16f);  // $HDRTempBloom0: Bloom intermediary texture
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_HDRTempBloom1), format16f);  // $HDRTempBloom1: Bloom intermediary texture
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_HDRFinalBloom), format16f);  // $HDRFinalBloom: Bloom final target
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_SceneTargetR11G11B10F_0), format16f);  // $SceneTargetR11G11B10F_0: used by Lens Optics, Motion Blur (?), and DoF (?)
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_SceneTargetR11G11B10F_1), format16f);  // $SceneTargetR11G11B10F_1: used by Screen Space SubSurfaceScattering (SSSSS), Water Volume Caustics (?), ...
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_BitsPerPixel), HDRPostProcessFormat);  // used to calculate bits per pixel
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_HDRTargetPrev), HDRPostProcessFormat);  // $HDRTargetPrev: used for screen space reflections (SSR), Water Volumes (? possibly not in Prey), SVO (? probably not in Prey), Motion Blur (if DoF is disabled?)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_HDRTempBloom0), HDRPostProcessFormat);  // $HDRTempBloom0: Bloom intermediary texture
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_HDRTempBloom1), HDRPostProcessFormat);  // $HDRTempBloom1: Bloom intermediary texture
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_HDRFinalBloom), HDRPostProcessFormat);  // $HDRFinalBloom: Bloom final target
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_SceneTargetR11G11B10F_0), HDRPostProcessFormat);  // $SceneTargetR11G11B10F_0: used by Lens Optics, Motion Blur (?), and DoF (?)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_SceneTargetR11G11B10F_1), HDRPostProcessFormat);  // $SceneTargetR11G11B10F_1: used by Screen Space SubSurfaceScattering (SSSSS), Water Volume Caustics (?), ...
 		}
 #endif
+
+#if !ADD_NEW_RENDER_TARGETS && 0 // Force upgrade all the texture we'd replace later too (this leads to issues, like some objects having purple reflections etc) (only compatible with the Steam base game)
+		{
+			// CDeferredShading::CreateDeferredMaps
+			const auto address = Offsets::baseAddress + 0xF08200;
+
+			dku::Hook::WriteImm(address + 0xD0, HDRPostProcessFormat);   // SceneNormalsMap
+			dku::Hook::WriteImm(address + 0x1DC, HDRPostProcessFormat);  // SceneDiffuse
+			dku::Hook::WriteImm(address + 0x229, HDRPostProcessFormat);  // SceneSpecular
+		}
+
+		{
+			// CTexture::LoadDefaultSystemTextures
+			const auto address = Offsets::baseAddress + 0x100DA30;
+
+			dku::Hook::WriteImm(address + 0x1B61, HDRPostProcessFormat);  // SceneNormalsMap
+			dku::Hook::WriteImm(address + 0x1BDC, HDRPostProcessFormat);  // SceneDiffuse
+			dku::Hook::WriteImm(address + 0x1C0F, HDRPostProcessFormat);  // SceneSpecular
+		}
+#endif
+	}
+
+	void Patches::Patch()
+	{
+		SetTexturesFormats();
 
 		// Patch out the branch that clamps the "cl_hfov" cvar (horizontal FOV) to 120.f
 		// Note: since exposing "cl_fov" (vertical FOV) to the game's settings, this might not be necessary anymore as we never pass through the horizontal FOV cvar, but in case the game ever changed it on the spot, then this will remove the clamps again.
@@ -81,26 +112,6 @@ namespace Hooks
 
 			dku::Hook::WriteData(address + Offsets::Get(Offsets::OnHFOVChanged_Offset), &nop8, sizeof(nop8));  // minss -> nop
 		}
-
-#if !ADD_NEW_RENDER_TARGETS && 0 // Force upgrade all the texture we'd replace later too (this leads to issues, like some objects having purple reflections etc) (only compatible with the Steam base game)
-		{
-			// CDeferredShading::CreateDeferredMaps
-			const auto address = Offsets::baseAddress + 0xF08200;
-
-			dku::Hook::WriteImm(address + 0xD0, format16f);   // SceneNormalsMap
-			dku::Hook::WriteImm(address + 0x1DC, format16f);  // SceneDiffuse
-			dku::Hook::WriteImm(address + 0x229, format16f);  // SceneSpecular
-		}
-
-		{
-			// CTexture::LoadDefaultSystemTextures
-			const auto address = Offsets::baseAddress + 0x100DA30;
-
-			dku::Hook::WriteImm(address + 0x1B61, format16f);  // SceneNormalsMap
-			dku::Hook::WriteImm(address + 0x1BDC, format16f);  // SceneDiffuse
-			dku::Hook::WriteImm(address + 0x1C0F, format16f);  // SceneSpecular
-		}
-#endif
 
 #if 0 // Old code branches to change the jitters scale depending on the rendering resolution (we tried *2, /2, etc), none of this was seemengly needed (Steam base game only)
 		if (Offsets::gameVersion == Offsets::GameVersion::PreySteam)
@@ -521,9 +532,15 @@ namespace Hooks
 
 		if (swapChain3) {
 			DXGI_COLOR_SPACE_TYPE colorSpace;
-			if (format == RE::ETEX_Format::eTF_R10G10B10A2) { // This format could be SDR too, but let's assume HDR10
+			if (LDRPostProcessFormat == RE::ETEX_Format::eTF_R8G8B8A8) {
+				colorSpace = DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+			} else if (LDRPostProcessFormat == RE::ETEX_Format::eTF_R10G10B10A2) {
+#if 1
+				colorSpace = DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+#else // We don't intend on supporting HDR10
 				colorSpace = DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;
-			} else {
+#endif
+			} else { // Also applies to R11G11B10F
 				colorSpace = DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;
 			}
 
@@ -550,15 +567,15 @@ namespace Hooks
 		// "bUseAlpha" is seemengly ignored. "bMipMaps" is expected to be false.
 #if SUPPORT_MSAA
 		a_nFlags |= RE::ETextureFlags::FT_USAGE_MSAA;
-#endif
+#endif // SUPPORT_MSAA
 		auto nPostAAFlags = a_nFlags;
 #if FORCE_DLSS_SMAA_UAV && 0
 		nPostAAFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS | RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
-#endif
-		originalFunc("$TonemapTarget", ptexTonemapTarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, a_nFlags);
-		originalFunc("$PostAATarget", ptexPostAATarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, nPostAAFlags);
-		originalFunc("$UpscaleTarget", ptexUpscaleTarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, format, -1, a_nFlags);
-#endif
+#endif // FORCE_DLSS_SMAA_UAV
+		originalFunc("$TonemapTarget", ptexTonemapTarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, LDRPostProcessFormat, -1, a_nFlags);
+		originalFunc("$PostAATarget", ptexPostAATarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, LDRPostProcessFormat, -1, nPostAAFlags);
+		originalFunc("$UpscaleTarget", ptexUpscaleTarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, LDRPostProcessFormat, -1, a_nFlags);
+#endif // ADD_NEW_RENDER_TARGETS
 
 		return bReturn;
 	}
@@ -573,15 +590,15 @@ namespace Hooks
 #if ADD_NEW_RENDER_TARGETS
 #if SUPPORT_MSAA
 		a_nFlags |= RE::ETextureFlags::FT_USAGE_MSAA;
-#endif
+#endif // SUPPORT_MSAA
 		auto nPostAAFlags = a_nFlags;
 #if FORCE_DLSS_SMAA_UAV && 0
 		nPostAAFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS | RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
-#endif
-		ptexTonemapTarget = originalFunc("$TonemapTarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, format, -1, a9);
-		ptexPostAATarget = originalFunc("$PostAATarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, nPostAAFlags, format, -1, a9);
-		ptexUpscaleTarget = originalFunc("$UpscaleTarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, format, -1, a9);
-#endif
+#endif // FORCE_DLSS_SMAA_UAV
+		ptexTonemapTarget = originalFunc("$TonemapTarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, LDRPostProcessFormat, -1, a9);
+		ptexPostAATarget = originalFunc("$PostAATarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, nPostAAFlags, LDRPostProcessFormat, -1, a9);
+		ptexUpscaleTarget = originalFunc("$UpscaleTarget", a_nWidth, a_nHeight, a_nDepth, a_eTT, a_nFlags, LDRPostProcessFormat, -1, a9);
+#endif // ADD_NEW_RENDER_TARGETS
 
 		return pTex;
 	}
@@ -664,8 +681,15 @@ namespace Hooks
 		// set flags (done by the code that we wrote over)
 		a_desc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
 		
-		// set format
-		a_desc.BufferDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		// set LDRPostProcessFormat
+		if (LDRPostProcessFormat == RE::ETEX_Format::eTF_R8G8B8A8) {
+			a_desc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		} else if (LDRPostProcessFormat == RE::ETEX_Format::eTF_R10G10B10A2) {
+			a_desc.BufferDesc.Format = DXGI_FORMAT_R10G10B10A2_UNORM;
+		}
+		else { // Also applies to R11G11B10F
+			a_desc.BufferDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		}
 
 		// set swap effect
 		a_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
@@ -679,6 +703,8 @@ namespace Hooks
 
 	void Uninstall()
 	{
+		LDRPostProcessFormat = defaultLDRPostProcessFormat;
+		HDRPostProcessFormat = defaultHDRPostProcessFormat;
 		ptexPrevBackBuffer = nullptr;
 		Hooks::Unhook();
 	}
