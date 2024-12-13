@@ -460,6 +460,7 @@ struct __declspec(uuid("cfebf6d4-d184-4e1a-ac14-09d088e560ca")) DeviceData {
   // DLSS SR
   com_ptr<ID3D11Texture2D> dlss_output_color;
   com_ptr<ID3D11Texture2D> dlss_exposure;
+  float dlss_exposure_texture_value = 1.f;
   com_ptr<ID3D11Texture2D> dlss_motion_vectors;
   com_ptr<ID3D11RenderTargetView> dlss_motion_vectors_rtv;
 #endif // ENABLE_NGX
@@ -2761,6 +2762,7 @@ void OnPresent(
 //TODOFT5: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project?
 //TODOFT5: add asserts for when we meet the shaders we are looking for
 //TODOFT5: restore objects quality setting in the game's menu?
+//TODOFT5: I should make the game.cfg file write locked in the zip already
 //TODOFT (TODO): make sure DLSS lets scRGB colors pass through...
 //TODOFT: do one last test on all jitters with DLSS to see if motion vectors are right in motion with DRS (it seems to be?). Could it be the MVs buffer isn't high quality enough (the format)?
 //TODOFT: add a new RT to draw UI on top (pre-multiplied alpha everywhere), so we could compose it smartly, possibly in the final linearization pass.
@@ -3072,6 +3074,25 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
                   ASSERT_ONCE(SUCCEEDED(hr));
               }
 
+#if DEVELOPMENT || TEST
+              // Make sure the exposure texture is 1x1 in size because we assumed so in code (we swapped its sampling with a load of texel 0)
+              D3D11_TEXTURE2D_DESC ps_texture_2d_desc = {};
+              com_ptr<ID3D11ShaderResourceView> ps_srv;
+              native_device_context->PSGetShaderResources(1, 1, &ps_srv);
+              if (ps_srv) {
+                  com_ptr<ID3D11Resource> ps_resource;
+                  ps_srv->GetResource(&ps_resource);
+                  if (ps_resource) {
+                      com_ptr<ID3D11Texture2D> ps_texture_2d;
+                      ps_resource->QueryInterface(&ps_texture_2d);
+                      if (ps_texture_2d) {
+                          ps_texture_2d->GetDesc(&ps_texture_2d_desc);
+                      }
+                  }
+              }
+              ASSERT_ONCE(ps_texture_2d_desc.Width == 1 && ps_texture_2d_desc.Height == 1);
+#endif
+
               // Cache original state
               com_ptr<ID3D11RenderTargetView> rtv;
               native_device_context->OMGetRenderTargets(1, &rtv, nullptr);
@@ -3329,6 +3350,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
           if (original_shader_hashes.Contains(shader_hashes_PostAA)) {
                   ASSERT_ONCE(device_data.prey_taa_detected); // Why did we get here without TAA enabled?
                   com_ptr<ID3D11ShaderResourceView> ps_shader_resources[17];
+                  static_assert(sizeof(com_ptr<ID3D11ShaderResourceView>) == sizeof(ID3D11ShaderResourceView*));
                   // 0 current color source
                   // 1 previous color source (post TAA)
                   // 2 depth (0-1 being camera origin - far)
@@ -3435,15 +3457,14 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
 
                           // Generate "fake" exposure texture
                           bool exposure_changed = false;
-                          float dlss_exposure_val = device_data.dlss_scene_exposure;
+                          float dlss_scene_exposure = device_data.dlss_scene_exposure;
 #if DEVELOPMENT
                           if (dlss_custom_exposure > 0.f) {
-                              dlss_exposure_val = dlss_custom_exposure;
+                              dlss_scene_exposure = dlss_custom_exposure;
                           }
 #endif // DEVELOPMENT
-                          static float previous_dlss_exposure_val = dlss_exposure_val;
-                          exposure_changed = dlss_exposure_val != previous_dlss_exposure_val;
-                          previous_dlss_exposure_val = dlss_exposure_val;
+                          exposure_changed = dlss_scene_exposure != device_data.dlss_exposure_texture_value;
+                          device_data.dlss_exposure_texture_value = dlss_scene_exposure;
                           // TODO: optimize this for the "DLSS_RELATIVE_PRE_EXPOSURE" false case! Avoid re-creating the texture every frame the exposure changes and instead make it dynamic and re-write it from the CPU? Or simply make our exposure calculation shader write to a texture directly
                           // (though in that case it wouldn't have the same delay as the CPU side pre-exposure buffer readback)
                           if (!device_data.dlss_exposure.get() || exposure_changed) {
@@ -3463,7 +3484,7 @@ bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= fa
                               // It's best to force an exposure of 1 given that DLSS runs after the auto exposure is applied (in tonemapping).
                               // Theoretically knowing the average exposure of the frame would still be beneficial to it (somehow) so maybe we could simply let the auto exposure in,
                               D3D11_SUBRESOURCE_DATA exposure_texture_data;
-                              exposure_texture_data.pSysMem = &dlss_exposure_val; // This needs to be "static" data in case the texture initialization was somehow delayed and read the data after the stack destroyed it
+                              exposure_texture_data.pSysMem = &dlss_scene_exposure; // This needs to be "static" data in case the texture initialization was somehow delayed and read the data after the stack destroyed it
                               exposure_texture_data.SysMemPitch = 32;
                               exposure_texture_data.SysMemSlicePitch = 32;
 

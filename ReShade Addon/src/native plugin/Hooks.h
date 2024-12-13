@@ -28,7 +28,7 @@ namespace DKUtil
 // Highly specular screen space reflections might also exhibit banding if this is not true (to be researched more accurately).
 #define UPGRADE_INTERMEDIARY_TEXTURES 1
 
-// Attempted code to keep the native support for MSAA. CryEngine had it but it's unclear how stable it was in Prey (it's not officially exposed to the user, it can just be forced on through configs)
+// Attempted code to keep the native support for MSAA (still doesn't work). CryEngine had it but it's unclear how stable it was in Prey (it's not officially exposed to the user, it can just be forced on through configs)
 #define SUPPORT_MSAA 0
 
 // DLSS usually replaces the TAA pass ("PostAA") and writes to its render target, so that's what we are aiming to allow as UAV (which benefits performance by avoid two texture copies),
@@ -93,7 +93,6 @@ namespace Hooks
 		static inline std::unique_ptr<DKUtil::Hook::ASMPatchHandle> asmPatchHandle_upscaleTarget1 = nullptr;
 		static inline std::unique_ptr<DKUtil::Hook::ASMPatchHandle> asmPatchHandle_upscaleTarget2 = nullptr;
 		static inline std::unique_ptr<DKUtil::Hook::ASMPatchHandle> asmPatchHandle_upscaleTarget3 = nullptr;
-
 	};
 
 	void Install();

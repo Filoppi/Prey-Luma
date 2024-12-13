@@ -35,14 +35,17 @@ namespace Hooks
 			dku::Hook::WriteImm(address + Offsets::Get(Offsets::SPostEffectsUtils_Create_BackBufferScaled_d8_2), format);   // $BackBufferScaled_d8 (initial)
 		}
 
+		// Patch internal CryEngine RGBA8 to RGBA16F (or whatever format)
 		{
 			// CTexture::GenerateSceneMap
 			const auto address = Offsets::GetAddress(Offsets::CTexture_GenerateSceneMap);
 
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateSceneMap_BackBuffer_1), format);   // $BackBuffer
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateSceneMap_BackBuffer_2), format);   // $BackBuffer
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateSceneMap_BackBuffer_1), LDRPostProcessFormat);   // $BackBuffer
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateSceneMap_BackBuffer_2), LDRPostProcessFormat);   // $BackBuffer
 		}
 
+		// LUT (Color Grading Chart). This can either be RGBA8 (as it was) or RGBA16F. Theoretically it could be R10G10B10A2 as we don't use the alpha channel.
+		// There's no reason to not use the highest quality for this as it's such a small texture.
 		{
 			// CColorGradingControllerD3D::InitResources
 			const auto address = Offsets::GetAddress(Offsets::CColorGradingControllerD3D_InitResources);
@@ -52,6 +55,8 @@ namespace Hooks
 		}
 
 #if UPGRADE_INTERMEDIARY_TEXTURES //TODOFT: do we even need to upgrade these from R11G11B10F?
+		// These were R11G11B10F (or possibly already R16G16B16A16F?)
+		// Most of the linear HDR render textures were already R16G16B16A16F so need no upgrade
 		{
 			// CTexture::GenerateHDRMaps
 			const auto address = Offsets::GetAddress(Offsets::CTexture_GenerateHDRMaps);
@@ -657,7 +662,7 @@ namespace Hooks
 	void Hooks::PatchSwapchainDesc(DXGI_SWAP_CHAIN_DESC& a_desc)
 	{
 		// set flags (done by the code that we wrote over)
-		a_desc.Flags = 2;
+		a_desc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
 		
 		// set format
 		a_desc.BufferDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
@@ -674,6 +679,7 @@ namespace Hooks
 
 	void Uninstall()
 	{
+		ptexPrevBackBuffer = nullptr;
 		Hooks::Unhook();
 	}
 }

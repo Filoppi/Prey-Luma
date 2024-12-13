@@ -746,7 +746,7 @@
                 <ArkOptionSlider Min="0.0" Max="1.0" Decimals="2" Unit="0.05" Normalize="true" />
               </Widget>
             </ArkOptionAttribute>
-            <!-- Not compatible with LUMA (probably because it upgrades textures to formats that don't support MSAA (in case it used that), or simply their code was hardcoded for certain texture formats
+            <!-- Not compatible with LUMA (probably because it upgrades textures to formats that don't support MSAA (in case it used that), or simply their code was hardcoded for certain texture formats (or because we missed replacing some MSAA render targets with HDR versions) 
             <ArkOptionAttribute Action="r_supersampling" Label="Supersampling (Experimental)" SetOnChange="true" Platform="PC">
               <Widget>
                 <ArkOptionList>
@@ -800,16 +800,16 @@
               <ArkOptionSlider Min="30" Max="240" Decimals="0" Unit="1.0" Normalize="false"/>
              </Widget>
             </ArkOptionAttribute>
-            <ArkOptionAttribute Action="osm_targetPercentLowerTolerance" Label="Adaptive Resolution FPS Lower Tolerance" SetOnChange="true" Default="10" Platform="PC">
+            <ArkOptionAttribute Action="osm_targetPercentLowerTolerance" Label="Adaptive Resolution FPS Lower Tolerance %" SetOnChange="true" Default="10" Platform="PC">
              <Widget>
               <!--This can go as low as 0 but it makes no sense to set it so really, it makes it rubber band, Prey's default is 3 but that's too low-->
-              <ArkOptionSlider Min="0" Max="100" Decimals="0" Unit="1.0" Normalize="false"/>
+              <ArkOptionSlider Min="0" Max="50" Decimals="0" Unit="1.0" Normalize="false"/>
              </Widget>
             </ArkOptionAttribute>
-            <ArkOptionAttribute Action="osm_targetPercentUpperTolerance" Label="Adaptive Resolution FPS Upper Tolerance" SetOnChange="true" Default="10" Platform="PC">
+            <ArkOptionAttribute Action="osm_targetPercentUpperTolerance" Label="Adaptive Resolution FPS Upper Tolerance %" SetOnChange="true" Default="10" Platform="PC">
              <Widget>
               <!--This can go as low as 0 but it makes no sense to set it so really, it makes it rubber band, Prey's default is 4 but that's too low-->
-              <ArkOptionSlider Min="0" Max="100" Decimals="0" Unit="1.0" Normalize="false"/>
+              <ArkOptionSlider Min="0" Max="50" Decimals="0" Unit="1.0" Normalize="false"/>
              </Widget>
             </ArkOptionAttribute>
             <ArkOptionAttribute Action="osm_fbMinScale" Label="Adaptive Resolution Minimum Scale" SetOnChange="true" Default="0.5" Platform="PC">

@@ -294,7 +294,7 @@ void HDRFinalScenePS(float4 WPos, float4 baseTC, out float4 outColor)
 #endif // ENABLE_VIGNETTE
 	float4 cBloom = bloomTex.Sample(ssHdrLinearClamp, ScreenTC); // We can't use "Load()" here as this texture has a different resolution
 #if 1 // Exposure is always 1px
-	float2 vAdaptedLum = adaptedLumTex.Load(0);
+	float2 vAdaptedLum = adaptedLumTex.Load(0); //TODOFT: make sure that this (and other usages in PostAA and Luma custom shaders) are correct, is this always 1px? Or could it be that when there's a scene mask, the exposure is different by pixel?
 #else
 	float2 vAdaptedLum = adaptedLumTex.Sample(ssHdrLinearClamp, baseTC.xy);
 #endif
