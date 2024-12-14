@@ -16,9 +16,9 @@ std::array<unsigned int, 2> FindClosestIntegerResolutionForAspectRatio(double wi
 	unsigned int intHeight = flooredHeight;
 
 	double minAspectRatioDistance = (std::numeric_limits<double>::max)(); // Wrap it around () because "max" might already be defined as macro
-	for (const unsigned int newWidth : std::array<unsigned int, 2>{ceiledWidth, flooredWidth})
+	for (const unsigned int newWidth : std::array<unsigned int, 2>{ ceiledWidth, flooredWidth })
 	{
-		for (const unsigned int newHeight : std::array<unsigned int, 2>{ceiledHeight, flooredHeight})
+		for (const unsigned int newHeight : std::array<unsigned int, 2>{ ceiledHeight, flooredHeight })
 		{
 			const double newAspectRatio = static_cast<double>(newWidth) / newHeight;
 			const double aspectRatioDistance = std::abs((newAspectRatio / aspectRatio) - 1.f);
