@@ -39,7 +39,7 @@ void main(
   // This also means that when the sprint or do other things that increase the FOV, the sun shafts don't scale in size in screen space,
   // which isn't really a great thing, but then again they are so rate in Prey that it doesn't particularly matter.
   // Note that this adjustment results in a perfect match, it doesn't need to work in FOV tangent space.
-  //TODOFT: if we added perspective correction and increased the baseline FOV, we should add a FOV scale modifier here, to avoid the sun shafts looking huge.
+  //TODOFT: if we added perspective correction and increased the baseline FOV, we should add a FOV scale modifier here, to avoid the sun shafts looking huge (or small?).
   float screenAspectRatio = CV_ScreenSize.w / CV_ScreenSize.z;
   float aspectRatioCorrection = max(screenAspectRatio / NativeAspectRatio, 1.0);
 

@@ -101,7 +101,7 @@ float4 GTAO(float4 WPos, float4 inBaseTC, out float edges)
 
 	//TODO LUMA: do this in shader cbuffer or vertex shader? As optimization? It's mostly fine here
 	//TODO LUMA: for full precision, add access to the native device depth buffer, and downscale it properly because using the half res version of the depth buffer (_RT_SAMPLE0) produces terrible results with a lot of AO banding due to low precision
-	//TODOFT5: investigate whether the AO color bleeding implementation is good for GTAO (see "AOColorBleedRT"/"r_ssdoColorBleeding"), it seems like it simply prevents AO from applying on bright diffuse color objects but that makes no sense given that then there would be no AO in darker areas on white objects?
+	//TODOFT4: investigate whether the AO color bleeding implementation is good for GTAO (see "AOColorBleedRT"/"r_ssdoColorBleeding"), it seems like it simply prevents AO from applying on bright diffuse color objects but that makes no sense given that then there would be no AO in darker areas on white objects?
 
 #if 1 // The depth in this pass was already linearized (with far matching a value of 1 and the camera origin matching a value of 0), so all we need to do is multiply by the far distance
 	consts.DepthFar = CV_NearFarClipDist.y;

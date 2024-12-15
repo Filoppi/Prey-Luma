@@ -60,9 +60,12 @@ namespace Hooks
 			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CColorGradingControllerD3D_InitResources_ColorGradingMergeLayer1), RE::ETEX_Format::eTF_R16G16B16A16F);  // ColorGradingMergeLayer1
 		}
 
-#if UPGRADE_INTERMEDIARY_TEXTURES //TODOFT: do we even need to upgrade these from R11G11B10F?
 		// These were R11G11B10F (or possibly already R16G16B16A16F?)
-		// Most of the linear HDR render textures were already R16G16B16A16F so need no upgrade
+		// Upgrading these from R11G11B10F to R16G16B16A16F is "optional" and returns little additional quality for the performance cost.
+		// Bloom might be the only exception, as it's got a large influence on every pixel of the final scene, so it could bring its quality down.
+		// Highly specular screen space reflections might also exhibit banding if this is not true (to be researched more accurately).
+		// Most of the other linear HDR render textures were already R16G16B16A16F so need no upgrade
+		//TODOFT: do we even need to upgrade these from R11G11B10F?
 		{
 			// CTexture::GenerateHDRMaps
 			const auto address = Offsets::GetAddress(Offsets::CTexture_GenerateHDRMaps);
@@ -75,7 +78,6 @@ namespace Hooks
 			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_SceneTargetR11G11B10F_0), HDRPostProcessFormat);  // $SceneTargetR11G11B10F_0: used by Lens Optics, Motion Blur (?), and DoF (?)
 			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_SceneTargetR11G11B10F_1), HDRPostProcessFormat);  // $SceneTargetR11G11B10F_1: used by Screen Space SubSurfaceScattering (SSSSS), Water Volume Caustics (?), ...
 		}
-#endif
 
 #if !ADD_NEW_RENDER_TARGETS && 0 // Force upgrade all the texture we'd replace later too (this leads to issues, like some objects having purple reflections etc) (only compatible with the Steam base game)
 		{

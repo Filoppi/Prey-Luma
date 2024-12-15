@@ -641,20 +641,20 @@
             <!-- This can't go beyond 120 (there's a clamp when its set in the engine, though Luma removes it), still the Hor FOV is dependant on the ultrawide aspect ratio and makes no sense to have
             <ArkOptionAttribute Action="cl_hfov" Label="@ui_HorizontalFieldOfView" SetOnChange="true" Default="85.5656" Platform="PC">
               <Widget>
-                <ArkOptionSlider Min="60" Max="160" Decimals="2" Unit="0.125" Normalize="false" />
+                <ArkOptionSlider Min="60" Max="160" Decimals="2" Unit="0.25" Normalize="false" />
               </Widget>
             </ArkOptionAttribute>
             -->
             <!-- This can't go beyond 120 (there's a clamp when its set in the engine) -->
             <ArkOptionAttribute Action="cl_fov" Label="Vertical FOV" SetOnChange="true" Default="55" Platform="PC">
               <Widget>
-                <ArkOptionSlider Min="40" Max="120" Decimals="2" Unit="0.125" Normalize="false" />
+                <ArkOptionSlider Min="40" Max="120" Decimals="2" Unit="0.25" Normalize="false" />
               </Widget>
             </ArkOptionAttribute>
             <!-- This can go beyond 120 but then it wouldn't match the scene vertical FOV. We wouldn't expose it if it wasn't for lens distortion effects happening after rendering (which require the same increase in scene and weapon FOVs), as nobody should change it otherwise -->
             <ArkOptionAttribute Action="r_drawnearfov" Label="Weapon Vertical FOV" SetOnChange="true" Default="55" Platform="PC">
               <Widget>
-                <ArkOptionSlider Min="40" Max="120" Decimals="2" Unit="0.125" Normalize="false" />
+                <ArkOptionSlider Min="40" Max="120" Decimals="2" Unit="0.25" Normalize="false" />
               </Widget>
             </ArkOptionAttribute>
             <ArkOptionAttribute Action="r_motionblur" Label="Motion Blur" Default="2" SetOnChange="true">

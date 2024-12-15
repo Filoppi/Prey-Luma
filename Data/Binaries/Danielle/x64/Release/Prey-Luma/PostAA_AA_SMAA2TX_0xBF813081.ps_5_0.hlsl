@@ -20,6 +20,7 @@ void main(
   out float4 outColor : SV_Target0)
 {
 	// Output motion vectors for DLSS (simplified version of the same code below) because DLSS is replacing the pass that would have rendered this pixel shader (and also replacing its render target).
+	// Note that these might not be perfect as they are generated in "post" by depth and not based on actual vertex movement, and the camera matrices might have some slight inaccuracy.
 	//TODO LUMA: fully replace the pass with a dedicated DLSS Motion Vectors generation shader
 	if (LumaSettings.DLSS)
 	{

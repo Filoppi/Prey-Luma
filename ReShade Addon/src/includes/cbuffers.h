@@ -97,7 +97,7 @@ namespace
       float     CV_PADDING0;
       float     CV_PADDING1;
    };
-   constexpr uint32_t CBPerViewGlobal_buffer_size = 1024; // This is how much CryEngine allocates for buffers that hold this
+   constexpr uint32_t CBPerViewGlobal_buffer_size = 1024; // This is how much CryEngine allocates for buffers that hold this (it doesn't use "sizeof(CBPerViewGlobal)")
    static_assert(CBPerViewGlobal_buffer_size > sizeof(CBPerViewGlobal));
 
    struct LumaFrameDevSettings

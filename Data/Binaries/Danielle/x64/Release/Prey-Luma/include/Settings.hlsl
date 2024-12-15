@@ -168,8 +168,12 @@
 #endif
 
 //TODOFT2: try to boost the chrominance on highlights? Or desaturate, the opposite.
+//TODOFT3: lower mid tones to boost highlights?
+//TODOFT: add viewport print debug
+//TODOFT4: try lens distortion!
 //TODOFT0: disable all dev/debug settings below, even for dev mode
 //TODOFT: add test setting to disable all exposure, and see if the game looks more "HDR" (though tonemapping would break...?)
+//TODOFT0: fix formatting/spacing of all shaders
 
 /////////////////////////////////////////
 // Rendering features toggles (development)
@@ -207,6 +211,8 @@
 #define ENABLE_SHARPENING (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
 #endif
 #define ENABLE_CHROMATIC_ABERRATION (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
+// Lens distortion and such
+#define ENABLE_SCREEN_DISTORTION (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
 #if !defined(ENABLE_VIGNETTE) || !ENABLE_POST_PROCESS
 #undef ENABLE_VIGNETTE
 #define ENABLE_VIGNETTE (ENABLE_POST_PROCESS && 1)

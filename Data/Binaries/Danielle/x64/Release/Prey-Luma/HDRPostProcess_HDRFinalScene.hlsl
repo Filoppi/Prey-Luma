@@ -218,10 +218,11 @@ float4 FilmTonemapping( out float3 cSDRColor, in float4 cScene, in float4 cBloom
   cColor.rgb = lerp(cSDRColor, cColor.rgb, saturate(GetLuminance(cSDRColor) / MidGray));
 #elif 1 // By channel, channel based (most saturated and most similar to SDR)
   float3 cNegativeColor = min(cColor.rgb, 0);
-//TODOFT2: optimize pow (remove) and tweak values (lower values make it more similar to untonemapped, maybe Hable crushed blacks too much, especially with gamma correction enabled). Try other branches now with by channel DICE
+//TODOFT4: optimize pow (remove) and tweak values (lower values make it more similar to untonemapped, maybe Hable crushed blacks too much, especially with gamma correction enabled). Try other branches now with by channel DICE
 //Also, use DICE beyond "inLinearScale" Hable start point?
 //Increase these values static const values???
 //Review cNegativeColor (it creates invalid luminances)
+//TODOFT4: move SDR tonemapping to "DELAY_HDR_TONEMAP" too? DLSS would work a bit better and we'd have more control over everything else
 #if 1
   static const float SDRRestorationScale = 2.0 / 3.0; //MidGray * SDRRestorationScale; // [0, 1] the lower, the more raised near black colors are. "Neutral" at "MidGray".
   static const float SDRRestorationPower = 4.0 / 3.0; // (0, inf) the lower, the more raised near black colors are. "Neutral" at 1.
@@ -462,7 +463,7 @@ void HDRFinalScenePS(float4 WPos, float4 baseTC, out float4 outColor)
   ApplyDithering(outColor.rgb, baseTC.xy, gammaSpace, paperWhite);
 #endif // ENABLE_DITHERING && !DELAY_DITHERING
 
-#if 0 //TODOFT4: test DLSS scRGB passthrough (duplicate)
+#if 0 //TODOFT4: test DLSS scRGB passthrough (~duplicate)
   outColor.rgb = lerp(GetLuminance(outColor.rgb), outColor.rgb, 5);
   //outColor.b -= GetLuminance(outColor.rgb) / 2.0;
   FixColorGradingLUTNegativeLuminance(outColor.xyz);

@@ -671,7 +671,7 @@ namespace
        {"SSAO_TYPE", '1', false, false, "Screen Space Ambient Occlusion\n0 - Vanilla\n1 - Luma GTAO\nIn case GTAO is too performance intensive, lower the \"SSAO_QUALITY\" or go into the official game graphics settings and set \"Screen Space Directional Occlusion\" to half resolution\nDLSS is suggested to help with denoising AO"},
        {"SSAO_QUALITY", '1', false, false, "0 - Vanilla\n1 - High\n2 - Extreme (slow)"},
    #if DEVELOPMENT || TEST // For now we don't want to give users this customization, the default value should be good for most users and most cases
-       {"SSAO_RADIUS", '1', false, false, "0 - Small, 1 - Vanilla/Standard (suggested)\n2 - Large\nSmaller radiuses can look more stable but don't do as much\nLarger radiuses can look more realistic, but also over darkening and bring out screen space limitations more often (e.g. stuff de-occluding around the edges when turning the camera)\nOnly applies to GTAO"},
+       {"SSAO_RADIUS", '1', false, false, "0 - Small\n1 - Vanilla/Standard (suggested)\n2 - Large\nSmaller radiuses can look more stable but don't do as much\nLarger radiuses can look more realistic, but also over darkening and bring out screen space limitations more often (e.g. stuff de-occluding around the edges when turning the camera)\nOnly applies to GTAO"},
    #endif
        {"ENABLE_SSAO_TEMPORAL", '1', false, false, "Disable if you don't use TAA to avoid seeing noise in Ambient Occlusion (though it won't have the same quality)\nYou can disable it for you use TAA too but it's not suggested"},
        {"BLOOM_QUALITY", '1', false, false, "0 - Vanilla\n1 - High"},
@@ -2446,8 +2446,10 @@ namespace
             case reshade::api::pipeline_subobject_type::pixel_shader:
             {
                break;
+            }
             default:
-            return; // Nothing to do here, we don't want to clone the pipeline
+            {
+               return; // Nothing to do here, we don't want to clone the pipeline
             }
             }
          }
@@ -2983,9 +2985,8 @@ namespace
       }
 
       // Update all variables as this is on the only thing guaranteed to run once per frame:
-      ASSERT_ONCE(!device_data.has_drawn_main_post_processing || device_data.found_per_view_globals); // We failed to find and assign global cbuffer 13 this frame (could it be that the scene is empty if this triggers?)
-      ASSERT_ONCE(device_data.has_drawn_composed_gbuffers == device_data.has_drawn_main_post_processing); // Why is g-buffer composition drawing but post processing isn't?
-      //TODOFT3: replace some instances of "has_drawn_main_post_processing" and "has_drawn_main_post_processing_previous" with "has_drawn_composed_gbuffers" (and its previous state)?
+      ASSERT_ONCE(!device_data.has_drawn_composed_gbuffers || device_data.found_per_view_globals); // We failed to find and assign global cbuffer 13 this frame (could it be that the scene is empty if this triggers?)
+      ASSERT_ONCE(device_data.has_drawn_composed_gbuffers == device_data.has_drawn_main_post_processing); // Why is g-buffer composition drawing but post processing isn't? We don't expect this to ever happen as PP should always be on
       if (device_data.has_drawn_main_post_processing)
       {
          device_data.previous_prey_taa_active[1] = device_data.previous_prey_taa_active[0];
@@ -3127,7 +3128,7 @@ namespace
    //TODOFT5: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project?
    //TODOFT5: add asserts for when we meet the shaders we are looking for
    //TODOFT5: restore objects quality setting in the game's menu?
-   //TODOFT5: I should make the game.cfg file write locked in the zip already
+   //TODOFT5: I should make the game.cfg file write locked in the zip already, or make the mod lock it!?
    //TODOFT (TODO): make sure DLSS lets scRGB colors pass through...
    //TODOFT: add a new RT to draw UI on top (pre-multiplied alpha everywhere), so we could compose it smartly, possibly in the final linearization pass.
 
@@ -3265,25 +3266,6 @@ namespace
             }
          }
       }
-
-      //TODOFT4: it seems like this assert (or something like this) can happen when DRS changes res too quick or is toggled between frames.
-      //Somehow the wrong rend res can persist in our data from a global cbuffer 13 set that wasn't meant for the main scene rendering but some side rendering with a separate res.
-      //Could it be that we get a swapchain resize event too late and thus our output resolution isn't updated quick enough? (not it can't be because the output res is ... unchanged with DRS).
-      //We should probably find a moment where we absolutely stop taking in new cbuffer 13 values, one fixed point in the pipeline (e.g. blur?, AO?, scene composion? ...).
-#if DEVELOPMENT && 0 // We are setting the viewport below now, no need to verify it was already right
-// We exclude a couple of shaders from "shader_hashes_LensOptics" from this check as we know they run at 1/4 resolution
-      if (device_data.has_drawn_dlss_sr && !device_data.has_drawn_upscaling && !original_shader_hashes.Contains(std::stoul("4435D741", nullptr, 16), reshade::api::shader_stage::pixel) && !original_shader_hashes.Contains(std::stoul("C54F3986", nullptr, 16), reshade::api::shader_stage::pixel))
-      {
-         D3D11_VIEWPORT viewports[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
-         UINT viewports_num = 1;
-         native_device_context->RSGetViewports(&viewports_num, nullptr);
-         ASSERT_ONCE(viewports_num == 1); // Possibly innocuous as long as it's > 0
-         native_device_context->RSGetViewports(&viewports_num, &viewports[0]);
-         ASSERT_ONCE(viewports[0].TopLeftX == 0 && viewports[0].TopLeftY == 0
-            && ((std::lrintf(viewports[0].Width) == std::lrintf(device_data.render_resolution.x) && std::lrintf(viewports[0].Height) == std::lrintf(device_data.render_resolution.y))
-               || (std::lrintf(viewports[0].Width) == std::lrintf(device_data.output_resolution.x) && std::lrintf(viewports[0].Height) == std::lrintf(device_data.output_resolution.y))));
-      }
-#endif // DEVELOPMENT
 
       if (!original_shader_hashes.Empty())
       {
@@ -4102,6 +4084,7 @@ namespace
       LumaUIData ui_data;
 
       // No need to lock "s_mutex_reshade" for "cb_luma_frame_settings" here, it's not relevant
+      // We could use "has_drawn_composed_gbuffers" here instead of "has_drawn_main_post_processing", but then again, they should always match (pp should always be run)
       ui_data.background_tonemapping_amount = (cb_luma_frame_settings.DisplayMode == 1 && tonemap_ui_background && device_data.has_drawn_main_post_processing) ? tonemap_ui_background_amount : 0.0;
 
       com_ptr<ID3D11RenderTargetView> render_target_view;
@@ -4516,17 +4499,13 @@ namespace
          || (desc.Filter == D3D11_FILTER_MIN_MAG_MIP_POINT && samplers_upgrade_mode_2 >= 5)
          || (desc.Filter == D3D11_FILTER_COMPARISON_MIN_MAG_MIP_POINT && samplers_upgrade_mode_2 >= 6))
       {
-#if 0 //TODOFT4: research. Forced this on to see how it behaves. Doesn't work, it doesn't really help any further with (e.g.) blurry decal textures
-         desc.Filter == (desc.ComparisonFunc != D3D11_COMPARISON_NEVER) ? D3D11_FILTER_COMPARISON_ANISOTROPIC : D3D11_FILTER_ANISOTROPIC;
-         desc.MaxAnisotropy = D3D11_REQ_MAXANISOTROPY;
-#else
+         //TODOFT4: research. Forced this on to see how it behaves. Doesn't work, it doesn't really help any further with (e.g.) blurry decal textures
          // Note: this doesn't seem to do anything really, it doesn't help with the occasional blurry texture (probably because all samplers that needed anisotropic already had it set)
          if (samplers_upgrade_mode >= 7)
          {
             desc.Filter == (desc.ComparisonFunc != D3D11_COMPARISON_NEVER && samplers_upgrade_mode == 7) ? D3D11_FILTER_COMPARISON_ANISOTROPIC : D3D11_FILTER_ANISOTROPIC;
             desc.MaxAnisotropy = D3D11_REQ_MAXANISOTROPY;
          }
-#endif
          // Note: changing the lod bias of non anisotropic filters makes reflections (cubemap samples?) a lot more specular (shiny) in Prey, so it's best avoided (it can look better is some screenshots, but it's likely not intended).
          // Even if we only fix up textures that didn't have a positive bias, we run into the same problem.
          if (samplers_upgrade_mode == 4 && desc.MipLODBias <= 0.f)
@@ -4738,7 +4717,6 @@ namespace
       float cb_output_resolution_x = std::round(0.5f / global_buffer_data.CV_ScreenSize.z); // Round here already as it would always meant to be integer
       float cb_output_resolution_y = std::round(0.5f / global_buffer_data.CV_ScreenSize.w);
 
-      //TODOFT4: improve these checks here and below, they aren't reliable? They seem fine now! But we are having some problems with wrong resolutions passing through (or right resolutions being blocked?) (fixed?)
       // Shadow maps and other things temporarily change the values in the global cbuffer,
       // like not use inverse depth (which affects the projection matrix, and thus many other matrices?),
       // use different render and output resolutions, etc etc.
@@ -5155,16 +5133,6 @@ namespace
       uint32_t param_index,
       const reshade::api::descriptor_table_update& update)
    {
-
-      // OLD_GLOBAL_BUFFER_INTERCEPT_METHOD
-      if (update.type == reshade::api::descriptor_type::constant_buffer
-         && ((stages & (reshade::api::shader_stage::vertex | reshade::api::shader_stage::pixel | reshade::api::shader_stage::compute)) == 0 // CBuffer 13 is set to vertex and pixel and compute stages
-            || update.binding != 13) // CBuffer 13 is the one we are looking for in Prey
-         )
-      {
-         return;
-      }
-
       auto* device = cmd_list->get_device();
       ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
       ID3D11DeviceContext* native_device_context = (ID3D11DeviceContext*)(cmd_list->get_native());
@@ -5173,9 +5141,6 @@ namespace
       switch (update.type)
       {
       default:
-      case reshade::api::descriptor_type::shader_resource_view:
-      case reshade::api::descriptor_type::buffer_unordered_access_view:
-      case reshade::api::descriptor_type::unordered_access_view:
       break;
       case reshade::api::descriptor_type::sampler:
       {
@@ -5240,26 +5205,11 @@ namespace
 
          if (any_modified)
          {
-#if 1
             cmd_list->push_descriptors(stages, layout, param_index, custom_update);
-#else // Old implementation to live replace samples (probably faster but a lot more annoying to write?
-            // Note: we could call "cmd_list->push_descriptors()" but this is simpler as it doesn't require us to create a pipeline layout
-            if ((stages & reshade::api::shader_stage::vertex) == reshade::api::shader_stage::vertex)
-               native_device_context->VSSetSamplers(update.binding, update.count, sampler_ptrs);
-            if ((stages & reshade::api::shader_stage::hull) == reshade::api::shader_stage::hull)
-               native_device_context->HSSetSamplers(update.binding, update.count, sampler_ptrs);
-            if ((stages & reshade::api::shader_stage::domain) == reshade::api::shader_stage::domain)
-               native_device_context->DSSetSamplers(update.binding, update.count, sampler_ptrs);
-            if ((stages & reshade::api::shader_stage::geometry) == reshade::api::shader_stage::geometry)
-               native_device_context->GSSetSamplers(update.binding, update.count, sampler_ptrs);
-            if ((stages & reshade::api::shader_stage::pixel) == reshade::api::shader_stage::pixel)
-               native_device_context->PSSetSamplers(update.binding, update.count, sampler_ptrs);
-            if ((stages & reshade::api::shader_stage::compute) == reshade::api::shader_stage::compute)
-               native_device_context->CSSetSamplers(update.binding, update.count, sampler_ptrs);
-#endif
          }
          break;
       }
+#if DEVELOPMENT && 0
       case reshade::api::descriptor_type::constant_buffer:
       {
          for (uint32_t i = 0; i < update.count; i++)
@@ -5298,10 +5248,9 @@ namespace
          buffer->GetDesc(&buffer_desc);
          auto& device_data = device->get_private_data<DeviceData>();
 
-         ASSERT_ONCE(buffer_desc.ByteWidth != sizeof(CBPerViewGlobal));
          // There seems to only ever be one buffer type of this size, but it's not guaranteed... //TODOFT: not true, there's more? Check the map data!
          // They seemengly all happen on the same thread.
-         if (buffer_desc.ByteWidth == CBPerViewGlobal_buffer_size)
+         if ((buffer_desc.Usage & D3D11_BIND_CONSTANT_BUFFER) != 0 && buffer_desc.ByteWidth == CBPerViewGlobal_buffer_size)
          {
             device_data.cb_per_view_global_buffer = buffer;
 #if DEVELOPMENT && 0
@@ -5767,7 +5716,6 @@ namespace
                template_shader_name = template_vertex_shader_name;
                break;
             }
-            default:
             case reshade::api::pipeline_subobject_type::pixel_shader:
             {
                template_shader_name = template_pixel_shader_name;
@@ -5776,6 +5724,11 @@ namespace
             case reshade::api::pipeline_subobject_type::compute_shader:
             {
                template_shader_name = template_compute_shader_name;
+               break;
+            }
+            default:
+            {
+               template_shader_name = "xx_"; // Unknown
                break;
             }
             }
@@ -6481,6 +6434,7 @@ namespace
                {
                   if (ImGui::SliderFloat("Scene Paper White", &cb_luma_frame_settings.ScenePaperWhite, srgb_white_level, 500.f, "%.f"))
                   {
+                     cb_luma_frame_settings.ScenePaperWhite = max(cb_luma_frame_settings.ScenePaperWhite, 0.0);
                      reshade::set_config_value(runtime, NAME, "ScenePaperWhite", cb_luma_frame_settings.ScenePaperWhite);
                   }
                   if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
@@ -6598,6 +6552,7 @@ namespace
                ImGui::BeginDisabled(!supports_custom_ui_paper_white_scaling);
                if (ImGui::SliderFloat("UI Paper White", supports_custom_ui_paper_white_scaling ? &cb_luma_frame_settings.UIPaperWhite : &cb_luma_frame_settings.ScenePaperWhite, srgb_white_level, 500.f, "%.f"))
                {
+                  cb_luma_frame_settings.UIPaperWhite = max(cb_luma_frame_settings.UIPaperWhite, 0.0);
                   reshade::set_config_value(runtime, NAME, "UIPaperWhite", cb_luma_frame_settings.UIPaperWhite);
 
                   // This is not safe to do, so let's rely on users manually setting this instead.
@@ -6868,12 +6823,12 @@ namespace
                      debug_draw_options &= ~(uint32_t)DebugDrawTextureOptionsMask::GammaToLinear;
                   }
                }
-               if (device_data.debug_draw_texture || debug_draw_auto_clear_texture)
+               if (device_data.debug_draw_texture)
                {
                   // TODO: print the texture size?
                   if (GetFormatName(device_data.debug_draw_texture_format) != nullptr)
                   {
-                     ImGui::Text("Debug Draw Info: Texture (View) Format: %s", GetFormatName(device_data.debug_draw_texture_format) != nullptr);
+                     ImGui::Text("Debug Draw Info: Texture (View) Format: %s", GetFormatName(device_data.debug_draw_texture_format));
                   }
                   else
                   {

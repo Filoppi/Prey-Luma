@@ -23,11 +23,6 @@ namespace DKUtil
 // (e.g. (made up) after the exposure texture is created, which has a particular desc flag, the backbuffer texture might be created, or the "HDRTarget" texture is created with the UAV flag).
 #define ADD_NEW_RENDER_TARGETS 1
 
-// Upgrading these from R11G11B10F to R16G16B16A16F is "optional" and returns little additional quality for the performance cost.
-// Bloom might be the only exception, as it's got a large influence on every pixel of the final scene, so it could bring its quality down.
-// Highly specular screen space reflections might also exhibit banding if this is not true (to be researched more accurately).
-#define UPGRADE_INTERMEDIARY_TEXTURES 1
-
 // Attempted code to keep the native support for MSAA (still doesn't work). CryEngine had it but it's unclear how stable it was in Prey (it's not officially exposed to the user, it can just be forced on through configs)
 #define SUPPORT_MSAA 0
 

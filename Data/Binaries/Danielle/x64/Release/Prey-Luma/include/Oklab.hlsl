@@ -1,5 +1,3 @@
-//TODOFT: put in externals folder? DICE as well? And rename DICE? And darktable ucs? Add license/credits
-
 //RGB linear BT.709/sRGB -> OKLab's LMS
 static const float3x3 srgb_to_oklms = {
 	0.4122214708f, 0.5363325363f, 0.0514459929f,

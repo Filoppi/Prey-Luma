@@ -149,9 +149,9 @@ void UberGamePostProcessPS(float4 WPos, float4 inBaseTC, out float4 outColor)
 	float2 tcFinal = (ceil(inBaseTC.xy * PS_ScreenSize.xy / UberPostParams1.y + 0.5) - 0.5) * (UberPostParams1.y / (PS_ScreenSize.xy));
 
 	// Apply sync wave
-#if ENABLE_CHROMATIC_ABERRATION // LUMA FT: Let's pretend this is chromatic aberration
+#if ENABLE_SCREEN_DISTORTION // LUMA FT: Let's pretend this is chromatic aberration
 	tcFinal.x += UberPostParams3.w * (cos((inBaseTC.y * UberPostParams2.z + UberPostParams2.w * CV_AnimGenParams.z)));
-#endif // ENABLE_CHROMATIC_ABERRATION
+#endif // ENABLE_SCREEN_DISTORTION
 
 	/////////////////////////////////////////////////////////////////////////////////////////////////
 	// Apply chroma shift

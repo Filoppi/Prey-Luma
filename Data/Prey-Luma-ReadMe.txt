@@ -18,7 +18,7 @@ Join our discord here: https://discord.gg/DNGfMZgH3f
 - Improved quality and look of the Sun, Sun Shaft effects and Lens "Optics" effects (e.g. lens flare)
 - Improved Motion Blur quality and fixes multiple issues with its motion vectors
 - Improved Bloom quality and fixes multiple issues with its generation (e.g. it was trailing at the edge of the screen)
-- Improved Ultrawide Aspect Ratio support (Bloom, AO, SSR, Sun Shafts, Lens Optics etc did not scale properly with it, e.g. causing the sun to be huge in UW or causing bloom to be stretched, chromatic aberration was stretched in UW) (the game now also exposes the vertical FOV instead of the horizontal one, which was limited to 120 and not ultrawide friendly)
+- Improved Ultrawide Aspect Ratio support (Bloom, AO, SSR, Sun Shafts, Lens Optics, Lens Distortion etc did not scale properly with it, e.g. causing the sun to be huge in UW or causing bloom to be stretched, chromatic aberration was stretched in UW) (the game now also exposes the vertical FOV instead of the horizontal one, which was limited to 120 and not ultrawide friendly)
 - Improved High Resolution support (the game was mostly developed for 1080p resolution, a multitude of effects did not scale properly to 4k, like the objects highlights overlay, or stars/sun sprites)
 - Improved Dynamic Resolution Scaling support (Film Grain, Bloom, TAA, AO, SSR, Sun Shafts, Lens Optics and many other effects did not scale properly with it, causing visible changes in the image when the resolution changed, and its upscaling implementation just did not look very nice)
 - Improved High Frame Rate support by unlocking the frame rate beyond 144 (you can change the limit in the menu now) (with DRS you can easily reach 240FPS now, thanks to tweaked settings that made it more stable)
@@ -48,19 +48,32 @@ Join our discord here: https://discord.gg/DNGfMZgH3f
 - FXAA and no AA is not suggested as they lack object highlights and have other bugs (e.g. FXAA can break the game when close to an enemy and looking at the sun) (vanilla issue) (Luma hides FXAA from the settings).
 - Sun shafts can disappear while they are still visible if the sun center gets occluded (this is a bug with the original game, it's slightly more noticeable with LUMA because sun shafts are stronger).
 - Some objects in some levels disappear at certain camera angles (vanilla issue, lowering object details to high or below fixes it).
-- Glass can flicker heavily when there's multiple layers of it (vanilla issue).
+- Glass can flicker heavily, especially when there's multiple layers of it (vanilla issue).
+- Mission/Items/Enemy indicators are misaligned when the game uses lens distortion (vanilla issue).
 - Due to Windows limitations, the game cursor will follow the OS SDR White Level (SDR content brightness) instead of the game's UI paper white. Set the Windows SDR content brightness setting to 31 (out of 100) to make it match ~203 nits, as Luma is set to by default.
 
-Compatibility:
+# Compatibility:
 This mod should work with any other mod for Prey, just be careful of what you install, because some of the most popular mods change very random stuff with the game, or its graphics config (they will still be compatible with Luma).
 Replace their files with the Luma version if necessary, none of the game's mods rely on config changes, so the Luma version of the configs will work with them too, and Luma only changes what's strictly necessary and with careful research behind it.
 
-Donations:
-https://www.buymeacoffee.com/realfiloppi (Pumbo)
-https://www.paypal.com/donate?hosted_button_id=BFT6XUJPRL6YC (Pumbo)
-https://ko-fi.com/ershin (Ersh)
+# Suggested mods:
+- Real Lights plus Ultra Graphics Mod - https://www.nexusmods.com/prey2017/mods/22
+  This mod is seemengly great overall, though it changes some arguable stuff, like light placements, fire sprites (swapping them to a different color, which breaks their gameplay design) and adds a strong darkening effect when in combat (which does not look good in HDR).
+  Luma overrides the graphics menu changes from this mod, give that it exposes a lot of random and redundant stuff for user control.
+  If you use it, do not apply the "autoexec.cfg" and "system.cfg" files from it, because they contain a myriad of random and unsafe changes (use the Luma version of the same files, which is compatible with this mod too).
+- 2023 - PREY - Quality of Life Enhancement Mod - https://www.nexusmods.com/prey2017/mods/99
+  This shares some features with the mod above, but generally improves on them.
+- No-Intro (Skip Startup - Splash Videos) - https://www.nexusmods.com/prey2017/mods/115
+- Chairloader - The Prey Modding Framework - https://www.nexusmods.com/prey2017/mods/103
+  Not for general usage but it's great for messing around
+- Sensitivity Sprint Scale - https://www.nexusmods.com/prey2017/mods/117
 
-Thanks:
+# Donations:
+- https://www.buymeacoffee.com/realfiloppi (Pumbo)
+- https://www.paypal.com/donate?hosted_button_id=BFT6XUJPRL6YC (Pumbo)
+- https://ko-fi.com/ershin (Ersh)
+
+# Thanks:
 ShortFuse (support), Lilium (support), KoKlusz (testing), Musa (testing), crosire (support), FreshCloth (support), Regevitamins (support), MartysMods (support), Kaldaien (support), nd4spd (testing)
 
 Third party:

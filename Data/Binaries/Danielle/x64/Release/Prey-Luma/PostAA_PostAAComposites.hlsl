@@ -211,12 +211,13 @@ void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
 
   sharpenAmount -= 1.0; // Scale to the expected range
   //TODOFT: expose extra post TAA/DLSS sharpening multiplier (and hide the newly exposed sharpening setting?, replace other sharpening implementations with RCAS?)
-  if (LumaSettings.DLSS) { // Heuristically found scaler to match the native game's TAA sharpness with DLAA
+  if (LumaSettings.DLSS) { // Heuristically found scale to match the native game's TAA sharpness with DLAA
     sharpenAmount *= 2.0;
   }
-  //TODOFT: pass in motion vectors!? We could either reduce or increase sharpening on moving pixels
-  // This is probably fine, this code path is never used for "blurring", it's always exclusively for sharpening
-	outColor.rgb = RCAS(WPos.xyz, sharpenAmount, compositeSourceTex, dummyFloat2Texture, normalizationRange, true, outColor, false).rgb; // This should work independently of "POST_PROCESS_SPACE_TYPE".
+  //TODO LUMA: pass in motion vectors to either increase or reduce sharpening on moving pixels (increase if it they were blurry, decreate it if they had sharpening artifacts)
+  // This is probably fine, this code path is never used for "blurring", it's always exclusively for sharpening.
+  // This should work independently of "POST_PROCESS_SPACE_TYPE".
+	outColor.rgb = RCAS(WPos.xyz, sharpenAmount, compositeSourceTex, dummyFloat2Texture, normalizationRange, true, outColor, false).rgb;
 
 #else // POST_TAA_SHARPENING_TYPE <= 1
 
