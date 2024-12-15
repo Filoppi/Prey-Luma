@@ -3,33 +3,37 @@
 bool GetHDRMaxLuminance(IDXGISwapChain* swapChain, float& maxLuminance, float defaultMaxLuminance = 80.f /*Windows sRGB standard luminance*/)
 {
 	maxLuminance = defaultMaxLuminance;
-    
-    com_ptr<IDXGIOutput> output;
-    if (FAILED(swapChain->GetContainingOutput(&output))) {
-        return false;
-    }
 
-    com_ptr<IDXGIOutput6> output6;
-    if (FAILED(output->QueryInterface(&output6))) {
-        return false;
-    }
+	com_ptr<IDXGIOutput> output;
+	if (FAILED(swapChain->GetContainingOutput(&output)))
+	{
+		return false;
+	}
 
-    DXGI_OUTPUT_DESC1 desc1;
-    if (FAILED(output6->GetDesc1(&desc1))) {
-        return false;
-    }
+	com_ptr<IDXGIOutput6> output6;
+	if (FAILED(output->QueryInterface(&output6)))
+	{
+		return false;
+	}
 
-    // Note: this might end up being outdated if a new display is added/removed,
-    // or if HDR is toggled on them after swapchain creation (though it seems to be consistent between SDR and HDR).
-    maxLuminance = desc1.MaxLuminance;
+	DXGI_OUTPUT_DESC1 desc1;
+	if (FAILED(output6->GetDesc1(&desc1)))
+	{
+		return false;
+	}
 
-    // HDR is not supported (this only works if HDR is enaged on the monitor that currently contains the swapchain)
-    if (desc1.ColorSpace != DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020
-        && desc1.ColorSpace != DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709) {
-        return false;
-    }
+	// Note: this might end up being outdated if a new display is added/removed,
+	// or if HDR is toggled on them after swapchain creation (though it seems to be consistent between SDR and HDR).
+	maxLuminance = desc1.MaxLuminance;
 
-    return true;
+	// HDR is not supported (this only works if HDR is enaged on the monitor that currently contains the swapchain)
+	if (desc1.ColorSpace != DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020
+		&& desc1.ColorSpace != DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709)
+	{
+		return false;
+	}
+
+	return true;
 }
 
 #ifndef NTDDI_WIN11_GE
@@ -46,29 +50,35 @@ static_assert(false, "Your Windows SDK is too old and lacks some features to che
 bool GetDisplayConfigPathInfo(HWND hwnd, DISPLAYCONFIG_PATH_INFO& outPathInfo)
 {
 	uint32_t pathCount, modeCount;
-	if (ERROR_SUCCESS != GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &pathCount, &modeCount)) {
+	if (ERROR_SUCCESS != GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &pathCount, &modeCount))
+	{
 		return false;
 	}
 
 	std::vector<DISPLAYCONFIG_PATH_INFO> paths(pathCount);
 	std::vector<DISPLAYCONFIG_MODE_INFO> modes(modeCount);
 	// Note: the "/Zc:enumTypes" compiler flag breaks these enums (their padding changes and they end up offsetted)
-	if (ERROR_SUCCESS != QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &pathCount, paths.data(), &modeCount, modes.data(), nullptr)) {
+	if (ERROR_SUCCESS != QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &pathCount, paths.data(), &modeCount, modes.data(), nullptr))
+	{
 		return false;
 	}
 
 	const HMONITOR monitorFromWindow = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONULL);
-	for (auto& pathInfo : paths) {
-		if (pathInfo.flags & DISPLAYCONFIG_PATH_ACTIVE && pathInfo.sourceInfo.statusFlags & DISPLAYCONFIG_SOURCE_IN_USE) {
+	for (auto& pathInfo : paths)
+	{
+		if (pathInfo.flags & DISPLAYCONFIG_PATH_ACTIVE && pathInfo.sourceInfo.statusFlags & DISPLAYCONFIG_SOURCE_IN_USE)
+		{
 			const bool bVirtual = pathInfo.flags & DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE;
 			const uint32_t modeIndex = bVirtual ? pathInfo.sourceInfo.sourceModeInfoIdx : pathInfo.sourceInfo.modeInfoIdx;
 			assert(modes[modeIndex].infoType == DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE);
 			const DISPLAYCONFIG_SOURCE_MODE& sourceMode = modes[modeIndex].sourceMode;
 
-			RECT rect { sourceMode.position.x, sourceMode.position.y, sourceMode.position.x + (LONG)sourceMode.width, sourceMode.position.y + (LONG)sourceMode.height };
-			if (!IsRectEmpty(&rect)) {
+			RECT rect{ sourceMode.position.x, sourceMode.position.y, sourceMode.position.x + (LONG)sourceMode.width, sourceMode.position.y + (LONG)sourceMode.height };
+			if (!IsRectEmpty(&rect))
+			{
 				const HMONITOR monitorFromMode = MonitorFromRect(&rect, MONITOR_DEFAULTTONULL);
-				if (monitorFromMode != nullptr && monitorFromMode == monitorFromWindow) {
+				if (monitorFromMode != nullptr && monitorFromMode == monitorFromWindow)
+				{
 					outPathInfo = pathInfo;
 					return true;
 				}
@@ -85,14 +95,16 @@ bool GetDisplayConfigPathInfo(HWND hwnd, DISPLAYCONFIG_PATH_INFO& outPathInfo)
 bool GetColorInfo(HWND hwnd, DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO& outColorInfo)
 {
 	DISPLAYCONFIG_PATH_INFO pathInfo{};
-	if (GetDisplayConfigPathInfo(hwnd, pathInfo)) {
+	if (GetDisplayConfigPathInfo(hwnd, pathInfo))
+	{
 		DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO colorInfo{};
 		colorInfo.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO;
 		colorInfo.header.size = sizeof(colorInfo);
 		colorInfo.header.adapterId = pathInfo.targetInfo.adapterId;
 		colorInfo.header.id = pathInfo.targetInfo.id;
 		auto result = DisplayConfigGetDeviceInfo(&colorInfo.header);
-		if (result == ERROR_SUCCESS) {
+		if (result == ERROR_SUCCESS)
+		{
 			outColorInfo = colorInfo;
 			return true;
 		}
@@ -104,14 +116,16 @@ bool GetColorInfo(HWND hwnd, DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO& outColorInfo
 bool GetColorInfo2(HWND hwnd, DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2& outColorInfo2)
 {
 	DISPLAYCONFIG_PATH_INFO pathInfo{};
-	if (GetDisplayConfigPathInfo(hwnd, pathInfo)) {
+	if (GetDisplayConfigPathInfo(hwnd, pathInfo))
+	{
 		DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2 colorInfo2{};
 		colorInfo2.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2;
 		colorInfo2.header.size = sizeof(colorInfo2);
 		colorInfo2.header.adapterId = pathInfo.targetInfo.adapterId;
 		colorInfo2.header.id = pathInfo.targetInfo.id;
 		auto result = DisplayConfigGetDeviceInfo(&colorInfo2.header);
-		if (result == ERROR_SUCCESS) {
+		if (result == ERROR_SUCCESS)
+		{
 			outColorInfo2 = colorInfo2;
 			return true;
 		}
@@ -132,7 +146,8 @@ bool IsHDRSupportedAndEnabled(HWND hwnd, bool& supported, bool& enabled, IDXGISw
 #if NTDDI_VERSION >= NTDDI_WIN11_GE
 	// This will only succeed from Windows 11 24H2
 	DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2 colorInfo2{};
-	if (GetColorInfo2(hwnd, colorInfo2)) {
+	if (GetColorInfo2(hwnd, colorInfo2))
+	{
 		// Note: we don't currently consider "DISPLAYCONFIG_ADVANCED_COLOR_MODE_WCG" as an HDR mode.
 		// WCG seemengly allows for a wider color range and bit depth, without a higher brightness peak,
 		// but the concept seems to have mostly been deprecated (?),
@@ -155,20 +170,25 @@ bool IsHDRSupportedAndEnabled(HWND hwnd, bool& supported, bool& enabled, IDXGISw
 
 	// Older Windows versions need to fall back to a simpler implementation.
 	DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO colorInfo{};
-	if (GetColorInfo(hwnd, colorInfo)) {
+	if (GetColorInfo(hwnd, colorInfo))
+	{
 		enabled = colorInfo.advancedColorEnabled;
 		assert(!enabled || (colorInfo.advancedColorSupported && !colorInfo.advancedColorForceDisabled));
 		supported = enabled || (colorInfo.advancedColorSupported && !colorInfo.advancedColorForceDisabled);
 		return true;
 	}
 
-	if (swapChain) {
+	if (swapChain)
+	{
 		com_ptr<IDXGIOutput> output;
-		if (SUCCEEDED(swapChain->GetContainingOutput(&output))) {
+		if (SUCCEEDED(swapChain->GetContainingOutput(&output)))
+		{
 			com_ptr<IDXGIOutput6> output6;
-			if (SUCCEEDED(output->QueryInterface(&output6))) {
+			if (SUCCEEDED(output->QueryInterface(&output6)))
+			{
 				DXGI_OUTPUT_DESC1 desc1;
-				if (SUCCEEDED(output6->GetDesc1(&desc1))) {
+				if (SUCCEEDED(output6->GetDesc1(&desc1)))
+				{
 					// Note: we check for "DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709" (scRGB) even if it's not specified by the documentation.
 					// Hopefully this is future proof, and won't cause any damage.
 					enabled = desc1.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020 || desc1.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;
@@ -178,13 +198,15 @@ bool IsHDRSupportedAndEnabled(HWND hwnd, bool& supported, bool& enabled, IDXGISw
 		}
 
 		UINT color_space_supported = 0;
-		if (SUCCEEDED(swapChain->CheckColorSpaceSupport(DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020, &color_space_supported))) {
+		if (SUCCEEDED(swapChain->CheckColorSpaceSupport(DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020, &color_space_supported)))
+		{
 			supported |= color_space_supported & DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT;
 			color_space_supported = 0;
 		}
 		// Note that "DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709" doesn't seem to ever be supported on swapchains unless it's currently enabled.
 		// Hopefully checking it anyway is future proof, and won't cause any damage.
-		if (SUCCEEDED(swapChain->CheckColorSpaceSupport(DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709, &color_space_supported))) {
+		if (SUCCEEDED(swapChain->CheckColorSpaceSupport(DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709, &color_space_supported)))
+		{
 			supported |= color_space_supported & DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT;
 		}
 	}
@@ -199,8 +221,10 @@ bool SetHDREnabled(HWND hwnd)
 #if NTDDI_VERSION >= NTDDI_WIN11_GE
 	// This will only succeed from Windows 11 24H2
 	DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2 colorInfo2{};
-	if (GetColorInfo2(hwnd, colorInfo2)) {
-		if (colorInfo2.highDynamicRangeSupported && !colorInfo2.advancedColorLimitedByPolicy && colorInfo2.activeColorMode != DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR) {
+	if (GetColorInfo2(hwnd, colorInfo2))
+	{
+		if (colorInfo2.highDynamicRangeSupported && !colorInfo2.advancedColorLimitedByPolicy && colorInfo2.activeColorMode != DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR)
+		{
 			DISPLAYCONFIG_SET_HDR_STATE setHDRState{};
 			setHDRState.header.type = DISPLAYCONFIG_DEVICE_INFO_SET_HDR_STATE;
 			setHDRState.header.size = sizeof(setHDRState);
@@ -223,8 +247,10 @@ bool SetHDREnabled(HWND hwnd)
 	// so it seems like this possibly has a small chance of breaking your display state until you manually toggle HDR again or change resolution etc.
 	// It's not clear if that was a separate issue or if it was caused by a mismatch between HDR and WCG modes.
 	DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO colorInfo{};
-	if (GetColorInfo(hwnd, colorInfo)) {
-		if (colorInfo.advancedColorSupported && !colorInfo.advancedColorForceDisabled && !colorInfo.advancedColorEnabled) {
+	if (GetColorInfo(hwnd, colorInfo))
+	{
+		if (colorInfo.advancedColorSupported && !colorInfo.advancedColorForceDisabled && !colorInfo.advancedColorEnabled)
+		{
 			DISPLAYCONFIG_SET_ADVANCED_COLOR_STATE setAdvancedColorState{};
 			setAdvancedColorState.header.type = DISPLAYCONFIG_DEVICE_INFO_SET_ADVANCED_COLOR_STATE;
 			setAdvancedColorState.header.size = sizeof(setAdvancedColorState);
@@ -252,7 +278,8 @@ typedef struct __declspec(align(4)) _DISPLAYCONFIG_SET_SDR_WHITE_LEVEL
 bool SetSDRWhiteLevel(HWND hwnd, float nits = 80.f /*Windows sRGB standard luminance*/)
 {
 	DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO colorInfo{};
-	if (GetColorInfo(hwnd, colorInfo)) {
+	if (GetColorInfo(hwnd, colorInfo))
+	{
 		DISPLAYCONFIG_SET_SDR_WHITE_LEVEL setSdrWhiteLevel{};
 		setSdrWhiteLevel.header.type = DISPLAYCONFIG_DEVICE_INFO_SET_SDR_WHITE_LEVEL;
 		setSdrWhiteLevel.header.size = sizeof(DISPLAYCONFIG_SET_SDR_WHITE_LEVEL);
