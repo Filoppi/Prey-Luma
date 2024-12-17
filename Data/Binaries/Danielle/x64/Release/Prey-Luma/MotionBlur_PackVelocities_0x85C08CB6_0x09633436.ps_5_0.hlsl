@@ -2,6 +2,23 @@
 
 #include "include/CBuffer_PerViewGlobal.hlsl"
 
+#if _85C08CB6
+#define _RT_SAMPLE0 1
+cbuffer PER_BATCH : register(b0)
+{
+  row_major float4x4 mViewProjPrev : packoffset(c0);
+  float4 vDirectionalBlur : packoffset(c4);
+  float4 vMotionBlurParams : packoffset(c5);
+  float4 vRadBlurParam : packoffset(c6);
+}
+#else
+cbuffer PER_BATCH : register(b0)
+{
+  row_major float4x4 mViewProjPrev : packoffset(c0);
+  float4 vMotionBlurParams : packoffset(c4);
+}
+#endif
+
 Texture2D<float4> _tex0_D3D11 : register(t0);
 Texture2D<float4> _tex2_D3D11 : register(t2);
 
@@ -15,7 +32,7 @@ struct vtxOut
 
 struct pixout
 {
-  float4 Color  : COLOR0;
+  float4 Color : COLOR0;
 };
 
 // LUMA FT: fixed motion vectors not being scaled properly with DRS
@@ -25,11 +42,12 @@ float2 AdjustVelocityObjects(float2 VelocityObjects)
 	return VelocityObjects;
 }
 
-//TODOFT4: upgrade MB patches size to be smaller? So it's higher quality? It seems pretty awful atm.
+// PackVelocitiesPS
 // LUMA FT: this doesn't exactly produce motion vectors, but simply some patches of movement intensity.
 // It's run in big patches (e.g. 6, 14 or 24 patches), depending on the quality of MB, that probably doesn't scale properly with aspect ratio.
 // Note that this outputs on a 8bit UNORM texture, with or without Luma, hence it's low quality.
-pixout PackVelocitiesPS(vtxOut IN)
+// If we wanted, we could make this have a fullscreen resolution, resulting in per pixel motion blur, but given the rarity of moving objects in this game, it's not really necessary.
+pixout main(vtxOut IN)
 {	
 	pixout OUT = (pixout)0;
 	int3 pixelCoord = int3(IN.WPos.xy, 0);
@@ -106,13 +124,13 @@ pixout PackVelocitiesPS(vtxOut IN)
 	
 	// Limit velocity
 	const float MaxVelocityLen = noVelocityObj ? vMotionBlurParams.z : vMotionBlurParams.y;
-#if 0 // LUMA FT: tried to re-write their velocity clamping code to make it more clear but I failed
 	float vVelocityLenght = length(vVelocity.xy);
+#if 0 // LUMA FT: tried to re-write their velocity clamping code to make it more clear but I failed
 	float2 vNormalizedVelocity = normalize(vVelocity.xy);
 	vVelocity = vNormalizedVelocity * min(vVelocityLenght, MaxVelocityLen);
 #else
-	const float invLen = rsqrt(dot(vVelocity.xy, vVelocity.xy) + 1e-6f); //TODOFT: why this approximation?
-	vVelocity *= saturate(MaxVelocityLen * invLen);
+	const float invLen = 1.0 / vVelocityLenght; // LUMA FT: fixed approximation that added noise to velocity
+	vVelocity *= vVelocityLenght == 0.0 ? 1.0 : saturate(MaxVelocityLen * invLen);
 #endif
 	
 	// Apply radial blur (around the edges of whatever dynamic center we have set)
