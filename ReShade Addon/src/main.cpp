@@ -184,6 +184,22 @@ namespace
       bool test = false;
 #endif
 
+      bool HasGeometryShader() const
+      {
+         for (uint32_t i = 0; i < subobject_count; i++)
+         {
+            if (subobjects_cache[i].type == reshade::api::pipeline_subobject_type::geometry_shader) return true;
+         }
+         return false;
+      }
+      bool HasVertexShader() const
+      {
+         for (uint32_t i = 0; i < subobject_count; i++)
+         {
+            if (subobjects_cache[i].type == reshade::api::pipeline_subobject_type::vertex_shader) return true;
+         }
+         return false;
+      }
       bool HasPixelShader() const
       {
          for (uint32_t i = 0; i < subobject_count; i++)
@@ -197,14 +213,6 @@ namespace
          for (uint32_t i = 0; i < subobject_count; i++)
          {
             if (subobjects_cache[i].type == reshade::api::pipeline_subobject_type::compute_shader) return true;
-         }
-         return false;
-      }
-      bool HasVertexShader() const
-      {
-         for (uint32_t i = 0; i < subobject_count; i++)
-         {
-            if (subobjects_cache[i].type == reshade::api::pipeline_subobject_type::vertex_shader) return true;
          }
          return false;
       }
@@ -239,8 +247,12 @@ namespace
 
    struct ShaderHashesList
    {
+      #define SUPPORTS_GEOMETRY_SHADER 0
       std::unordered_set<uint32_t> pixel_shaders;
       std::unordered_set<uint32_t> vertex_shaders;
+#if SUPPORTS_GEOMETRY_SHADER
+      std::unordered_set<uint32_t> geometry_shaders;
+#endif
       std::unordered_set<uint32_t> compute_shaders;
 
       bool Contains(uint32_t shader_hash, reshade::api::shader_stage shader_stage)
@@ -254,6 +266,12 @@ namespace
          {
             if (vertex_shaders.contains(shader_hash)) return true;
          }
+#if SUPPORTS_GEOMETRY_SHADER
+         if ((shader_stage & reshade::api::shader_stage::geometry) != 0)
+         {
+            if (geometry_shaders.contains(shader_hash)) return true;
+         }
+#endif
          if ((shader_stage & reshade::api::shader_stage::compute) != 0)
          {
             return compute_shaders.contains(shader_hash);
@@ -276,6 +294,15 @@ namespace
                return true;
             }
          }
+#if SUPPORTS_GEOMETRY_SHADER
+         for (const uint32_t shader_hash : other.geometry_shaders)
+         {
+            if (geometry_shaders.contains(shader_hash))
+            {
+               return true;
+            }
+         }
+#endif
          for (const uint32_t shader_hash : other.compute_shaders)
          {
             if (compute_shaders.contains(shader_hash))
@@ -287,8 +314,13 @@ namespace
       }
       bool Empty()
       {
-         return pixel_shaders.empty() && vertex_shaders.empty() && compute_shaders.empty();
+         return pixel_shaders.empty() && vertex_shaders.empty() && compute_shaders.empty()
+#if SUPPORTS_GEOMETRY_SHADER
+            && geometry_shaders.empty()
+#endif
+            ;
       }
+      #undef SUPPORTS_GEOMETRY_SHADER
    };
 
    static constexpr unsigned int crc_table[256] = {
@@ -1029,6 +1061,7 @@ namespace
 
          switch (suboject.type)
          {
+         case reshade::api::pipeline_subobject_type::geometry_shader:
          case reshade::api::pipeline_subobject_type::vertex_shader:
          case reshade::api::pipeline_subobject_type::compute_shader:
          case reshade::api::pipeline_subobject_type::pixel_shader:
@@ -1165,7 +1198,12 @@ namespace
 
                const CachedCustomShader* custom_shader_cache = custom_shaders_cache[shader_hash];
 
-               if constexpr (typeid(T) == typeid(ID3D11VertexShader))
+               if constexpr (typeid(T) == typeid(ID3D11GeometryShader))
+               {
+                  HRESULT hr = native_device->CreateGeometryShader(custom_shader_cache->code.data(), custom_shader_cache->code.size(), nullptr, &shader_object);
+                  assert(SUCCEEDED(hr));
+               }
+               else if constexpr (typeid(T) == typeid(ID3D11VertexShader))
                {
                   HRESULT hr = native_device->CreateVertexShader(custom_shader_cache->code.data(), custom_shader_cache->code.size(), nullptr, &shader_object);
                   assert(SUCCEEDED(hr));
@@ -1831,6 +1869,8 @@ namespace
                const auto& subobject = subobjects[i];
                switch (subobject.type)
                {
+               case reshade::api::pipeline_subobject_type::geometry_shader:
+               [[fallthrough]];
                case reshade::api::pipeline_subobject_type::vertex_shader:
                [[fallthrough]];
                case reshade::api::pipeline_subobject_type::compute_shader:
@@ -2098,11 +2138,10 @@ namespace
          reshade::api::pipeline_layout_param pipeline_layout_param = reshade::api::pipeline_layout_param();
          pipeline_layout_param.type = reshade::api::pipeline_layout_param_type::push_constants; // We could be using "reshade::api::pipeline_layout_param_type::push_descriptors" in cbuffer mode too but this is simpler
          pipeline_layout_param.push_constants.count = 1;
-         pipeline_layout_param.push_constants.dx_register_index = luma_settings_cbuffer_index;
-         pipeline_layout_param.push_constants.visibility = reshade::api::shader_stage::vertex | reshade::api::shader_stage::pixel | reshade::api::shader_stage::compute;
-         auto result = device->create_pipeline_layout(1, &pipeline_layout_param, &device_data.settings_pipeline_layout);
+         pipeline_layout_param.push_constants.visibility = reshade::api::shader_stage::vertex | reshade::api::shader_stage::pixel | reshade::api::shader_stage::compute; // For now we don't need geometry shaders
 
-         pipeline_layout_param.push_constants.count = 1;
+         pipeline_layout_param.push_constants.dx_register_index = luma_settings_cbuffer_index;
+         auto result = device->create_pipeline_layout(1, &pipeline_layout_param, &device_data.settings_pipeline_layout);
          pipeline_layout_param.push_constants.dx_register_index = luma_data_cbuffer_index;
          result = device->create_pipeline_layout(1, &pipeline_layout_param, &device_data.shared_data_pipeline_layout);
          pipeline_layout_param.push_constants.dx_register_index = luma_ui_cbuffer_index;
@@ -2442,6 +2481,7 @@ namespace
          {
             switch (subobject.type)
             {
+            case reshade::api::pipeline_subobject_type::geometry_shader:
             case reshade::api::pipeline_subobject_type::vertex_shader:
             case reshade::api::pipeline_subobject_type::compute_shader:
             case reshade::api::pipeline_subobject_type::pixel_shader:
@@ -2477,6 +2517,7 @@ namespace
          {
             switch (subobject.type)
             {
+            case reshade::api::pipeline_subobject_type::geometry_shader:
             case reshade::api::pipeline_subobject_type::vertex_shader:
             case reshade::api::pipeline_subobject_type::compute_shader:
             case reshade::api::pipeline_subobject_type::pixel_shader:
@@ -5702,10 +5743,12 @@ namespace
             }
          }
 
-         if (cached_shader->type == reshade::api::pipeline_subobject_type::vertex_shader
+         if (cached_shader->type == reshade::api::pipeline_subobject_type::geometry_shader
+            || cached_shader->type == reshade::api::pipeline_subobject_type::vertex_shader
             || cached_shader->type == reshade::api::pipeline_subobject_type::pixel_shader
             || cached_shader->type == reshade::api::pipeline_subobject_type::compute_shader)
          {
+            static const std::string template_geometry_shader_name = "gs_";
             static const std::string template_vertex_shader_name = "vs_";
             static const std::string template_pixel_shader_name = "ps_";
             static const std::string template_compute_shader_name = "cs_";
@@ -5714,6 +5757,11 @@ namespace
             std::string_view template_shader_name;
             switch (cached_shader->type)
             {
+            case reshade::api::pipeline_subobject_type::geometry_shader:
+            {
+               template_shader_name = template_geometry_shader_name;
+               break;
+            }
             case reshade::api::pipeline_subobject_type::vertex_shader:
             {
                template_shader_name = template_vertex_shader_name;
