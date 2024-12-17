@@ -20,6 +20,7 @@
 
 // Disables loading the ReShade Addon code (useful to test the mod without any ReShade dependencies)
 #define DISABLE_RESHADE 0
+#define ENABLE_NATIVE_PLUGIN 1
 
 #pragma comment(lib, "dxguid.lib")
 
@@ -3095,6 +3096,7 @@ namespace
          }
       }
 
+#if ENABLE_NATIVE_PLUGIN
       // Update halton sequence with the latest rendering resolution.
       // Theoretically we should do that at the beginning of the rendering pass, after picking the current frame resolution (in DRS, res can change almost every frame),
       // but in reality there's probably little difference. Also, our implementation rounds it to the closest power of 2.
@@ -3118,6 +3120,7 @@ namespace
 #else
       NativePlugin::SetHaltonSequencePhases(8); // We could do this once only on boot but whatever
 #endif // ENABLE_NGX
+#endif // ENABLE_NATIVE_PLUGIN
 
       frame_index++;
    }
@@ -6893,7 +6896,9 @@ namespace
             }
             if (textures_upgrade_format_changed)
             {
+#if ENABLE_NATIVE_PLUGIN
                NativePlugin::SetTexturesFormat(LDR_textures_upgrade_format, HDR_textures_upgrade_format);
+#endif // ENABLE_NATIVE_PLUGIN
 
 #if 0 //TODOFT: verify this is safe. Does the game cache the pointers to this somehow (probably not!)? Can we change it within Present()?
                //Update: it doesn't work!
@@ -7655,8 +7660,10 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved)
       if (!reshade_addon_register_succeeded) return FALSE;
 #endif // DISABLE_RESHADE
 
+#if ENABLE_NATIVE_PLUGIN
       // Initialize the "native plugin" (our code hooks/patches)
       NativePlugin::Init(NAME, Globals::VERSION);
+#endif // ENABLE_NATIVE_PLUGIN
 
 #if DISABLE_RESHADE
       if (asi_loaded) return TRUE;
@@ -7718,7 +7725,9 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved)
    }
    case DLL_PROCESS_DETACH:
    {
+#if ENABLE_NATIVE_PLUGIN
       NativePlugin::Uninit();
+#endif // ENABLE_NATIVE_PLUGIN
 
       reshade::unregister_event<reshade::addon_event::init_command_list>(OnInitCommandList);
       reshade::unregister_event<reshade::addon_event::destroy_command_list>(OnDestroyCommandList);

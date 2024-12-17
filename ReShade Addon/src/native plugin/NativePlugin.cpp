@@ -51,6 +51,7 @@ namespace NativePlugin
 
     void Uninit()
     {
+        // The "Trampoline" doesn't need de-allocation
         Hooks::Uninstall();
     }
 
