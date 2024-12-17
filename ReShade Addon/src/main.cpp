@@ -90,7 +90,7 @@
 // These are needed by ReShade
 extern "C" __declspec(dllexport) const char* NAME = Globals::NAME;
 extern "C" __declspec(dllexport) const char* DESCRIPTION = Globals::DESCRIPTION;
-extern "C" __declspec(dllexport) const char* WEBSITE = "https://github.com/Filoppi/Prey-Luma"; //TODOFT: set to nexus when it's up, maybe add an "ISSUES" definition too
+extern "C" __declspec(dllexport) const char* WEBSITE = "https://www.nexusmods.com/prey2017/mods/149";
 
 // NOLINTEND(readability-identifier-naming)
 
@@ -7314,12 +7314,11 @@ namespace
             ImGui::PushStyleColor(ImGuiCol_Button, button_color);
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, button_hovered_color);
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, button_active_color);
-#if 0 //TODOFT: update
-            if (ImGui::Button("Nexus Mods"))
+            static const std::string mod_link = std::string("Nexus Mods Page ") + std::string(ICON_FK_SEARCH);
+            if (ImGui::Button(mod_link.c_str()))
             {
-               system("start https://www.nexusmods.com/starfield/mods/4821");
+               system("start https://www.nexusmods.com/prey2017/mods/149");
             }
-#endif
             static const std::string social_link = std::string("Join our \"HDR Den\" Discord ") + std::string(ICON_FK_SEARCH);
             if (ImGui::Button(social_link.c_str()))
             {
