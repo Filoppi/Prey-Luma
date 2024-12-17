@@ -174,6 +174,7 @@
 //TODOFT0: disable all dev/debug settings below, even for dev mode
 //TODOFT: add test setting to disable all exposure, and see if the game looks more "HDR" (though tonemapping would break...?)
 //TODOFT0: fix formatting/spacing of all shaders
+//TODOFT: test reflections mips flickering or disappearing?
 
 /////////////////////////////////////////
 // Rendering features toggles (development)

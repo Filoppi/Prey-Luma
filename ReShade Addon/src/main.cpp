@@ -175,7 +175,6 @@ namespace
       reshade::api::pipeline_subobject* subobjects_cache;
       uint32_t subobject_count;
       bool cloned = false;
-      bool ready_for_binding = true;
       reshade::api::pipeline pipeline_clone;
       // Original shaders hash (there should only be one)
       std::vector<uint32_t> shader_hashes;
@@ -752,7 +751,7 @@ namespace
    LumaFrameSettings cb_luma_frame_settings = { };
 
    bool has_init = false;
-   bool asi_loaded = true;
+   bool asi_loaded = true; // Whether we've been loaded from an ASI loader or ReShade Addons system
    std::thread thread_auto_dumping;
    std::atomic<bool> thread_auto_dumping_running = false;
    std::thread thread_auto_compiling;
@@ -765,7 +764,7 @@ namespace
    // There's only one swapchain and one device in Prey, but the game chances its configuration from different threads.
    // A new device+swapchain can be created if the user resets the settings as the old one is still rendering (or is it?).
    // These are raw pointers that did not add a reference to the counter.
-   std::vector<ID3D11Device*> global_native_devices; //TODOFT: delete, unused?
+   std::vector<ID3D11Device*> global_native_devices; // TODO: delete? It's unused
    std::vector<DeviceData*> global_devices_data;
    HWND game_window = 0; // This is fixed forever (in almost all games, and Prey)
 
@@ -846,7 +845,7 @@ namespace
       // Cache aside the previous resources/states:
       void Cache(ID3D11DeviceContext* device_context)
       {
-         device_context->OMGetBlendState(&blend_state, blend_factor, &blend_sample_mask); //TODOFT: blend_factor!? I guess it's passed in as a ptr already
+         device_context->OMGetBlendState(&blend_state, blend_factor, &blend_sample_mask);
          device_context->IAGetPrimitiveTopology(&primitive_topology);
          device_context->RSGetScissorRects(&scissor_rects_num, nullptr); // This will get the number of scissor rects used
          device_context->RSGetScissorRects(&scissor_rects_num, &scissor_rects[0]);
@@ -871,8 +870,8 @@ namespace
          ID3D11DepthStencilState* DepthStencilState;
          ID3D11SamplerState* PSSampler;
          ID3D11Buffer* IndexBuffer;
-         ID3D11Buffer* VertexBuffer;
          ID3D11Buffer* VSConstantBuffer;
+         ID3D11Buffer* VertexBuffer;
          UINT IndexBufferOffset, VertexBufferStride, VertexBufferOffset;
          DXGI_FORMAT IndexBufferFormat;
          ID3D11InputLayout* InputLayout;
@@ -1787,7 +1786,7 @@ namespace
    }
 
    // Optionally compiles all the shaders we have in our data folder and links them with the game rendering pipelines
-   void LoadCustomShaders(DeviceData& device_data, const std::unordered_set<uint64_t>& pipelines_filter = std::unordered_set<uint64_t>(), bool recompile_shaders = true, bool immediate_load = true, bool immediate_unload = false)
+   void LoadCustomShaders(DeviceData& device_data, const std::unordered_set<uint64_t>& pipelines_filter = std::unordered_set<uint64_t>(), bool recompile_shaders = true, bool immediate_unload = false)
    {
 #if _DEBUG && LOG_VERBOSE
       reshade::log::message(reshade::log::level::info, "LoadCustomShaders()");
@@ -1939,9 +1938,8 @@ namespace
             if (built_pipeline_ok)
             {
                assert(!cached_pipeline->cloned && cached_pipeline->pipeline_clone.handle == 0);
-               cached_pipeline->cloned = true;
-               cached_pipeline->ready_for_binding = immediate_load;
                cached_pipeline->pipeline_clone = pipeline_clone;
+               cached_pipeline->cloned = true;
                device_data.pipeline_cache_by_pipeline_clone_handle[pipeline_clone.handle] = cached_pipeline;
                device_data.cloned_pipeline_count++;
                device_data.cloned_pipelines_changed = true;
@@ -2148,19 +2146,19 @@ namespace
          result = device->create_pipeline_layout(1, &pipeline_layout_param, &device_data.ui_pipeline_layout);
       }
 
-      D3D11_BLEND_DESC blend_state_desc = {};
-      blend_state_desc.AlphaToCoverageEnable = FALSE;
-      blend_state_desc.IndependentBlendEnable = FALSE;
+      D3D11_BLEND_DESC blend_desc = {};
+      blend_desc.AlphaToCoverageEnable = FALSE;
+      blend_desc.IndependentBlendEnable = FALSE;
       // We only need RT 0
-      blend_state_desc.RenderTarget[0].BlendEnable = FALSE;
-      blend_state_desc.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
-      blend_state_desc.RenderTarget[0].DestBlend = D3D11_BLEND_ZERO;
-      blend_state_desc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
-      blend_state_desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
-      blend_state_desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
-      blend_state_desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
-      blend_state_desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-      native_device->CreateBlendState(&blend_state_desc, &device_data.default_blend_state);
+      blend_desc.RenderTarget[0].BlendEnable = FALSE;
+      blend_desc.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
+      blend_desc.RenderTarget[0].DestBlend = D3D11_BLEND_ZERO;
+      blend_desc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+      blend_desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+      blend_desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
+      blend_desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+      blend_desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+      native_device->CreateBlendState(&blend_desc, &device_data.default_blend_state);
 
 #if ENABLE_NGX
       com_ptr<IDXGIDevice> native_dxgi_device;
@@ -2614,10 +2612,7 @@ namespace
          device_data.pipelines_to_reload.emplace(pipeline.handle);
          if (precompile_custom_shaders)
          {
-            // If done with the "immediate" flag, this is possibly unsafe on some games or hardware configurations, thus it can hang the game (even if it seems like it should be safe given it doesn't do anything other than create a cloned pipeline without binding it yet) (this works absolute fine in Prey so we can do it).
-            // If done without the "immediate" flag, this will cause a hitch due to shader compilation (unless precompile_custom_shaders is true), and still start drawing one frame after, so it's better to rely on the "AutoLoadShaders()" function.
-            const bool immediate = true;
-            LoadCustomShaders(device_data, device_data.pipelines_to_reload, !precompile_custom_shaders, immediate);
+            LoadCustomShaders(device_data, device_data.pipelines_to_reload, !precompile_custom_shaders);
             device_data.pipelines_to_reload.clear();
          }
       }
@@ -2708,10 +2703,10 @@ namespace
       }
       else
 #endif
-         if (cached_pipeline->cloned && cached_pipeline->ready_for_binding)
-         {
-            cmd_list->bind_pipeline(stages, cached_pipeline->pipeline_clone);
-         }
+      if (cached_pipeline->cloned)
+      {
+         cmd_list->bind_pipeline(stages, cached_pipeline->pipeline_clone);
+      }
 
 #if DEVELOPMENT
       if (!trace_running) return;
@@ -2794,7 +2789,7 @@ namespace
          frame_data.CustomData = custom_data;
          frame_data.Padding = 0;
          frame_data.FrameIndex = frame_index;
-         frame_data.CameraJitters = projection_jitters; //TODOFT: pre-multiply these by float2(0.5, -0.5) (NDC to UV space) given that they are always used like that in shaders
+         frame_data.CameraJitters = projection_jitters; // TODO: pre-multiply these by float2(0.5, -0.5) (NDC to UV space) given that they are always used in UV space by shaders
          frame_data.PreviousCameraJitters = previous_projection_jitters;
          frame_data.RenderResolutionScale.x = device_data.render_resolution.x / device_data.output_resolution.x;
          frame_data.RenderResolutionScale.y = device_data.render_resolution.y / device_data.output_resolution.y;
@@ -3174,7 +3169,7 @@ namespace
    //TODOFT5: restore objects quality setting in the game's menu?
    //TODOFT5: I should make the game.cfg file write locked in the zip already, or make the mod lock it!?
    //TODOFT (TODO): make sure DLSS lets scRGB colors pass through...
-   //TODOFT: add a new RT to draw UI on top (pre-multiplied alpha everywhere), so we could compose it smartly, possibly in the final linearization pass.
+   //TODOFT: add a new RT to draw UI on top (pre-multiplied alpha everywhere), so we could compose it smartly, possibly in the final linearization pass. Or, add a new UI gamma setting for when in full screen menus and swap to gamma space on the spot.
 
    // Return false to prevent the original draw call from running (e.g. if you replaced it or just want to skip it)
    // Prey always seemengly draws in direct mode (?), but it uses different command lists on different threads (e.g. seemengly for the shadow projection maps, as they are separate, and stuff like that), though all the primary passes are done on the same thread.
@@ -3261,6 +3256,8 @@ namespace
       bool is_custom_pass = false;
 
       auto& cmd_list_data = cmd_list->get_private_data<CommandListData>();
+
+      const bool had_drawn_main_post_processing = device_data.has_drawn_main_post_processing;
 
 #if DEVELOPMENT
       last_drawn_shader = "";
@@ -3863,7 +3860,8 @@ namespace
                   native_device_context->PSGetShader(&ps, nullptr, 0);
 #endif // TEST_DLSS
 
-                  //TODOFT: we could do this async from the beginning of rendering (when we can detect res changes), to here, with a mutex, to avoid potential stutters when DRS first engages (same with creating DLSS textures?) or changes resolution? (we could allow for creating more than one DLSS feature???)
+                  // TODO: we could do this async from the beginning of rendering (when we can detect res changes), to here, with a mutex, to avoid potential stutters when DRS first engages (same with creating DLSS textures?) or changes resolution? (we could allow for creating more than one DLSS feature???)
+                  // 
                   // Our DLSS implementation picks a quality mode based on a fixed rendering resolution, but we scale it back in case we detected the game is running DRS, otherwise we run DLAA.
                   // At lower quality modes (non DLAA), DLSS actually seems to allow for a wider input resolution range that it actually claims when queried for it, but if we declare a resolution scale below 50% here, we can get an assert,
                   // still, DLSS will keep working at any input resolution (or at least with a pretty big tolerance range).
@@ -3900,6 +3898,8 @@ namespace
                   bool dlss_output_supports_uav = dlss_use_native_uav && (output_texture_desc.BindFlags & D3D11_BIND_UNORDERED_ACCESS) != 0;
                   if (!dlss_output_supports_uav)
                   {
+                     ASSERT_ONCE(false); // Should never happen
+
                      output_texture_desc.BindFlags |= D3D11_BIND_UNORDERED_ACCESS;
 
                      if (device_data.dlss_output_color.get())
@@ -4127,10 +4127,6 @@ namespace
 
       LumaUIData ui_data;
 
-      // No need to lock "s_mutex_reshade" for "cb_luma_frame_settings" here, it's not relevant
-      // We could use "has_drawn_composed_gbuffers" here instead of "has_drawn_main_post_processing", but then again, they should always match (pp should always be run)
-      ui_data.background_tonemapping_amount = (cb_luma_frame_settings.DisplayMode == 1 && tonemap_ui_background && device_data.has_drawn_main_post_processing) ? tonemap_ui_background_amount : 0.0;
-
       com_ptr<ID3D11RenderTargetView> render_target_view;
       native_device_context->OMGetRenderTargets(1, &render_target_view, nullptr);
       //native_device_context->OMGetRenderTargetsAndUnorderedAccessViews(1, &render_target_view, nullptr);
@@ -4162,6 +4158,10 @@ namespace
 #endif
       }
 
+      // No need to lock "s_mutex_reshade" for "cb_luma_frame_settings" here, it's not relevant
+      // We could use "has_drawn_composed_gbuffers" here instead of "has_drawn_main_post_processing", but then again, they should always match (pp should always be run)
+      ui_data.background_tonemapping_amount = (cb_luma_frame_settings.DisplayMode == 1 && tonemap_ui_background && had_drawn_main_post_processing && ui_data.drawing_on_swapchain) ? tonemap_ui_background_amount : 0.0;
+
       //TODOFT: check all the scaleform hashes for new unknown blend types, we need to set the cbuffers even for UI passes that render at the beginning of the frame, because they will draw in world UI (e.g. computers)
       com_ptr<ID3D11BlendState> blend_state;
       native_device_context->OMGetBlendState(&blend_state, nullptr, nullptr);
@@ -4192,13 +4192,13 @@ namespace
                else /*if (blend_desc.RenderTarget[0].SrcBlend == D3D11_BLEND::D3D11_BLEND_SRC_ALPHA && blend_desc.RenderTarget[0].DestBlend == D3D11_BLEND::D3D11_BLEND_INV_SRC_ALPHA)*/
                {
                   ui_data.blend_mode = 1;
-                  assert(!device_data.has_drawn_main_post_processing || !ui_data.drawing_on_swapchain || (blend_desc.RenderTarget[0].SrcBlend == D3D11_BLEND::D3D11_BLEND_SRC_ALPHA && blend_desc.RenderTarget[0].DestBlend == D3D11_BLEND::D3D11_BLEND_INV_SRC_ALPHA));
+                  assert(!had_drawn_main_post_processing || !ui_data.drawing_on_swapchain || (blend_desc.RenderTarget[0].SrcBlend == D3D11_BLEND::D3D11_BLEND_SRC_ALPHA && blend_desc.RenderTarget[0].DestBlend == D3D11_BLEND::D3D11_BLEND_INV_SRC_ALPHA));
                }
                //if (ui_data.blend_mode == 1 || ui_data.blend_mode == 3)
                {
                   // In "blend_mode == 1", Prey seems to erroneously use "D3D11_BLEND::D3D11_BLEND_SRC_ALPHA" as source blend alpha, thus it multiplies alpha by itself when using pre-multiplied alpha passes,
                   // which doesn't seem to make much sense, at least not for the first write on a separate new texture (it means that the next blend with the final target background could end up going beyond 1 because the background darkening intensity is lower than it should be).
-                  ASSERT_ONCE(!device_data.has_drawn_main_post_processing || (ui_data.drawing_on_swapchain ?
+                  ASSERT_ONCE(!had_drawn_main_post_processing || (ui_data.drawing_on_swapchain ?
                      // Make sure we never read back from the swap chain texture (which means we can ignore all the alpha blend ops on previous to it)
                      (blend_desc.RenderTarget[0].SrcBlend != D3D11_BLEND::D3D11_BLEND_DEST_ALPHA
                         && blend_desc.RenderTarget[0].DestBlend != D3D11_BLEND::D3D11_BLEND_DEST_ALPHA
@@ -4212,10 +4212,10 @@ namespace
             }
             else
             {
-               ASSERT_ONCE(!device_data.has_drawn_main_post_processing || !ui_data.drawing_on_swapchain);
+               ASSERT_ONCE(!had_drawn_main_post_processing || !ui_data.drawing_on_swapchain);
             }
          }
-         assert(!device_data.has_drawn_main_post_processing || !ui_data.drawing_on_swapchain || !blend_desc.RenderTarget[0].BlendEnable || blend_desc.RenderTarget[0].BlendOp == D3D11_BLEND_OP::D3D11_BLEND_OP_ADD);
+         assert(!had_drawn_main_post_processing || !ui_data.drawing_on_swapchain || !blend_desc.RenderTarget[0].BlendEnable || blend_desc.RenderTarget[0].BlendOp == D3D11_BLEND_OP::D3D11_BLEND_OP_ADD);
          blend_state = nullptr;
       }
 
@@ -4702,7 +4702,7 @@ namespace
 #endif // DEVELOPMENT
 
    //TODOFT: an alternative way of approaching this would be to cache all the address of buffers that are ever filled up through ::Map() calls,
-   //then story a copy of each of their instances, and when one of these buffers is set to a shader stage, re-set the same cbuffer with our
+   //then store a copy of each of their instances, and when one of these buffers is set to a shader stage, re-set the same cbuffer with our
    //modified and fixed up data. That is a bit slower but it would be more safe, as it would guarantee us 100% that the buffer we are changing is cbuffer 13.
    // Call this after reading the global cbuffer (index 13) memory (from CPU or GPU memory). This seemengly only happens in one thread.
    // This will update the "cb_per_view_global" values if the ptr is found to be the right type of buffer (and return true in that case),
@@ -4711,7 +4711,7 @@ namespace
    {
       const CBPerViewGlobal& global_buffer_data = *((const CBPerViewGlobal*)global_buffer_data_ptr);
 
-      //TODOFT: optimize?
+      //TODOFT: optimize and verify?
       // Is this the cbuffer we are looking for?
       // Note that even if it was, in the menu a lot of these parameters are uninitialized (usually zeroed around, with matrices being identity).
       // This check overall is a bit crazy, but there's ~0% chance that it will fail and accidentally use a buffer that isn't the global one (cb13)
@@ -4979,7 +4979,7 @@ namespace
          bool prey_taa_active_copy = device_data.prey_taa_active;
          // This is a reliable check to tell whether TAA is enabled. Jitters are "never" zero if they are enabled:
          // they can be if we use the "srand" method, but it would happen one in a billion years;
-         // they could also be zero with Halton if the frame index was reset to zero (it is every x frames), but that happens very rarely, and for one frame only.
+         // they could also be zero with Halton if the frame index was reset to zero (it is every x frames), but that happens very rarely, and for one frame only (we have two frames as tolerance).
          device_data.prey_taa_active = (std::abs(projection_jitters.x * device_data.render_resolution.x) >= 0.00075) || (std::abs(projection_jitters.y * device_data.render_resolution.y) >= 0.00075); //TODOFT: make calculations more accurate (the threshold)
 #if DEVELOPMENT
          device_data.prey_taa_active = device_data.prey_taa_active || disable_taa_jitters;
@@ -5006,10 +5006,6 @@ namespace
             device_data.force_reset_dlss_sr = true;
          }
 
-         //TODOFT: note that by default the game has a lod bias of 0 on most samplers (it seems),
-         //but when enabling TAA (the "hidden" setting), some samplers go to -1, but while using SMAA 2TX, even if it includes TAA, that's not set (at least not the first time it's used, maybe they persist after first ever using TAA),
-         //so should we bias by -1 again by default when the game uses TAA? It remains to be seen how many samplers they change when enabling TAA, if it's most of them, then we should avoid re-biasing by -1
-         //by checking whether any SMAA edge AA shaders are running (the ones before TAA).
 #if DEVELOPMENT
          if (!custom_texture_mip_lod_bias_offset)
 #endif
@@ -5024,7 +5020,8 @@ namespace
             else
             {
                // Reset to best fallback value.
-               // This bias offset replaces the value from the game (see "samplers_upgrade_mode" 5), which was based on the "r_AntialiasingTSAAMipBias" cvar for most textures, but only if TAA was engaged (not SMAA or SMAA+TAA).
+               // This bias offset replaces the value from the game (see "samplers_upgrade_mode" 5), which was based on the "r_AntialiasingTSAAMipBias" cvar for most textures (it doesn't apply to all the ones that would benefit from it, and still applies to ones that exhibit moire patterns),
+               // but only if TAA was engaged (not SMAA or SMAA+TAA) (it might persist on SMAA after once using TAA, due to a bug).
                // Prey defaults that to 0 but Luma's configs set it to -1.
                device_data.texture_mip_lod_bias_offset = device_data.prey_taa_detected ? -1.f : 0.f;
             }
@@ -5234,7 +5231,7 @@ namespace
                   }
                }
                ASSERT_ONCE(recursive_or_null); // Shouldn't happen! (if we know the sampler set is "recursive", then we are good and don't need to replace this sampler again)
-#if 0 //TODOFT: delete or restore in case the "recursive_or_null" assert above ever triggered
+#if 0 // TODO: delete or restore in case the "recursive_or_null" assert above ever triggered (seems like it won't)
                if (sampler.handle != 0)
                {
                   ID3D11SamplerState* native_sampler = reinterpret_cast<ID3D11SamplerState*>(sampler.handle);
@@ -5265,7 +5262,6 @@ namespace
             }
             ID3D11Buffer* buffer = reinterpret_cast<ID3D11Buffer*>(buffer_range.buffer.handle);
 
-#if DEVELOPMENT && 0
             auto it = std::find(cb_per_view_global_buffer_pending_verification.begin(), cb_per_view_global_buffer_pending_verification.end(), buffer);
             if (it != cb_per_view_global_buffer_pending_verification.end())
             {
@@ -5273,11 +5269,11 @@ namespace
                cb_per_view_global_buffer_pending_verification.pop_back();
                cb_per_view_global_buffer_pending_verification.erase(it);
             }
-#endif // DEVELOPMENT
 
             break; // There can't be anything after this in DX11
          }
       }
+#endif // DEVELOPMENT
       }
    }
 
@@ -5292,9 +5288,10 @@ namespace
          buffer->GetDesc(&buffer_desc);
          auto& device_data = device->get_private_data<DeviceData>();
 
-         // There seems to only ever be one buffer type of this size, but it's not guaranteed... //TODOFT: not true, there's more? Check the map data!
+         // There seems to only ever be one buffer type of this size, but it's not guaranteed (we might have found more, but it doesn't matter, they are discarded later)...
          // They seemengly all happen on the same thread.
-         if ((buffer_desc.Usage & D3D11_BIND_CONSTANT_BUFFER) != 0 && buffer_desc.ByteWidth == CBPerViewGlobal_buffer_size)
+         // Some how these are not marked as "D3D11_BIND_CONSTANT_BUFFER", probably because it copies them over to some other buffer later?
+         if (buffer_desc.ByteWidth == CBPerViewGlobal_buffer_size)
          {
             device_data.cb_per_view_global_buffer = buffer;
 #if DEVELOPMENT && 0
@@ -5696,8 +5693,7 @@ namespace
    {
       if (!last_pressed_unload)
       {
-         //TODOFT: force clean previous shader cache here? Nah
-         OnReShadeSetEffectsState(runtime, true); // This will load and recompile all shaders
+         OnReShadeSetEffectsState(runtime, true); // This will load and recompile all shaders (there's no need to delete the previous pre-compiled cache)
       }
    }
 
@@ -6286,7 +6282,7 @@ namespace
                                  if (ImGui::Button(pipeline_pair->second->cloned ? "Recompile" : "Load"))
                                  {
                                     bool compile = pipeline_pair->second->cloned;
-                                    LoadCustomShaders(device_data, { pipeline_handle }, compile, true);
+                                    LoadCustomShaders(device_data, { pipeline_handle }, compile);
                                  }
                               }
                               if (pipeline_pair->second->HasPixelShader() || pipeline_pair->second->HasComputeShader())
@@ -6644,7 +6640,7 @@ namespace
                }
                if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
                {
-                  ImGui::SetTooltip("This can help to keep the UI readable when there's bright backgrounds behind it.");
+                  ImGui::SetTooltip("This can help to keep the UI readable when there's a bright background behind it.");
                }
                ImGui::SameLine();
                if (tonemap_ui_background != true)
@@ -6890,7 +6886,7 @@ namespace
             }
 
             ImGui::NewLine();
-            //TODOFT: these aren't really working yet... figure out how to make them work or remove it
+            //TODOFT4: these aren't really working yet... figure out how to make them work or remove it
             const char* ldr_formats[4] = {
                 "R8G8B8A8",
                 "R10G10B10A2",
@@ -6948,7 +6944,7 @@ namespace
                NativePlugin::SetTexturesFormat(LDR_textures_upgrade_format, HDR_textures_upgrade_format);
 #endif // ENABLE_NATIVE_PLUGIN
 
-#if 0 //TODOFT: verify this is safe. Does the game cache the pointers to this somehow (probably not!)? Can we change it within Present()?
+#if 0 //TODOFT4: verify this is safe. Does the game cache the pointers to this somehow (probably not!)? Can we change it within Present()?
                //Update: it doesn't work!
                UINT flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
                DXGI_FORMAT format = DXGI_FORMAT_R16G16B16A16_FLOAT;
@@ -7002,12 +6998,19 @@ namespace
             if (samplers_changed)
             {
                const std::unique_lock lock_samplers(s_mutex_samplers);
-               for (auto& samplers_handle : device_data.custom_sampler_by_original_sampler)
+               if (samplers_upgrade_mode <= 0)
                {
-                  ID3D11SamplerState* native_sampler = reinterpret_cast<ID3D11SamplerState*>(samplers_handle.first);
-                  D3D11_SAMPLER_DESC native_desc;
-                  native_sampler->GetDesc(&native_desc);
-                  samplers_handle.second[device_data.texture_mip_lod_bias_offset] = CreateCustomSampler(device_data, (ID3D11Device*)runtime->get_device()->get_native(), native_desc);
+                  device_data.custom_sampler_by_original_sampler.clear();
+               }
+               else
+               {
+                  for (auto& samplers_handle : device_data.custom_sampler_by_original_sampler)
+                  {
+                     ID3D11SamplerState* native_sampler = reinterpret_cast<ID3D11SamplerState*>(samplers_handle.first);
+                     D3D11_SAMPLER_DESC native_desc;
+                     native_sampler->GetDesc(&native_desc);
+                     samplers_handle.second[device_data.texture_mip_lod_bias_offset] = CreateCustomSampler(device_data, (ID3D11Device*)runtime->get_device()->get_native(), native_desc);
+                  }
                }
             }
 #endif // DEVELOPMENT
