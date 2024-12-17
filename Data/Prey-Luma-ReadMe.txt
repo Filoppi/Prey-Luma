@@ -1,18 +1,17 @@
 Luma is a Prey (2017) + Mooncrash DLC mod that re-writes the game's late rendering and post processing phases to improve the game's look without drifting from the artistic vision (believe me!).
 The highlight feature is adding HDR support, DLSS and new Ambient Occlusion, making it akin to a smallish Remastered.
 The mod works by hooking into the game's code and replacing shaders.
-
 Luma was created by Pumbo (graphics) and Ersh (reverse engineering).
-Join our discord here: https://discord.gg/DNGfMZgH3f
 
 # List of features:
 - Added HDR output (scRGB 16bit) (improved tonemapping, reworked all post processing effects)
 - Increased buffers quality in SDR and HDR, reducing banding all around
-- Improved the quality of dynamic shadow, especially from up close (they had broken filtering that causes them to be blocky)
+- Improved the quality of dynamic shadow, especially from up close (they had broken filtering that causes them to be blocky) (the maximum shadow render distance is also increased through configs)
 - Added a more modern Ambient Occlusion solution (GTAO) (the original AO is also improved in quality)
 - Improved Screen Space Reflections (they are not cropped close to the camera anymore, they now get progressively more diffuse with distance, they blend in and out of view more nicely etc etc, their math in general has been refactored for much better looking and more "physically accurate" results)
 - Added DLAA+DLSS Super Resolution (on Nvidia GPUs) (OptiScaler can be used to inject FSR 3) (this looks drastically better than the native TAA and has no noticeable ghosting)
 - Added RCAS sharpening after TAA (replacing the original basic sharpening implementation, making it look a lot more natural)
+- Added Perspective Correction (optional) (a modern type of "lens distortion" that makes the rendering look natural)
 - Improved all of the native Anti Aliasing implementations (e.g. SMAA/TAA)
 - Improved Anisotropic Filtering (it was not set to 16x on all textures that would benefit from it)
 - Improved quality and look of the Sun, Sun Shaft effects and Lens "Optics" effects (e.g. lens flare)
@@ -26,7 +25,8 @@ Join our discord here: https://discord.gg/DNGfMZgH3f
 - More (e.g. added optional HDR post process filter on pre-rendered video, added settings to turn off Vignette or Camera Motion Blur)!
 
 # How to install:
-- Drop all the files into the game installation folder (including "autoexec.cfg" and "system.cfg"), except the "game.cfg" file that goes into the user data folder (this is optional, but highly suggested for the best quality).
+- Drop all the files into the game installation folder (including "autoexec.cfg" and "system.cfg") (the root folder, not the one with the executable). Override all files (you can make a backup, but Luma just changes a couple configs in the game packages, these changes simply increase the rendering quality and can persist without Luma).
+- If you are on GOG, move the files in ".\Binaries\Danielle\x64\" to ".\Binaries\Danielle\x64-GOG\".
 - Install the latest VC++ redist before using (https://aka.ms/vs/17/release/vc_redist.x64.exe).
 - Install ReShade 6.3.3+ (with Addons support, for DX11, preferably as dxgi.dll) (you can disable the "Generic Depth" and "Effects Runtime Sync" Addons for performance gains).
 - Unless you are on Linux/Proton, delete the "d3dcompiler_47.dll" from the main binary folder, it's an outdated shader compiler bundled with the game for "no reason" (Windows will fall back on the latest version of it this way, but Proton doesn't distribute the file so leave it in).
@@ -37,7 +37,7 @@ Join our discord here: https://discord.gg/DNGfMZgH3f
 - Set you "game.cfg" to read only to avoid the game clearing most settings from it if changing settings within the game menu, so it's suggested to change your resolution and other settings directly from config before booting the game, or they will get overwritten every time.
 - The game's HDR uses the HDR calibration data from Windows 11 and display's EDID.
 - The in game brightness slider is best left at default value.
-- Before updating the mod, make sure to delete all its previous files. To uninstall, clear all the files (they are unique to the mod).
+- Before updating the mod, make sure to delete all its previous files. To uninstall, delete all the files and restore the original version of the overwritten ones (or not, they simply change a couple of quality configs, they can stay without Luma).
 - The game runs in HDR mode even when targeting SDR. Most ReShade shaders/effects still don't properly support HDR yet, so avoid using them.
 
 # Issues and limitations:
@@ -49,7 +49,7 @@ Join our discord here: https://discord.gg/DNGfMZgH3f
 - Sun shafts can disappear while they are still visible if the sun center gets occluded (this is a bug with the original game, it's slightly more noticeable with LUMA because sun shafts are stronger).
 - Some objects in some levels disappear at certain camera angles (vanilla issue, lowering object details to high or below fixes it).
 - Glass can flicker heavily, especially when there's multiple layers of it (vanilla issue).
-- Mission/Items/Enemy indicators are misaligned when the game uses lens distortion (vanilla issue).
+- Mission/Items/Enemy indicator icons are misaligned when the game uses lens distortion (vanilla issue).
 - Due to Windows limitations, the game cursor will follow the OS SDR White Level (SDR content brightness) instead of the game's UI paper white. Set the Windows SDR content brightness setting to 31 (out of 100) to make it match ~203 nits, as Luma is set to by default.
 
 # Compatibility:
@@ -68,6 +68,10 @@ Replace their files with the Luma version if necessary, none of the game's mods 
   Not for general usage but it's great for messing around
 - Sensitivity Sprint Scale - https://www.nexusmods.com/prey2017/mods/117
 
+# References:
+Join our discord: https://discord.gg/DNGfMZgH3f
+Source Code: https://github.com/Filoppi/Prey-Luma
+
 # Donations:
 - https://www.buymeacoffee.com/realfiloppi (Pumbo)
 - https://www.paypal.com/donate?hosted_button_id=BFT6XUJPRL6YC (Pumbo)
@@ -76,5 +80,5 @@ Replace their files with the Luma version if necessary, none of the game's mods 
 # Thanks:
 ShortFuse (support), Lilium (support), KoKlusz (testing), Musa (testing), crosire (support), FreshCloth (support), Regevitamins (support), MartysMods (support), Kaldaien (support), nd4spd (testing)
 
-Third party:
+# Third party:
 ReShade, ImGui, RenoDX, n3Dmigoto, DKUtil, Nvidia (DLSS), Fubaxiusz (Perfect Perspective), Oklab, Intel (Xe)GTAO, Darktable UCS, AMD RCAS, DICE (HDR tonemapper), Crytek (CryEngine) and Arkane (Prey)
