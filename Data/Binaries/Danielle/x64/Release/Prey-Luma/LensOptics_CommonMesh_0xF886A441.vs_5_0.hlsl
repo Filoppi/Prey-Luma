@@ -20,7 +20,6 @@ void main(
   out float4 o3 : COLOR0)
 {
   float4 r0;
-
   r0.xy = wposAndSize.ww * v0.xy;
   r0.yz = xform._m10_m11 * r0.yy;
   r0.xy = r0.xx * xform._m00_m01 + r0.yz;
@@ -28,6 +27,17 @@ void main(
 #if 1 // LUMA FT: added proper aspect ratio correction, these were rendering a lot bigger in ultrawide
   float screenAspectRatio = CV_ScreenSize.w / CV_ScreenSize.z;
   r0.x *= min(NativeAspectRatio / screenAspectRatio, 1.0);
+#if CORRECT_SUNSHAFTS_FOV
+  // Note: this is a bit approximate, as it's based on the overall view FOV and it doesn't do FOV ratio calculations in tangent space,
+  // furthermore it only acknowledges the vertical FOV (which might be ok), but to do it properly we should probably find the FOV from the center of the screen at this vertices in NDC space,
+  // and scale based on that, but it's really not worth bothering.
+	float FOVX = 1.f / CV_ProjRatio.z;
+  float tanHalfFOVX = tan( FOVX * 0.5f );
+  float tanHalfFOVY = tanHalfFOVX / screenAspectRatio;
+	float FOVY = atan( tanHalfFOVY ) * 2.0;
+	float FOVCorrection = FOVY / NativeVerticalFOV;
+  r0 /= FOVCorrection;
+#endif // CORRECT_SUNSHAFTS_FOV
 #endif
   r0.xy = r0.xy * float2(0.5,0.5) + meshCenterAndBrt.xy;
   r0.z = 1 + -r0.y;
@@ -42,5 +52,4 @@ void main(
   r0.xyzw = meshCenterAndBrt.wwww * v2.zyxw;
   r0.xyzw = externTint.xyzw * r0.xyzw;
   o3.xyzw = dynamics.xxxx * r0.xyzw;
-  return;
 }

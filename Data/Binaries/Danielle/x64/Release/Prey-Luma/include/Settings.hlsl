@@ -91,6 +91,11 @@
 // Unjitter the sun shafts depth buffer and re-jitter their generation.
 // This is because they draw before TAA/DLSS but with screen space logic, so jittering needs to be done manually.
 #define REJITTER_SUNSHAFTS 1
+// Some lens optics effects (and maybe sun shafts?) did not acknowledge FOV (they drew in screen space, independently of FOV),
+// so if you zoomed in, you'd get "smaller" (they'd be the same size in screen space, thus smaller relative to the rest).
+// This would theoretically change the intended size of these effects during cutscenes if they changed the FOV from the gameplay one,
+// but there really aren't any in Prey.
+#define CORRECT_SUNSHAFTS_FOV 1
 // Lens optics were clipped to 1 due to being rendered before tonemapping. As long as "DELAY_HDR_TONEMAP" is true, now these will also be tonemapped instead of clipped (even in SDR, so "TONEMAP_TYPE" needs to be HDR).
 #if !defined(ENABLE_LENS_OPTICS_HDR) || ENABLE_LENS_OPTICS_HDR >= 1
 #undef ENABLE_LENS_OPTICS_HDR

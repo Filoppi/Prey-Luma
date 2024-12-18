@@ -281,10 +281,10 @@ void HDRFinalScenePS(float4 WPos, float4 baseTC, out float4 outColor)
 	float4 cScene = hdrSourceTex.Load(pixelCoord);
 #endif // ALLOW_MSAA
 
+  float2 jitteredBaseTC = baseTC.xy + LumaData.CameraJitters.xy * float2(0.5, -0.5);
 #if ENABLE_VIGNETTE
   // LUMA FT: Ultrawide friendly vignette implementation. To alter the vignette strength, we can multiply the offset from 1 (away from it)
   // LUMA FT: added jittering to vignette, so it's resolved over time more nicely (it's still bad that it's applied before TAA!)
-  float2 jitteredBaseTC = baseTC.xy + LumaData.CameraJitters.xy * float2(0.5, -0.5);
 	float fVignetting = vignettingTex.Sample(ssHdrLinearClamp, jitteredBaseTC).x;
 #else // !ENABLE_VIGNETTE
   float fVignetting = 1.0;
@@ -297,7 +297,13 @@ void HDRFinalScenePS(float4 WPos, float4 baseTC, out float4 outColor)
 #endif
 
 #if _RT_SAMPLE3 && ENABLE_SUNSHAFTS
-	float4 sunShafts = sunshaftsTex.Load(SunShafts_SunCol.w * pixelCoord); // "SunShafts_SunCol.w" scales the size of the sun shafts
+#if REJITTER_SUNSHAFTS
+  // Sun shafts are built on screen space (dejittered) depth, so we need to re-jitter them in the opposite direction to make TAA reconstruct them as best as possible and with the least shimmering.
+  // Bilinear sampling could also help in case the resolution was not even, as nearest neightbor wouldn't be enough.
+	float4 sunShafts = sunshaftsTex.Sample(ssHdrLinearClamp, jitteredBaseTC * CV_HPosScale.xy);
+#else
+	float4 sunShafts = sunshaftsTex.Load(SunShafts_SunCol.w * pixelCoord); // "SunShafts_SunCol.w" match the coordinates match the size of the sun shafts texture (e.g. it's 0.5 as it's half res)
+#endif
 
   // Apply the colorization (which also includes brightness scaling) in whatever linear/gamma space sun shafts were, before doing any other operation,
   // so to keep it as close to vanilla as possible. "SunShafts_SunCol" is neither in gamma nor linear space, as it's just a colorization vector, and can't really be linearized (also because it has values beyond the 0-1 range).

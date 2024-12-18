@@ -27,6 +27,16 @@ void main(
 
   r0.xy = v1.xy * float2(2,2) + float2(-1,-1);
   r0.xy = wposAndSize.ww * r0.xy;
+//TODOFT: apply the same correction for the remaining LensOptics vertex shaders!
+#if CORRECT_SUNSHAFTS_FOV // Approximate correction
+  float screenAspectRatio = CV_ScreenSize.w / CV_ScreenSize.z;
+	float FOVX = 1.f / CV_ProjRatio.z;
+  float tanHalfFOVX = tan( FOVX * 0.5f );
+  float tanHalfFOVY = tanHalfFOVX / screenAspectRatio;
+	float FOVY = atan( tanHalfFOVY ) * 2.0;
+	float FOVCorrection = tanHalfFOVY / tan( NativeVerticalFOV * 0.5f );
+  r0 /= FOVCorrection;
+#endif // CORRECT_SUNSHAFTS_FOV
   r0.yz = xform._m10_m11 * r0.yy;
   r0.xy = r0.xx * xform._m00_m01 + r0.yz;
   r0.xy = xform._m20_m21 + r0.xy;

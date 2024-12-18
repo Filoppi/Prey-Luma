@@ -20,6 +20,8 @@
 static const float NativeAspectRatioWidth = 16.0;
 static const float NativeAspectRatioHeight = 9.0;
 static const float NativeAspectRatio = NativeAspectRatioWidth / NativeAspectRatioHeight;
+// Default value used all across the game for gameplay (and possibly during cutscenes too)
+static const float NativeVerticalFOV = radians(55.0);
 // The vertical resolution that most likely was the most used by the game developers,
 // we define this to scale up stuff that did not natively correctly scale by resolution.
 // According to the developers, the game was mostly developed on 1080p displays, and some 1440p ones, so

@@ -20,7 +20,7 @@ float2 MapViewportToRaster(float2 normalizedViewportPos, bool bOtherEye = false)
 }
 
 // This draws after "SunShaftsMaskGen" ("_tex0").
-// This is run twice, the first time "_tex0" is the output of "SunShaftsMaskGen", the second time is its own previous output.
+// This is run twice, the first time "_tex0" is the output of "SunShaftsMaskGen", the second time is its own previous output. The output is "fullscreen" (it's not based on any scene geometry).
 void main(
   float4 HPosition : SV_Position0,
   float2 inBaseTC : TEXCOORD0,
@@ -32,21 +32,26 @@ void main(
 	float fDisplacement = cbSunShafts.params.x;
   
   // LUMA FT: fixed sun shafts not scaling correctly by aspect ratio.
-  // They exclusively scaled properly with the FOV, so (e.g.) at 32:9 they'd look the same at 16:9 as long as the same horizontal FOV was the same (e.g. ~82), but that would cause major cropping of the picture in UW,
+  // They exclusively scaled with the FOV, so (e.g.) at 32:9 they'd look the same at 16:9 as long as the same horizontal FOV was the same (e.g. ~82), but that would cause major cropping of the picture in UW,
   // so this code assumes the user has scaled the FOV properly for their UW resolution, matching the 16:9 vertical FOV.
-  // Ideally these calculations would be done by comparing vanilla FOV/AR and current FOV/AR but we don't have all that information accessible here,
-  // and we especially don't know what the baseline FOV is for any point (e.g. it can be different in cutscenes and after specific gameplay actions).
-  // This also means that when the sprint or do other things that increase the FOV, the sun shafts don't scale in size in screen space,
-  // which isn't really a great thing, but then again they are so rate in Prey that it doesn't particularly matter.
   // Note that this adjustment results in a perfect match, it doesn't need to work in FOV tangent space.
-  //TODOFT4: if we added perspective correction and increased the baseline FOV, we should add a FOV scale modifier here, to avoid the sun shafts looking huge (or small?). Or is that already done?
   float screenAspectRatio = CV_ScreenSize.w / CV_ScreenSize.z;
   float aspectRatioCorrection = max(screenAspectRatio / NativeAspectRatio, 1.0);
+  
+  // LUMA FT: Scale based on the default FOV that the game was meant for, otherwise their size would change relative to the rest of the scene.
+  // This also meant that when sprinting or doing other things that increase the FOV, the sun shafts didn't scale in size in screen space, which isn't really a great thing (even if they are rare in Prey).
+#if CORRECT_SUNSHAFTS_FOV
+	float FOVX = 1.f / CV_ProjRatio.z;
+  float tanHalfFOVX = tan( FOVX * 0.5f );
+  float tanHalfFOVY = tanHalfFOVX / screenAspectRatio;
+	aspectRatioCorrection *= tanHalfFOVY / tan( NativeVerticalFOV * 0.5f );
+#endif // CORRECT_SUNSHAFTS_FOV
 
   float2 jitteredBaseTC = inBaseTC;
-#if REJITTER_SUNSHAFTS
-  // Selectively pick what we jitter and what not (e.g. the depth buffer (occlusion map), was already dejittered so we don't need to re-jitter it)
-  jitteredBaseTC += LumaData.CameraJitters.xy * float2(0.5, -0.5);
+#if REJITTER_SUNSHAFTS && 0 //TODOFT: delete here or there? Possibly moved to tonemapping (sunshafts blend) pass, which makes a lot more sense? There's no way of telling if this is the first or second sun shafts generation pass so we can't rejitter here (we'd do it twice...)
+  // Selectively pick what we (re)jitter and what not (e.g. the depth buffer (occlusion map), was already dejittered so we don't need to re-jitter it)
+  // We scale the jitters by half as this pass is run twice on itself (which means this makes little sense).
+  jitteredBaseTC += LumaData.CameraJitters.xy * float2(0.5, -0.5) * 0.5;
 #endif
   
   float2 sunVec = (sunPosProj.xy - jitteredBaseTC.xy) * aspectRatioCorrection;
