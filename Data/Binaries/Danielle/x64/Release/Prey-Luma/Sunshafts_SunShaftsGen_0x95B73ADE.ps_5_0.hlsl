@@ -39,7 +39,7 @@ void main(
   // This also means that when the sprint or do other things that increase the FOV, the sun shafts don't scale in size in screen space,
   // which isn't really a great thing, but then again they are so rate in Prey that it doesn't particularly matter.
   // Note that this adjustment results in a perfect match, it doesn't need to work in FOV tangent space.
-  //TODOFT: if we added perspective correction and increased the baseline FOV, we should add a FOV scale modifier here, to avoid the sun shafts looking huge (or small?).
+  //TODOFT4: if we added perspective correction and increased the baseline FOV, we should add a FOV scale modifier here, to avoid the sun shafts looking huge (or small?). Or is that already done?
   float screenAspectRatio = CV_ScreenSize.w / CV_ScreenSize.z;
   float aspectRatioCorrection = max(screenAspectRatio / NativeAspectRatio, 1.0);
 
@@ -63,7 +63,7 @@ void main(
   
 // LUMA FT: make it a bit bigger in HDR so its more realistic (this isn't directly the size of the sun, but the size of the sun shafts central "white" blob)
 #if SUNSHAFTS_LOOK_TYPE > 0
-  //TODOFT2: the sun shafts god rays size can be too big in some levels... (central HUB)? Try sampling the background color of the sky or stuff like that to scale them? Or not show them if they are blocked!? (probably already done)? (also see "SunShaftsAndLensOpticsExposureAlpha" maybe?)
+  //TODOFT2: the sun shafts god rays size can be too big in some levels... (duplicate todo?) (central HUB)? Try sampling the background color of the sky or stuff like that to scale them? Or not show them if they are blocked!? (probably already done)? (also see "SunShaftsAndLensOpticsExposureAlpha" maybe?)
 #if 0
   const float sizeNormalized = saturate(fInvSize / 5.0); // Sun shafts size usually is between 1.5 and 5, it shouldn't ever be much smaller or bigger or it would look off
   const float sizeMultiplier = lerp(1.0, 0.75, 1); // The bigger it is, the less we scale it (basically acting as a pow function), because if it was already small, it's likely because the sun is partially occluded by stuff and we wouldn't want the sun shafts around the scene just "hanging" around for no purpose (they might also suddently disappear due to the sun bound found occluded by previous occlusion tests)

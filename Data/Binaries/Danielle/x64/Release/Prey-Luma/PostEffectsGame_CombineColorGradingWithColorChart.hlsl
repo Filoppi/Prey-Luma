@@ -156,6 +156,13 @@ float3 CombineColorGradingWithColorChartPS(float3 Color, bool adjustLevels, bool
 	col.xyz = SampleLUTWithExtrapolation(mergedChartTex, ssMergedChart, extrapolationData, extrapolationSettings); // LUMA FT: replaced from "TexColorChart2D()"
   // LUMA FT: we allow values beyond 0-1 even if "ENABLE_LINEAR_COLOR_GRADING_LUT" is false, see "ENABLE_HDR_COLOR_GRADING_LUT".
 
+#if DRAW_LUT && 0 // Highlight edges (debug LUT printing)
+  if (any(Color.xy >= 1 - FLT_EPSILON) || any(Color.xy <= FLT_MIN))
+  {
+    col.xyz = float3(10, 0, 10);
+  }
+#endif
+
   //TODOFT3: ... Why does this happen!? Could we store the last clipped texel in the alpha channel, to re-use it later in sampling? Could we cache the last non clipped texel index and re-use it later in extrapolation?
   //TODO LUMA: Prey LUTs are occasionally clipped, as in, for example, the last two or three texels on the red axis are all 255, so this will both make the HDR look clipped in general, and particularly break the LUT extrapolation logic.
   //Fortunately it only really happens in one or two LUTs, so it's not a massive problem (they could also be fixed by modifying the assets).

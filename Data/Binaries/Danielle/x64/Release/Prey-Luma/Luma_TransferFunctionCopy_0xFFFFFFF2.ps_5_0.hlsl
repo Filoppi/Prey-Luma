@@ -24,6 +24,7 @@ float4 main(float4 pos : SV_Position0) : SV_Target0
 		bool invertColors = (LumaData.CustomData & (1 << 4)) != 0;
         bool gammaToLinear = (LumaData.CustomData & (1 << 5)) != 0;
         bool linearToGamma = (LumaData.CustomData & (1 << 6)) != 0;
+		bool backgroundPassthrough = false;
 
 		if (fullscreen) // Stretch to fullscreen
 		{
@@ -38,6 +39,7 @@ float4 main(float4 pos : SV_Position0) : SV_Target0
 		}
 
 		pos.xy = round((pos.xy - 0.5) * resolutionScale) + 0.5;
+		bool validTexel = pos.x < debugWidth && pos.y < debugHeight;
 		float4 color = debugTexture.Load((int3)pos.xyz); // We don't have a sampler here so we just approimate to the closest texel
 
 		if (showAlpha)
@@ -60,7 +62,10 @@ float4 main(float4 pos : SV_Position0) : SV_Target0
 		{
        		color.rgb = pow(abs(color.rgb), 1.f / 2.2f) * sign(color.rgb);
 		}
-		return color * paperWhite; // Scale by user paper white brightness just to make it more visible
+		if (validTexel || !backgroundPassthrough)
+		{
+			return color * paperWhite; // Scale by user paper white brightness just to make it more visible
+		}
     }
 #endif
 
@@ -94,7 +99,7 @@ float4 main(float4 pos : SV_Position0) : SV_Target0
 
 		color.rgb = ColorGradingLUTTransferFunctionOutCorrected(color.rgb, LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB, GAMMA_CORRECTION_TYPE);
 		
-#else // Apply gamma correction around the whole range
+#else // GAMMA_CORRECTION_TYPE == 0 // Apply gamma correction around the whole range (alternative branch)
 
 #if GAMMA_CORRECTION_TYPE >= 2
   		color.rgb = RestoreLuminance(gamma_sRGB_to_linear(color.rgb, GCT_MIRROR), gamma_to_linear(color.rgb, GCT_MIRROR));
@@ -113,7 +118,7 @@ float4 main(float4 pos : SV_Position0) : SV_Target0
 // but given that the formula is slow to execute and isn't easily revertible
 // (mirroring back and forth is lossy, at least in the current lightweight implementation),
 // we moved it to a single application here (it might not look as good but it's certainly good enough).
-// Any linear->gamma->linear encoding (e.g. PostAACoposites) or linear->gamma->luminance encoding (e.g. Anti Aliasing)
+// Any linear->gamma->linear encoding (e.g. "PostAAComposites") or linear->gamma->luminance encoding (e.g. Anti Aliasing)
 // should fall back on gamma 2.2 instead of sRGB for this gamma correction type, but we haven't bothered implementing that (it's not worth it).
 #elif GAMMA_CORRECTION_TYPE >= 2 // Linear->Linear space (POST_PROCESS_SPACE_TYPE == 1)
 

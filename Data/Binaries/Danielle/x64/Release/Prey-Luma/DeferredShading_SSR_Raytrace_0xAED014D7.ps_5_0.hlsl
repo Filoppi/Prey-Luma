@@ -321,7 +321,7 @@ void main(
 	float len = lerp(stepSize * (1.0 - range), stepSize * (1.0 + range), rayProgress); // Compiler should be smart enough to detect this value is static
 	float bestHitLenght = 0;
 	float3 bestHitDepth = 0;
-	float2 sampleUVClamp = CV_HPosScale.xy - (CV_ScreenSize.zw * 2.0);
+	float2 sampleUVClamp = CV_HPosScale.xy - CV_ScreenSize.zw;
 	float2 prevDepthTC = 0.5;
 	float furthestdepthFromCameraCenter = 0.0;
 	[loop]
@@ -422,10 +422,10 @@ void main(
 		borderDist = min( 1 - max(clampedPrevTC.x / TCXScale, clampedPrevTC.y * TCYScale), borderDist );
 		float edgeWeight = (borderSize > 0) ? saturate(pow(borderDist / borderSize, borderPow)) : 1.0; // LUMA FT: changed sqrt() to pow() to make the blending out smoother (the higher the pow exponent, the more "gradual" the blend out is)
 
-		// LUMA FT: this smapler had a border color (black), though given that we scaled the resolution clamped UVs, we never got that.
+		// LUMA FT: this sampler had a border color (black), though given that we scaled the resolution clamped UVs, we never got that.
 		// We fixed it by branching on samples that wouldn't touch any texel within the render resolution area.
 		// It's unclear whether this actually is correct and helps visually (maybe the border was set to the scene average color or sky color as a fallback), and whether the alpha should be forced to zero in that case too (why would anything reflect downwards anyway?).
-		sampleUVClamp = cbRefl.screenScalePrevClamp + (CV_ScreenSize.zw * 2.0);
+		sampleUVClamp = cbRefl.screenScalePrevClamp + CV_ScreenSize.zw;
 
 #if BLUR_REFLECTIONS_TYPE == 1 //TODOFT: finish or delete (this is extremely expensive and doesn't look better really)
 		static const uint samplesByBlurriness = 8;
@@ -457,8 +457,9 @@ void main(
 #endif // ENFORCE_BORDER_COLOR
 					localPrevTC = ClampScreenTC(localPrevTC, cbRefl.screenScalePrevClamp);
 #if !ENFORCE_BORDER_COLOR // Without this the can be a tiny bit of flickering on reflections at the top left edge of the reflections, due to jittering UVs, it might be related to "REJITTER_RELFECTIONS"
-					localPrevTC = max(localPrevTC.xy, CV_ScreenSize.zw);
+					localPrevTC = max(localPrevTC.xy, CV_ScreenSize.zw /*half texel size*/);
 #endif
+					//TODO LUMA: add depth rejection (with the depth from the previous frame) to avoid your own weapon (e.g.) being reflected into bodies of water when turning the camera
 					color.rgb += reflectionPreviousSceneTex.SampleLevel(ssReflectionLinearBorder, localPrevTC , 0).rgb;
 #if ENFORCE_BORDER_COLOR
 				}

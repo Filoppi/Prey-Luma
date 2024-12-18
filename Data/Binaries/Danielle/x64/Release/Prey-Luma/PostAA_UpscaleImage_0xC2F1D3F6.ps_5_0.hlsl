@@ -34,7 +34,7 @@ void main(
   out float4 outColor : SV_Target0)
 {
 	//TODO LUMA: replace this with FSR 1 (a simpler single pass version?) if ever needed?
-	//TODO LUMA: we could completely skip this pass from c++ if DLSS was running and simply copy the texture into the target directly
+	//TODO LUMA: we could completely skip this pass from c++ if DLSS was running and simply copy the texture into the target directly (remember to force dithering to happen before if you do that!)
 
 	if (!LumaSettings.DLSS) // LUMA FT: DLSS already uspcaled the image, don't upscale it again
 	{

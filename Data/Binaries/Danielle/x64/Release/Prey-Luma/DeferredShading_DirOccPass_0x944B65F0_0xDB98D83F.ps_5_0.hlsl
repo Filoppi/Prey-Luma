@@ -125,7 +125,7 @@ float4 GTAO(float4 WPos, float4 inBaseTC, out float edges)
 	consts.SampleUVClamp = CV_HPosClamp.xy;
 #if _RT_SAMPLE0
 #if 1 // Optimized branch
-	consts.SampleScaledUVClamp = CV_HPosScale.xy - (CV_ScreenSize.zw * 2.0); 
+	consts.SampleScaledUVClamp = CV_HPosScale.xy - CV_ScreenSize.zw;
 #else // Given that the depth is half or quarter resolution (with the render resolution scaled acknowledged within it), the UV clamp should be moved further up left, though quarter res can't be enabled in Prey so we disabled the check
     float2 scaledDepthSize;
     _tex2_D3D11.GetDimensions(scaledDepthSize.x, scaledDepthSize.y);

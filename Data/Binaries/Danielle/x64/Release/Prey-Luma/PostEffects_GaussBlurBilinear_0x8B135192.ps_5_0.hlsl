@@ -29,7 +29,7 @@ void main(
 #if 1 // LUMA FT: fixed missing UV clamps
   float2 sampleUVClamp = CV_HPosClamp.xy;
 #elif 1
-  float2 sampleUVClamp = CV_HPosScale.xy - (CV_ScreenSize.zw * 2.0); // The "CV_ScreenSize" seems to be updated with the current render target size (testing showed the source and target textures match in size, at least in most cases)
+  float2 sampleUVClamp = CV_HPosScale.xy - CV_ScreenSize.zw; // The "CV_ScreenSize" seems to be updated with the current render target size (testing showed the source and target textures match in size, at least in most cases)
 #else
   float2 outputResolution;
   _tex0.GetDimensions(outputResolution.x, outputResolution.y); // For 100% accurate results ("CV_ScreenSize" might be based on the render target size, which might not be the same as the source texture size?)

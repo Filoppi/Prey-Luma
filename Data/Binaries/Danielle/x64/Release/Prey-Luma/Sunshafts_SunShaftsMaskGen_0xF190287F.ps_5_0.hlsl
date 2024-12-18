@@ -19,7 +19,7 @@ void main(
   out float4 outColor : SV_Target0)
 {
 #if REJITTER_SUNSHAFTS
-  // Dejitter the background depth/color, to get a more consistent result over time (basically a quick way of resolving TAA)
+  // Dejitter the background depth/color, to get a more consistent result over time (basically a quick way of resolving TAA on these sun shafts vertices that didn't acknowledge it)
   inBaseTC.xy -= LumaData.CameraJitters.xy * float2(0.5, -0.5);
 #endif
 
@@ -28,7 +28,7 @@ void main(
 	sampleUV = min(sampleUV, CV_HPosScale.xy);
 	
   //TODO LUMA: use .Load() for these textures?
-  float sceneDepth = _tex0.Sample(_tex0_s, sampleUV).x; // Linear depth (0 camera origin or near, 1 far)
+  float sceneDepth = _tex0.Sample(_tex0_s, sampleUV).x; // Linear depth (0 camera origin or near, 1 far). This might be downscaled, in that case it uses "x" as it it's the max of the 4 top mip samples.
   outColor = float4(sceneDepth, sceneDepth, sceneDepth, 1 - sceneDepth.x);
 
   float3 sceneCol = _tex1.Sample(_tex1_s, sampleUV).xyz; // comes straight from hdr scaled target (exposure isn't adjusted yet)
