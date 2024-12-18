@@ -559,7 +559,7 @@ namespace
       // Resources:
 
 #if ENABLE_NGX
-// DLSS SR
+      // DLSS SR
       com_ptr<ID3D11Texture2D> dlss_output_color;
       com_ptr<ID3D11Texture2D> dlss_exposure;
       float dlss_exposure_texture_value = 1.f;
@@ -589,14 +589,34 @@ namespace
       com_ptr<ID3D11RenderTargetView> gtao_edges_rtv;
       com_ptr<ID3D11ShaderResourceView> gtao_edges_srv;
 
+      void CleanGTAOResource()
+      {
+         gtao_edges_texture = nullptr;
+         gtao_edges_texture_width = 0;
+         gtao_edges_texture_height = 0;
+         gtao_edges_rtv = nullptr;
+         gtao_edges_srv = nullptr;
+      }
+
       // SSR
       com_ptr<ID3D11Texture2D> ssr_texture;
+      com_ptr<ID3D11ShaderResourceView> ssr_srv;
       com_ptr<ID3D11Texture2D> ssr_diffuse_texture;
       UINT ssr_diffuse_texture_width = 0;
       UINT ssr_diffuse_texture_height = 0;
       com_ptr<ID3D11RenderTargetView> ssr_diffuse_rtv;
-      com_ptr<ID3D11ShaderResourceView> ssr_srv;
       com_ptr<ID3D11ShaderResourceView> ssr_diffuse_srv;
+
+      void CleanSSRResource()
+      {
+         ssr_texture = nullptr;
+         ssr_srv = nullptr;
+         ssr_diffuse_texture = nullptr;
+         ssr_diffuse_texture_width = 0;
+         ssr_diffuse_texture_height = 0;
+         ssr_diffuse_rtv = nullptr;
+         ssr_diffuse_srv = nullptr;
+      }
 
       // Misc
       com_ptr<ID3D11BlendState> default_blend_state;
@@ -3023,6 +3043,22 @@ namespace
          device_data.transfer_function_copy_shader_resource_view = nullptr;
       }
 
+      // Clean resources that are probably not needed anymore (e.g. if users disabled SSR and SSAO, we wouldn't get another chance to clean these up ever).
+      // If users unloaded all shaders, these would automatically be cleared ir their rendering pass.
+      // If users changed the output resolution, they would be automatically re-created in their rendering pass.
+      if (device_data.has_drawn_composed_gbuffers)
+      {
+         // Check if some of them are valid just to avoid constant memory writes (not sure if it's a valid optimization)
+         if (!device_data.has_drawn_ssr && (device_data.ssr_texture.get() || device_data.ssr_diffuse_texture.get()))
+         {
+            device_data.CleanSSRResource();
+         }
+         if (!device_data.has_drawn_ssao && device_data.gtao_edges_texture.get())
+         {
+            device_data.CleanGTAOResource();
+         }
+      }
+
       // Update all variables as this is on the only thing guaranteed to run once per frame:
       ASSERT_ONCE(!device_data.has_drawn_composed_gbuffers || device_data.found_per_view_globals); // We failed to find and assign global cbuffer 13 this frame (could it be that the scene is empty if this triggers?)
       ASSERT_ONCE(device_data.has_drawn_composed_gbuffers == device_data.has_drawn_main_post_processing); // Why is g-buffer composition drawing but post processing isn't? We don't expect this to ever happen as PP should always be on
@@ -3090,8 +3126,8 @@ namespace
 #if ENABLE_NGX
       // Re-init DLSS if user toggled the settings.
       // We wouldn't really need to do anything other than clearing "dlss_output_color",
-      // but to avoid wasting memory allocated by DLSS texture and other resources,
-      // clear it up once disabled.
+      // but to avoid wasting memory allocated by DLSS texture and other resources, clear it up once disabled.
+      // Note that we keep these textures in memory if the user temporarily changed away from an AA method that supports DLSS, or if users unloaded shaders (there's no reason to, and it'd cause stutters).
       if (device_data.dlss_sr != NGX::DLSS::HasInit(device_data.dlss_sr_handle))
       {
          if (device_data.dlss_sr)
@@ -3311,7 +3347,7 @@ namespace
 
       if (!original_shader_hashes.Empty())
       {
-         //TODOFT5: optimize these shader searches by simply marking "CachedPipeline" with a tag on what they are (and whether they have a particular role) (also we can restrict the search to pixel shaders) upfront
+         //TODOFT5: optimize these shader searches by simply marking "CachedPipeline" with a tag on what they are (and whether they have a particular role) (also we can restrict the search to pixel shaders) upfront. And move these into their own functions.
          if (!device_data.has_drawn_composed_gbuffers && original_shader_hashes.Contains(shader_hashes_TiledShadingTiledDeferredShading))
          {
             device_data.has_drawn_composed_gbuffers = true;
@@ -3436,11 +3472,7 @@ namespace
             }
             else if (device_data.ssr_texture.get() || device_data.ssr_diffuse_texture.get())
             {
-               device_data.ssr_texture = nullptr;
-               device_data.ssr_srv = nullptr;
-               device_data.ssr_diffuse_texture = nullptr; // We can leave "ssr_diffuse_texture_width" and "ssr_diffuse_texture_height" as they were
-               device_data.ssr_diffuse_rtv = nullptr;
-               device_data.ssr_diffuse_srv = nullptr;
+               device_data.CleanSSRResource();
             }
          }
          if (device_data.has_drawn_ssr && !device_data.has_drawn_ssr_blend && native_device_context == device_data.ssr_command_list && is_custom_pass && (original_shader_hashes.Contains(shader_hash_PostEffectsGaussBlurBilinear, reshade::api::shader_stage::pixel) || original_shader_hashes.Contains(shader_hash_PostEffectsTextureToTextureResampled, reshade::api::shader_stage::pixel)))
@@ -3706,11 +3738,9 @@ namespace
                }
                return true;
             }
-            else if (!device_data.gtao_edges_texture.get())
+            else if (device_data.gtao_edges_texture.get())
             {
-               device_data.gtao_edges_texture = nullptr; // We can leave "gtao_edges_texture_width" and "gtao_edges_texture_height" as they were
-               device_data.gtao_edges_rtv = nullptr;
-               device_data.gtao_edges_srv = nullptr;
+               device_data.CleanGTAOResource();
             }
          }
          if (device_data.has_drawn_ssao && !device_data.has_drawn_ssao_denoise && original_shader_hashes.Contains(shader_hashes_SSDO_Blur))
