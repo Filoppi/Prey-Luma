@@ -141,8 +141,10 @@ namespace
       float2 PreviousCameraJitters;
       float2 RenderResolutionScale;
       float2 PreviousRenderResolutionScale;
+#if 0 // Disabled in shaders too as they are currently unused
       Matrix44A ViewProjectionMatrix;
       Matrix44A PreviousViewProjectionMatrix;
+#endif
       Matrix44A ReprojectionMatrix;
    };
    static_assert(sizeof(LumaFrameData) % sizeof(uint32_t) == 0);

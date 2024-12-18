@@ -2796,8 +2796,10 @@ namespace
          // Always do this relative to the current output resolution
          frame_data.PreviousRenderResolutionScale.x = device_data.previous_render_resolution.x / device_data.output_resolution.x;
          frame_data.PreviousRenderResolutionScale.y = device_data.previous_render_resolution.y / device_data.output_resolution.y;
-         frame_data.ViewProjectionMatrix = cb_per_view_global.CV_ViewProjMatr; //TODOFT3: delete? are we using these? Make it thread safe
+#if 0
+         frame_data.ViewProjectionMatrix = cb_per_view_global.CV_ViewProjMatr; // Note that this is not 100% thread safe as "CV_ViewProjMatr" is written from another thread
          frame_data.PreviousViewProjectionMatrix = cb_per_view_global_previous.CV_ViewProjMatr;
+#endif
          frame_data.ReprojectionMatrix = reprojection_matrix;
          cmd_list->push_constants(
             stages,

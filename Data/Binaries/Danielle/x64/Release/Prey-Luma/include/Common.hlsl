@@ -114,8 +114,10 @@ cbuffer LumaData : register(b8)
     // This can be used instead of "CV_ScreenSize" in passes where "CV_ScreenSize" would have been
     // replaced with 1 because DLSS SR upscaled the image earlier in the rendering.
     float2 PreviousRenderResolutionScale;
+#if 0 // Disabled in code too
     row_major float4x4 ViewProjectionMatrix;
     row_major float4x4 PreviousViewProjectionMatrix;
+#endif
     // Same as the one on "PostAA" "AA" but fixed to include jitters as well
     row_major float4x4 ReprojectionMatrix;
   } LumaData : packoffset(c0);
