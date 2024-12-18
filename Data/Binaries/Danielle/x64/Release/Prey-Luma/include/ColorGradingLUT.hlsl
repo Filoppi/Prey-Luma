@@ -1267,19 +1267,19 @@ float3 DrawLUTTexture(LUT_TEXTURE_TYPE lut, SamplerState samplerState, float2 Pi
 	PixelScale = round(pow(PixelScale, 1.f / LUTSizeMultiplier));
 #endif // ENABLE_LUT_EXTRAPOLATION
 
-	PixelPosition -= 0.5f; //TODOFT2: make sure this math is all right and copy it to "ShouldSkipPostProcess()"
-
 	const uint LUTPixelSideSize = LUT_SIZE * LUTSizeMultiplier; // LUT pixel size (one dimension) on screen (with extrapolated pixels too)
-	const uint2 LUTPixelPosition2D = round(PixelPosition / PixelScale); // Round to avoid the color accidentally snapping to the lower integer
-	const uint3 LUTPixelPosition3D = uint3(LUTPixelPosition2D.x % LUTPixelSideSize, LUTPixelPosition2D.y, LUTPixelPosition2D.x / LUTPixelSideSize);
+	float2 LUTPixelPosition2DFloat = (PixelPosition / (float)PixelScale) - 0.5; // We remove the half texel offsets even if in float (this is fine to do after scaling)!
+	const uint2 LUTPixelPosition2D = round(LUTPixelPosition2DFloat); // Round to account for any scaling and snap to the closest texel
+	const uint3 LUTPixelPosition3D = uint3(LUTPixelPosition2D.x % LUTPixelSideSize, LUTPixelPosition2D.y, LUTPixelPosition2D.x / LUTPixelSideSize); // Yes the modulo and division by "LUTPixelSideSize" are correct
 	if (!any(LUTPixelPosition3D < LUTMinPixel) && !any(LUTPixelPosition3D > LUTMaxPixel))
 	{
     // Note that the LUT sampling function will still use bilinear sampling, we are just manually centering the LUT coordinates to match the center of texels.
+    // Note that turning this on might slightly change the edges of each LUT slice, as it uses rounding on the pixel coordinates.
 		static const bool NearestNeighbor = false;
 
 		DrawnLUT = true;
 
-		// The color the neutral LUT would have, in sRGB gamma space
+		// The color the neutral LUT would have, in sRGB gamma space (with no half texel offsets)
     float3 LUTCoordinates;
 
     if (NearestNeighbor)
@@ -1288,8 +1288,7 @@ float3 DrawLUTTexture(LUT_TEXTURE_TYPE lut, SamplerState samplerState, float2 Pi
     }
     else
     {
-		  const float2 LUTPixelPosition2DFloat = PixelPosition / (float)PixelScale;
-		  float3 LUTPixelPosition3DFloat = float3(fmod(LUTPixelPosition2DFloat.x, LUTPixelSideSize), LUTPixelPosition2DFloat.y, (uint)(LUTPixelPosition2DFloat.x / LUTPixelSideSize));
+		  float3 LUTPixelPosition3DFloat = float3(fmod(LUTPixelPosition2DFloat.x, LUTPixelSideSize), LUTPixelPosition2DFloat.y, (uint)(LUTPixelPosition2DFloat.x / LUTPixelSideSize)); // The Z dimension needs to be "quantized" as we don't have enough detail in the source uv for it (a limitation of the 2D<->3D mapping logic)
       LUTCoordinates = LUTPixelPosition3DFloat / float(LUTMaxPixel);
     }
     LUTCoordinates *= LUTSizeMultiplier;

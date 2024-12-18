@@ -230,10 +230,8 @@ bool ShouldSkipPostProcess(float2 PixelPosition, uint PassType = 0)
 	PixelScale = round(pow(PixelScale, 1.f / LUTSizeMultiplier));
 #endif // ENABLE_LUT_EXTRAPOLATION
 
-	PixelPosition -= 0.5f;
-
 	const uint LUTPixelSideSize = LUT_SIZE * LUTSizeMultiplier;
-	const uint2 LUTPixelPosition2D = round(PixelPosition / PixelScale);
+	const uint2 LUTPixelPosition2D = round((PixelPosition / (float)PixelScale) - 0.5);
 	const uint3 LUTPixelPosition3D = uint3(LUTPixelPosition2D.x % LUTPixelSideSize, LUTPixelPosition2D.y, LUTPixelPosition2D.x / LUTPixelSideSize);
 	if (!any(LUTPixelPosition3D < LUTMinPixel) && !any(LUTPixelPosition3D > LUTMaxPixel))
 	{

@@ -246,7 +246,7 @@
 #define DRAW_LUT (DEVELOPMENT && 0)
 #endif
 // Debug LUT Pixel scale (this is rounded to the closest integer value for the size of the LUT)
-// 10u is a good value for 2560 horizontal res. 22 for 5120 horizontal res or more.
+// 10u is a good value for 2560 horizontal res. 20 for 5120 horizontal res or more.
 #define DRAW_LUT_TEXTURE_SCALE 10u
 #define TEST_LUT_EXTRAPOLATION (DEVELOPMENT && 0)
 #define TEST_LUT (DEVELOPMENT && 1)
