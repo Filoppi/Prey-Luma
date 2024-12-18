@@ -434,7 +434,7 @@ namespace
    // For "global_native_devices", "global_device_datas", "game_window"
    recursive_shared_mutex s_mutex_device;
 #if DEVELOPMENT
-   // for "trace_shader_hashes", "trace_pipeline_handles", "trace_pipeline_draws", "trace_pipeline_draws_blend_descs", "trace_pipeline_draws_rtv_format", "trace_pipeline_draws_rt_format", "trace_pipeline_draws_rt_size", and "trace_threads" (writing only, reading is already safe)
+   // for "trace_shader_hashes", "trace_count", "trace_pipeline_handles", "trace_pipeline_draws", "trace_pipeline_draws_blend_descs", "trace_pipeline_draws_rtv_format", "trace_pipeline_draws_rt_format", "trace_pipeline_draws_rt_size", and "trace_threads" (writing only, reading is already safe)
    std::shared_mutex s_mutex_trace;
 #endif
 
@@ -2270,6 +2270,7 @@ namespace
       cb_per_view_global_buffer_pending_verification.clear();
       {
          const std::unique_lock lock_trace(s_mutex_trace);
+         trace_count = 0;
          trace_pipeline_handles.clear();
          trace_pipeline_draws.clear();
          trace_pipeline_draws_blend_descs.clear();
@@ -5590,9 +5591,13 @@ namespace
          trace_scheduled = false;
          {
             const std::unique_lock lock_trace(s_mutex_trace);
+            trace_count = 0;
             trace_pipeline_handles.clear();
             trace_pipeline_draws.clear();
             trace_pipeline_draws_blend_descs.clear();
+            trace_pipeline_draws_rtv_format.clear();
+            trace_pipeline_draws_rt_format.clear();
+            trace_pipeline_draws_rt_size.clear();
             trace_threads.clear();
             trace_shader_hashes.clear();
          }
