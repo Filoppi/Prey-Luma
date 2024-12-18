@@ -333,7 +333,7 @@ bool NGX::DLSS::UpdateSettings(DLSSInstanceData* data, ID3D11DeviceContext* comm
 
 	int qualityMode = static_cast<int>(NVSDK_NGX_PerfQuality_Value_Balanced); // Default to balanced if none is found
 
-	unsigned int bestModeDelta = (std::numeric_limits<double>::max)(); // Wrap it around () because "max" might already be defined as macro
+	unsigned int bestModeDelta = (std::numeric_limits<unsigned int>::max)(); // Wrap it around () because "max" might already be defined as macro
 
 	// Instead of first picking a quality mode and then finding the best render resolution for it,
 	// we find the most suitable quality mode for the resolutions we fed in.
@@ -390,6 +390,7 @@ bool NGX::DLSS::UpdateSettings(DLSSInstanceData* data, ID3D11DeviceContext* comm
 	if (renderWidth >= outputWidth && renderHeight >= outputHeight)
 	{
 		assert(qualityMode == NVSDK_NGX_PerfQuality_Value_DLAA);
+		qualityMode = NVSDK_NGX_PerfQuality_Value_DLAA; // Just in case (this isn't expected to happen)
 	}
 
 	data->hdr = hdr;
