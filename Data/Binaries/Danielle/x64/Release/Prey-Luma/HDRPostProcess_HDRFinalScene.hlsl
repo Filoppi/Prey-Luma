@@ -211,27 +211,23 @@ float4 FilmTonemapping( out float3 cSDRColor, in float4 cScene, in float4 cBloom
   cColor.rgb = Tonemap_DICE(cColor.rgb, peakWhite, paperWhite) / paperWhite; // Multiply out the paper white to keep colors in the SDR range, we'll multiply it in back later
 #endif // DELAY_HDR_TONEMAP
 
-  // Fall back on the SDR tonemapper below mid gray (the HDR color shouldn't have any negative colors anyway)
-#if 0 // By luminance
-  cColor.rgb *= lerp(1.0, GetLuminance(cSDRColor) / GetLuminance(cColor.rgb), 1.0 - saturate(GetLuminance(cSDRColor) / MidGray));
-#elif 0 // By channel, luminance based
-  cColor.rgb = lerp(cSDRColor, cColor.rgb, saturate(GetLuminance(cSDRColor) / MidGray));
+  // Fall back on the SDR tonemapper below ~mid gray.
+  // This restores the filmic look of the SDR tonemapper, which crushes (lowers) blacks.
+  // We can disable this or lower its intensity to make the tonemapper less filmic, but the game enviroments were clearly built for that.
+  static const float SDRRestorationScale = 1.0 / 3.0; // [0, 1] the lower, the more raised near black colors are. There's no perceivable changes beyond 0.333 or so. "Neutral" at "MidGray" (or we could match with the end of the Hable's shadow toe, but that's not really necessary).
+#if 0 // By luminance (this desaturates too much)
+  cColor.rgb *= lerp(1.0, GetLuminance(cSDRColor) / GetLuminance(cColor.rgb), 1.0 - saturate(GetLuminance(cSDRColor) / SDRRestorationScale));
+#elif 0 // By channel, luminance based (it might not make much sense as it'd restore shadow on green more intensely)
+  float3 cNegativeColor = min(cColor.rgb, 0);
+  cColor.rgb = lerp(cSDRColor, max(cColor.rgb, 0), saturate(GetLuminance(cSDRColor) / SDRRestorationScale));
+  cColor.rgb += cNegativeColor;
 #elif 1 // By channel, channel based (most saturated and most similar to SDR)
   float3 cNegativeColor = min(cColor.rgb, 0);
-//TODOFT4: optimize pow (remove) and tweak values (lower values make it more similar to untonemapped, maybe Hable crushed blacks too much, especially with gamma correction enabled). Try other branches now with by channel DICE
-//Also, use DICE beyond "inLinearScale" Hable start point?
-//Increase these values static const values???
-//Review cNegativeColor (it creates invalid luminances)
-//TODOFT4: move SDR tonemapping to "DELAY_HDR_TONEMAP" too? DLSS would work a bit better and we'd have more control over everything else
-#if 1
-  static const float SDRRestorationScale = 2.0 / 3.0; //MidGray * SDRRestorationScale; // [0, 1] the lower, the more raised near black colors are. "Neutral" at "MidGray".
-  static const float SDRRestorationPower = 4.0 / 3.0; // (0, inf) the lower, the more raised near black colors are. "Neutral" at 1.
-#else
-  static const float SDRRestorationScale = MidGray;
-  static const float SDRRestorationPower = 1.5;
-#endif
+//TODOFT0: Review cNegativeColor (it creates invalid luminances) (it seems fine?)
+//TODOFT4: move SDR tonemapping and LUTs to "DELAY_HDR_TONEMAP" too (so it applies to lens optics too)? DLSS would work a bit better and we'd have more control over everything else
+  static const float SDRRestorationPower = 1.5; // (0, inf) the lower, the more raised near black colors are. "Neutral" at 1. Too high values will make shadow gradients discontiguous.
   cColor.rgb = lerp(cSDRColor, max(cColor.rgb, 0), pow(saturate(cSDRColor / SDRRestorationScale), SDRRestorationPower));
-  cColor.rgb += cNegativeColor; // Always keep any negative colors that expand gamut (usually there aren't any, but you never know)
+  cColor.rgb += cNegativeColor; // Always keep any negative colors that expand gamut (usually there aren't any, but you never know) (if there were, this could create invalid luminances, and could create discontiguous gradients)
 #endif
 
 #else // TONEMAP_TYPE >= 2 // Untonemapped (HDR)
