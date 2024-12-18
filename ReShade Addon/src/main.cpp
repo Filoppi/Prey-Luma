@@ -6266,118 +6266,127 @@ namespace
                      if (selected_index >= 0 && trace_pipeline_handles.size() >= selected_index + 1)
                      {
                         auto pipeline_handle = trace_pipeline_handles.at(selected_index);
-                        const std::unique_lock lock(s_mutex_generic);
-                        if (auto pipeline_pair = device_data.pipeline_cache_by_pipeline_handle.find(pipeline_handle); pipeline_pair != device_data.pipeline_cache_by_pipeline_handle.end() && pipeline_pair->second != nullptr)
+                        bool reload = false;
+                        bool recompile = false;
                         {
-                           bool test_pipeline = pipeline_pair->second->test;
-                           if (ImGui::BeginChild("Settings"))
+                           const std::unique_lock lock(s_mutex_generic);
+                           if (auto pipeline_pair = device_data.pipeline_cache_by_pipeline_handle.find(pipeline_handle); pipeline_pair != device_data.pipeline_cache_by_pipeline_handle.end() && pipeline_pair->second != nullptr)
                            {
-                              if (!pipeline_pair->second->HasVertexShader())
+                              bool test_pipeline = pipeline_pair->second->test;
+                              if (ImGui::BeginChild("Settings"))
                               {
-                                 ImGui::Checkbox("Test Shader (skips drawing, or draws black)", &test_pipeline);
+                                 if (!pipeline_pair->second->HasVertexShader())
+                                 {
+                                    ImGui::Checkbox("Test Shader (skips drawing, or draws black)", &test_pipeline);
+                                 }
                                  if (pipeline_pair->second->cloned && ImGui::Button("Unload"))
                                  {
                                     UnloadCustomShaders(device_data, { pipeline_handle }, false, false);
                                  }
                                  if (ImGui::Button(pipeline_pair->second->cloned ? "Recompile" : "Load"))
                                  {
-                                    bool compile = pipeline_pair->second->cloned;
-                                    LoadCustomShaders(device_data, { pipeline_handle }, compile);
+                                    reload = true;
+                                    recompile = pipeline_pair->second->cloned;
                                  }
-                              }
-                              if (pipeline_pair->second->HasPixelShader() || pipeline_pair->second->HasComputeShader())
-                              {
-                                 if (ImGui::Button("Debug Draw Shader"))
+                                 if (pipeline_pair->second->HasPixelShader() || pipeline_pair->second->HasComputeShader())
                                  {
-                                    debug_draw_pipeline = pipeline_pair->first; // Note: this is probably completely useless at the moment as we don't store the index of the pipeline instance the user had selected (e.g. "debug_draw_pipeline_target_instance")
-                                    debug_draw_shader_hash = pipeline_pair->second->shader_hashes[0];
-                                    std::string new_debug_draw_shader_hash_string = std::format("{:x}", debug_draw_shader_hash);
-                                    if (new_debug_draw_shader_hash_string.size() <= HASH_CHARACTERS_LENGTH)
-                                       strcpy(&debug_draw_shader_hash_string[0], new_debug_draw_shader_hash_string.c_str());
-                                    else
-                                       debug_draw_shader_hash_string[0] = 0;
-                                    device_data.debug_draw_texture = nullptr;
-                                    device_data.debug_draw_texture_format = DXGI_FORMAT_UNKNOWN;
-#if 1 // We could also let the user settings persist if we wished so
-                                    debug_draw_pipeline_instance = 0;
-                                    debug_draw_pipeline_target_instance = -1;
-                                    debug_draw_mode = pipeline_pair->second->HasPixelShader() ? DebugDrawMode::RenderTarget : (pipeline_pair->second->HasComputeShader() ? DebugDrawMode::UnorderedAccessView : DebugDrawMode::ShaderResource);
-#endif
-                                 }
-                              }
-                              if (pipeline_pair->second->HasPixelShader())
-                              {
-                                 // Show blend state here:
-                                 auto blend_desc = trace_pipeline_draws_blend_descs.at(selected_index);
-                                 auto rtv_format = trace_pipeline_draws_rtv_format.at(selected_index);
-                                 auto rt_format = trace_pipeline_draws_rt_format.at(selected_index);
-                                 auto rt_size = trace_pipeline_draws_rt_size.at(selected_index);
-
-                                 ImGui::Text("Size: %ux%u", rt_size.x, rt_size.y);
-
-                                 if (GetFormatName(rt_format) != nullptr)
-                                 {
-                                    ImGui::Text("RT Format: %s", GetFormatName(rt_format));
-                                 }
-                                 else
-                                 {
-                                    ImGui::Text("RT Format: %u", rt_format);
-                                 }
-                                 if (GetFormatName(rtv_format) != nullptr)
-                                 {
-                                    ImGui::Text("RTV Format: %s", GetFormatName(rtv_format));
-                                 }
-                                 else
-                                 {
-                                    ImGui::Text("RTV Format: %u", rtv_format);
-                                 }
-
-                                 // 0 No alpha blend (or other unknown blend types that we can ignore)
-                                 // 1 Straight alpha blend: "result = (source.RGB * source.A) + (dest.RGB * (1 - source.A))" or "result = lerp(dest.RGB, source.RGB, source.A)"
-                                 // 2 Pre-multiplied alpha blend (alpha is also pre-multiplied, not just rgb): "result = source.RGB + (dest.RGB * (1 - source.A))"
-                                 // 3 Additive alpha blend (source is "Straight alpha" while destination is retained at 100%): "result = (source.RGB * source.A) + dest.RGB"
-                                 // 4 Additive blend (source and destination are simply summed up, ignoring the alpha): result = source.RGB + dest.RGB
-                                 bool has_drawn_text = false;
-                                 // Only show render target 0 for now (Prey only uses that, almost always)
-                                 if (blend_desc.RenderTarget[0].BlendEnable)
-                                 {
-                                    if (blend_desc.RenderTarget[0].BlendOp == D3D11_BLEND_OP::D3D11_BLEND_OP_ADD)
+                                    if (ImGui::Button("Debug Draw Shader"))
                                     {
-                                       if (blend_desc.RenderTarget[0].SrcBlend == D3D11_BLEND::D3D11_BLEND_ONE && blend_desc.RenderTarget[0].DestBlend == D3D11_BLEND::D3D11_BLEND_ONE)
+                                       debug_draw_pipeline = pipeline_pair->first; // Note: this is probably completely useless at the moment as we don't store the index of the pipeline instance the user had selected (e.g. "debug_draw_pipeline_target_instance")
+                                       debug_draw_shader_hash = pipeline_pair->second->shader_hashes[0];
+                                       std::string new_debug_draw_shader_hash_string = std::format("{:x}", debug_draw_shader_hash);
+                                       if (new_debug_draw_shader_hash_string.size() <= HASH_CHARACTERS_LENGTH)
+                                          strcpy(&debug_draw_shader_hash_string[0], new_debug_draw_shader_hash_string.c_str());
+                                       else
+                                          debug_draw_shader_hash_string[0] = 0;
+                                       device_data.debug_draw_texture = nullptr;
+                                       device_data.debug_draw_texture_format = DXGI_FORMAT_UNKNOWN;
+#if 1 // We could also let the user settings persist if we wished so
+                                       debug_draw_pipeline_instance = 0;
+                                       debug_draw_pipeline_target_instance = -1;
+                                       debug_draw_mode = pipeline_pair->second->HasPixelShader() ? DebugDrawMode::RenderTarget : (pipeline_pair->second->HasComputeShader() ? DebugDrawMode::UnorderedAccessView : DebugDrawMode::ShaderResource);
+#endif
+                                    }
+                                 }
+                                 if (pipeline_pair->second->HasPixelShader())
+                                 {
+                                    // Show blend state here:
+                                    auto blend_desc = trace_pipeline_draws_blend_descs.at(selected_index);
+                                    auto rtv_format = trace_pipeline_draws_rtv_format.at(selected_index);
+                                    auto rt_format = trace_pipeline_draws_rt_format.at(selected_index);
+                                    auto rt_size = trace_pipeline_draws_rt_size.at(selected_index);
+
+                                    ImGui::Text("Size: %ux%u", rt_size.x, rt_size.y);
+
+                                    if (GetFormatName(rt_format) != nullptr)
+                                    {
+                                       ImGui::Text("RT Format: %s", GetFormatName(rt_format));
+                                    }
+                                    else
+                                    {
+                                       ImGui::Text("RT Format: %u", rt_format);
+                                    }
+                                    if (GetFormatName(rtv_format) != nullptr)
+                                    {
+                                       ImGui::Text("RTV Format: %s", GetFormatName(rtv_format));
+                                    }
+                                    else
+                                    {
+                                       ImGui::Text("RTV Format: %u", rtv_format);
+                                    }
+
+                                    // 0 No alpha blend (or other unknown blend types that we can ignore)
+                                    // 1 Straight alpha blend: "result = (source.RGB * source.A) + (dest.RGB * (1 - source.A))" or "result = lerp(dest.RGB, source.RGB, source.A)"
+                                    // 2 Pre-multiplied alpha blend (alpha is also pre-multiplied, not just rgb): "result = source.RGB + (dest.RGB * (1 - source.A))"
+                                    // 3 Additive alpha blend (source is "Straight alpha" while destination is retained at 100%): "result = (source.RGB * source.A) + dest.RGB"
+                                    // 4 Additive blend (source and destination are simply summed up, ignoring the alpha): result = source.RGB + dest.RGB
+                                    bool has_drawn_text = false;
+                                    // Only show render target 0 for now (Prey only uses that, almost always)
+                                    if (blend_desc.RenderTarget[0].BlendEnable)
+                                    {
+                                       if (blend_desc.RenderTarget[0].BlendOp == D3D11_BLEND_OP::D3D11_BLEND_OP_ADD)
                                        {
-                                          ImGui::Text("Blend Mode: Additive Color");
-                                          has_drawn_text = true;
+                                          if (blend_desc.RenderTarget[0].SrcBlend == D3D11_BLEND::D3D11_BLEND_ONE && blend_desc.RenderTarget[0].DestBlend == D3D11_BLEND::D3D11_BLEND_ONE)
+                                          {
+                                             ImGui::Text("Blend Mode: Additive Color");
+                                             has_drawn_text = true;
+                                          }
+                                          else if (blend_desc.RenderTarget[0].SrcBlend == D3D11_BLEND::D3D11_BLEND_SRC_ALPHA && blend_desc.RenderTarget[0].DestBlend == D3D11_BLEND::D3D11_BLEND_ONE)
+                                          {
+                                             ImGui::Text("Blend Mode: Additive Alpha");
+                                             has_drawn_text = true;
+                                          }
+                                          else if (blend_desc.RenderTarget[0].SrcBlend == D3D11_BLEND::D3D11_BLEND_ONE && blend_desc.RenderTarget[0].DestBlend == D3D11_BLEND::D3D11_BLEND_INV_SRC_ALPHA)
+                                          {
+                                             ImGui::Text("Blend Mode: Premultiplied Alpha");
+                                             has_drawn_text = true;
+                                          }
+                                          else if (blend_desc.RenderTarget[0].SrcBlend == D3D11_BLEND::D3D11_BLEND_SRC_ALPHA && blend_desc.RenderTarget[0].DestBlend == D3D11_BLEND::D3D11_BLEND_INV_SRC_ALPHA)
+                                          {
+                                             ImGui::Text("Blend Mode: Straight Alpha");
+                                             has_drawn_text = true;
+                                          }
                                        }
-                                       else if (blend_desc.RenderTarget[0].SrcBlend == D3D11_BLEND::D3D11_BLEND_SRC_ALPHA && blend_desc.RenderTarget[0].DestBlend == D3D11_BLEND::D3D11_BLEND_ONE)
+                                       if (!has_drawn_text)
                                        {
-                                          ImGui::Text("Blend Mode: Additive Alpha");
-                                          has_drawn_text = true;
-                                       }
-                                       else if (blend_desc.RenderTarget[0].SrcBlend == D3D11_BLEND::D3D11_BLEND_ONE && blend_desc.RenderTarget[0].DestBlend == D3D11_BLEND::D3D11_BLEND_INV_SRC_ALPHA)
-                                       {
-                                          ImGui::Text("Blend Mode: Premultiplied Alpha");
-                                          has_drawn_text = true;
-                                       }
-                                       else if (blend_desc.RenderTarget[0].SrcBlend == D3D11_BLEND::D3D11_BLEND_SRC_ALPHA && blend_desc.RenderTarget[0].DestBlend == D3D11_BLEND::D3D11_BLEND_INV_SRC_ALPHA)
-                                       {
-                                          ImGui::Text("Blend Mode: Straight Alpha");
+                                          ImGui::Text("Blend Mode: Unknown");
                                           has_drawn_text = true;
                                        }
                                     }
                                     if (!has_drawn_text)
                                     {
-                                       ImGui::Text("Blend Mode: Unknown");
-                                       has_drawn_text = true;
+                                       ImGui::Text("Blend Mode: Disabled");
                                     }
                                  }
-                                 if (!has_drawn_text)
-                                 {
-                                    ImGui::Text("Blend Mode: Disabled");
-                                 }
                               }
+                              ImGui::EndChild(); // Settings
+                              pipeline_pair->second->test = test_pipeline;
                            }
-                           ImGui::EndChild(); // Settings
-                           pipeline_pair->second->test = test_pipeline;
+                        }
+                        // We need to do this here or it'd deadlock due to "s_mutex_generic" trying to be locked in shared mod again
+                        if (reload)
+                        {
+                           LoadCustomShaders(device_data, { pipeline_handle }, recompile);
                         }
                      }
 
