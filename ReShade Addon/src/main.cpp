@@ -4309,7 +4309,7 @@ namespace
                         D3D11_TEXTURE2D_DESC object_velocity_texture_desc;
                         object_velocity_buffer->GetDesc(&object_velocity_texture_desc);
                         ASSERT_ONCE((object_velocity_texture_desc.BindFlags & D3D11_BIND_RENDER_TARGET) == D3D11_BIND_RENDER_TARGET);
-#if 1 // Use the higher quality for MVs, the game's one were R16G16F. This has a ~1% cost on performance but helps with reducing shimmering on fine lines (stright lines looking segmented, like Bart's hair or Shark's teeth) when the camera is moving in a linear fashion
+#if 1 // Use the higher quality for MVs, the game's one were R16G16F. This has a ~1% cost on performance but helps with reducing shimmering on fine lines (stright lines looking segmented, like Bart's hair or Shark's teeth) when the camera is moving in a linear fashion. Generating MVs from the depth is still a limited technique so it can't be perfect.
                         object_velocity_texture_desc.Format = DXGI_FORMAT_R32G32_FLOAT;
 #else
                         object_velocity_texture_desc.Format = DXGI_FORMAT_R16G16_FLOAT;
@@ -6255,7 +6255,7 @@ namespace
       }
       if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
       {
-         ImGui::SetTooltip("Unload all compiled and replaced shaders. The numbers shows how many shaders are being replaced at this moment in the game, from the custom loaded/compiled ones.");
+         ImGui::SetTooltip("Unload all compiled and replaced shaders. The numbers shows how many shaders are being replaced at this moment in the game, from the custom loaded/compiled ones.\nYou can use ReShade's Global Effects Toggle Shortcut to toggle these on and off.");
       }
       ImGui::SameLine();
 #endif // DEVELOPMENT || TEST
@@ -6290,14 +6290,20 @@ namespace
 #if !DEVELOPMENT
          if (shaders_compilation_errors.empty())
          {
+#if TEST
+            ImGui::SetTooltip((device_data.cloned_pipeline_count && needs_compilation) ? "Shaders recompilation is needed for the changed settings to apply\nYou can use ReShade's Recompile Effects Shortcut to recompile these." : "(Re)Compiles shaders");
+#else
             ImGui::SetTooltip((device_data.cloned_pipeline_count && needs_compilation) ? "Shaders recompilation is needed for the changed settings to apply" : "(Re)Compiles shaders");
+#endif
          }
          else
 #endif
+         {
             if (!shaders_compilation_errors.empty())
             {
                ImGui::SetTooltip(shaders_compilation_errors.c_str());
             }
+         }
       }
 #if !DEVELOPMENT && !TEST
       ImGui::EndDisabled();
@@ -6739,6 +6745,7 @@ namespace
             }
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             {
+               //TODOFT: add a negative tick if we detected TAA isn't running and the game rendered (and specify that in the tooltip)
                ImGui::SetTooltip("This replaces the game's native AA and dynamic resolution scaling implementations.\nSelect \"SMAA 2TX\" or \"TAA\" in the game's AA settings for DLSS/DLAA to engage.\nA tick will appear here when it's engaged and a warning might appear if it failed.\n\nRequires compatible Nvidia GPUs.");
             }
             ImGui::SameLine();

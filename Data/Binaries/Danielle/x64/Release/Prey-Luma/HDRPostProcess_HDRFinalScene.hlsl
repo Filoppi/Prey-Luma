@@ -403,7 +403,7 @@ void HDRFinalScenePS(float4 WPos, float4 baseTC, out float4 outColor)
   // it will be up to the last pass to linearize that with the target gamma (which will automatically apply the correction)
   extrapolationSettings.transferFunctionOut = (bool(POST_PROCESS_SPACE_TYPE == 1) && GAMMA_CORRECTION_TYPE == 1) ? LUT_EXTRAPOLATION_TRANSFER_FUNCTION_GAMMA_2_2 : LUT_EXTRAPOLATION_TRANSFER_FUNCTION_SRGB;
   extrapolationSettings.samplingQuality = (HIGH_QUALITY_POST_PROCESS_SPACE_CONVERSIONS || ENABLE_LUT_TETRAHEDRAL_INTERPOLATION) ? (ENABLE_LUT_TETRAHEDRAL_INTERPOLATION ? 2 : 1) : 0;
-#if DEVELOPMENT && 1 // Test LUT extrapolation parameters //TODOFT4 (//)
+#if DEVELOPMENT && 0 // Test LUT extrapolation parameters //TODOFT4 (//)
   extrapolationSettings.inputTonemapToPeakWhiteNits = 10000 * LumaSettings.DevSetting01;
   extrapolationSettings.neutralLUTRestorationAmount = LumaSettings.DevSetting02;
   extrapolationSettings.clampedLUTRestorationAmount = LumaSettings.DevSetting05;
