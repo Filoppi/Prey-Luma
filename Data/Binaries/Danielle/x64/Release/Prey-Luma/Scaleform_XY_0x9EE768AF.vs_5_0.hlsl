@@ -35,6 +35,7 @@ void main(
   
 #if ENABLE_SCREEN_DISTORTION
   // Inverse lens distortion
+  //TODOFT: avoid distorting the mission indicators when they are at the edges of the screen?
   if (LumaUIData.WritingOnSwapchain == 1 && LumaSettings.LensDistortion && isViewProjectionMatrix(cCompositeMat))
   {
     o0.xyz /= o0.w; // From clip to NDC space

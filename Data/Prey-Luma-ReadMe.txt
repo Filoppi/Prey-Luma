@@ -11,7 +11,7 @@ Luma was created by Pumbo (graphics) and Ersh (reverse engineering).
 - Improved Screen Space Reflections (they are not cropped close to the camera anymore, they now get progressively more diffuse with distance, they blend in and out of view more nicely etc etc, their math in general has been refactored for much better looking and more "physically accurate" results)
 - Added DLAA+DLSS Super Resolution (on Nvidia GPUs) (OptiScaler can be used to inject FSR 3) (this looks drastically better than the native TAA and has no noticeable ghosting)
 - Added RCAS sharpening after TAA (replacing the original basic sharpening implementation, making it look a lot more natural)
-- Added Perspective Correction (optional) (a modern type of "lens distortion" that makes the rendering look natural)
+- Added Perspective Correction (optional) (a modern type of "lens distortion" that makes the rendering projection look natural)
 - Improved all of the native Anti Aliasing implementations (e.g. SMAA/TAA)
 - Improved Anisotropic Filtering (it was not set to 16x on all textures that would benefit from it)
 - Improved quality and look of the Sun, Sun Shaft effects and Lens "Optics" effects (e.g. lens flare)

@@ -224,7 +224,7 @@ float2 PerfectPerspectiveLensDistortion(float2 texCoord, float horFOV, float2 re
 	return PerfectPerspectiveLensDistortion(texCoord, horFOV, resolution, dummyBorderAlpha, NDC, clip);
 }
 
-float2 PerfectPerspectiveLensDistortion_Inverse(float2 texCoord, float horFOV, float2 resolution, bool NDC = false, bool clip = false)
+float2 PerfectPerspectiveLensDistortion_Inverse(float2 texCoord, float horFOV, float2 resolution, bool NDC = false, bool clip = true)
 {
 	const float currentAspectRatio = resolution.x / resolution.y;
 
@@ -302,6 +302,7 @@ float2 PerfectPerspectiveLensDistortion_Inverse(float2 texCoord, float horFOV, f
 
 	//TODOFT4: find proper inverse formula! Or a good approximation
 	float2 radiusViewCoord = viewCoord;
+	radiusViewCoord *= 0.6;
 #if 0
 	radiusViewCoord = pow(abs(radiusViewCoord), 1.333) * sign(radiusViewCoord);
 #endif
@@ -310,7 +311,7 @@ float2 PerfectPerspectiveLensDistortion_Inverse(float2 texCoord, float horFOV, f
 		dot(radiusViewCoord, radiusViewCoord) // spherical
 		: ((radiusViewCoord.y * radiusViewCoord.y / S) + (radiusViewCoord.x * radiusViewCoord.x)); // anamorphic
 
-#if 0
+#if 1
 	float rcp_radius = rsqrt(radius);
 	radius = sqrt(radius);
 

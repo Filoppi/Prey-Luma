@@ -91,7 +91,9 @@ void ApplyFilmGrain(inout float4 cScene, float2 baseTC, float fExposure)
 void ApplyVignette(inout float4 cScene, in float4 cVignette, float2 baseTC)
 {
 #if 0 // Test vignette (purple)
-  cVignette.rgb = float4(2.5, 0.0, 2.5, 1.0);
+  cVignette.rgb = float4(1.0, 0.0, 1.0, 0.5);
+  cbComposites.VignetteFalloff = 0.667; // Higher means slower falloff (more vignette in the center)
+  cbComposites.VignetteBorder = 1.0;
 #endif
 
 	float2 vguv = baseTC * 2.0 - 1.0; // UV to NDC
@@ -183,6 +185,7 @@ void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
     distortedTC = PerfectPerspectiveLensDistortion(distortedTC, FOVX, outputResolution, borderAlpha);
     // Caclulate what UV a border (e.g. 1 1, bottom right) would match to, so that we start applying vignette from there
     invDistortedTC = PerfectPerspectiveLensDistortion_Inverse(invDistortedTC, FOVX, outputResolution);
+    invDistortedTC = baseTC.xy + (baseTC.xy - distortedTC); //TODOFT: fix formula above
   }
 	
   // LUMA: If DLSS run, buffers would have already been upscaled, so we want to ignore the logic that acknowledges a different rendering resolution here (CV_HPosScale.xy would have also been replaced by c++ code to be 1, and "CV_HPosClamp" too).

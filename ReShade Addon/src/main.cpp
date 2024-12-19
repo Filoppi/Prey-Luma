@@ -3315,6 +3315,8 @@ namespace
    //TODOFT5: merge all the shader permutations that use the same code (and then move shader binaries to bin folder?)
    //TODOFT5: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project?
    //TODOFT5: add asserts for when we meet the shaders we are looking for
+   //TODOFT5: gravity jump/transport corridors flowy material doesn't scale properly with DRS
+   //TODOFT4: describe the stashed changes about geometry shaders to distort UI
    //TODOFT (TODO): make sure DLSS lets scRGB colors pass through... (they don't, but are there any in LUT extrapolation mode?)
    //TODOFT4: add a new RT to draw UI on top (pre-multiplied alpha everywhere), so we could compose it smartly, possibly in the final linearization pass. Or, add a new UI gamma setting for when in full screen menus and swap to gamma space on the spot.
 
@@ -4466,6 +4468,16 @@ namespace
             if (back_buffers.contains((uint64_t)render_target_resource.get()))
             {
                ui_data.drawing_on_swapchain = 1;
+
+               // This is a "perfect" way to check if gameplay is paused (sometimes it might still be rendering, but usually there would be no world mapped UI).
+               //TODOFT: this has a one frame delay when we unpause, do we still want to do it?
+               bool paused = cb_per_view_global.CV_AnimGenParams.z == cb_per_view_global_previous.CV_AnimGenParams.z;
+               paused = false; // Disabled for now as the anim gen doesn't seem to update every frame at high frame rates? We should then check shaders that made that assumption
+               // Highlight that the game is paused or that we are in a menu with no scene rendering (e.g. allows us to fully skip lens distortion on the UI, as sometimes it'd apply in loading screen menus).
+               if (paused || !device_data.has_drawn_composed_gbuffers)
+               {
+                  ui_data.drawing_on_swapchain = 2; //TODOFT: rename this variable, it's not appropriate anymore
+               }
             }
             render_target_resource = nullptr;
          }
@@ -6386,7 +6398,10 @@ namespace
                            // Index - Thread ID - Draw Calls count - Shader Hash(es) - Shader Name
                            name << std::setfill('0') << std::setw(3) << index << std::setw(0); // Fill up 3 slots for the index so the text is aligned
                            name << " - " << thread_id;
-                           name << " - " << draw_calls << "x";
+                           if (!pipeline->HasVertexShader())
+                           {
+                              name << " - " << draw_calls << "x";
+                           }
                            for (auto shader_hash : pipeline->shader_hashes)
                            {
                               name << " - " << PRINT_CRC32(shader_hash);
@@ -6395,7 +6410,7 @@ namespace
                            // Pick the default color by shader type
                            if (pipeline->HasVertexShader())
                            {
-                              text_color = IM_COL32(255, 255, 0, 255); // Yellow
+                              text_color = IM_COL32(128, 128, 0, 255); // Yellow
                            }
                            else if (pipeline->HasComputeShader())
                            {
@@ -6430,7 +6445,18 @@ namespace
                                  name << "*";
                               }
 
-                              text_color = IM_COL32(0, 255, 0, 255);
+                              if (pipeline->HasVertexShader())
+                              {
+                                 text_color = IM_COL32(64, 255, 0, 255); // Yellow + Green
+                              }
+                              else if (pipeline->HasComputeShader())
+                              {
+                                 text_color = IM_COL32(64, 255, 64, 255); // Purple + Green
+                              }
+                              else
+                              {
+                                 text_color = IM_COL32(0, 255, 0, 255); // Green
+                              }
                            }
                            // Highlight loading error
                            if (custom_shader != nullptr && !custom_shader->compilation_errors.empty())
