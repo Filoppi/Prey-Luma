@@ -223,7 +223,7 @@ float4 FilmTonemapping( out float3 cSDRColor, in float4 cScene, in float4 cBloom
   cColor.rgb += cNegativeColor;
 #elif 1 // By channel, channel based (most saturated and most similar to SDR)
   float3 cNegativeColor = min(cColor.rgb, 0);
-//TODOFT0: Review cNegativeColor (it creates invalid luminances) (it seems fine?)
+//TODOFT0: Review cNegativeColor (it creates invalid luminances) (it seems fine?). Also, test these values again, did I calibrate them with the screen blue light filter on???
 //TODOFT4: move SDR tonemapping and LUTs to "DELAY_HDR_TONEMAP" too (so it applies to lens optics too)? DLSS would work a bit better and we'd have more control over everything else
   static const float SDRRestorationPower = 1.5; // (0, inf) the lower, the more raised near black colors are. "Neutral" at 1. Too high values will make shadow gradients discontiguous.
   cColor.rgb = lerp(cSDRColor, max(cColor.rgb, 0), pow(saturate(cSDRColor / SDRRestorationScale), SDRRestorationPower));

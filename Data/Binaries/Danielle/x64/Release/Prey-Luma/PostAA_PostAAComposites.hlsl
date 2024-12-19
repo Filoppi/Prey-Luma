@@ -185,7 +185,7 @@ void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
     distortedTC = PerfectPerspectiveLensDistortion(distortedTC, FOVX, outputResolution, borderAlpha);
     // Caclulate what UV a border (e.g. 1 1, bottom right) would match to, so that we start applying vignette from there
     invDistortedTC = PerfectPerspectiveLensDistortion_Inverse(invDistortedTC, FOVX, outputResolution);
-    invDistortedTC = baseTC.xy + (baseTC.xy - distortedTC); //TODOFT: fix formula above
+    invDistortedTC = saturate(baseTC.xy + (baseTC.xy - distortedTC)); //TODOFT: fix formula above
   }
 	
   // LUMA: If DLSS run, buffers would have already been upscaled, so we want to ignore the logic that acknowledges a different rendering resolution here (CV_HPosScale.xy would have also been replaced by c++ code to be 1, and "CV_HPosClamp" too).
