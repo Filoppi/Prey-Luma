@@ -7043,8 +7043,8 @@ namespace
             }
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             {
-               //TODOFT: write down the suggested FOV value here?
-               ImGui::SetTooltip("Enables \"Perspective Correction\" lens distortion.\nThis is a specific type of lens distortion that is not meant to emulate camera lenses,\nbut is meant to make game's screen projection more natural, as if your display was a window to that place, seen directly through your eyes.\nThe performance cost is low, though it slightly reduces the FOV and sharpness (DLSS is heavily suggested).\nYou can increase the FOV to your liking to counteract the loss of FOV.\nMake sure that the scene and weapons FOVs match for this to look good.");
+               //TODOFT: write down the suggested FOV value here? And specify that the reticle offset should be adjusted accordingly? Or expose it to the menu?
+               ImGui::SetTooltip("Enables \"Perspective Correction\" lens distortion.\nThis is a specific type of lens distortion that is not meant to emulate camera lenses,\nbut is meant to make game's screen projection more natural, as if your display was a window to that place, seen directly through your eyes.\nFor example, round objects will appear round even if they are at the edges of the screen.\nThe performance cost is low, though it slightly reduces the FOV and sharpness (DLSS is heavily suggested).\nYou can increase the FOV to your liking to counteract the loss of FOV.\nMake sure that the scene and weapons FOVs match for this to look good.");
             }
             ImGui::SameLine();
             if (lens_distortion)
