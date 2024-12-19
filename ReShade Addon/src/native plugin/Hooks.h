@@ -29,6 +29,9 @@ namespace DKUtil
 // DLSS usually replaces the TAA pass ("PostAA") and writes to its render target, so that's what we are aiming to allow as UAV (which benefits performance by avoid two texture copies),
 // but if we ever wanted DLSS to replace SMAA instead, we could also force its RT to be a UAV.
 #define FORCE_DLSS_SMAA_UAV 1
+// Forces the SMAA target texture to be created with mip maps (more than 1, which would be the base/native texture), so that we can use it for lens distortion.
+// This doesn't seem to work well yet, as once we change the game's resolution, for some reason it stops creating mips.
+#define FORCE_SMAA_MIPS 0
 // Extra optimization for DLSS (breaks the game's native TAA if DLSS is not engaged).
 // This also probably results in DirectX debug layer warnings due to possibly the same texture being bound as render target and (pixel) shader resource at the same time (though we wouldn't be using it as shader resource).
 #define FORCE_DLSS_SMAA_SLIMMED_DOWN_HISTORY 0

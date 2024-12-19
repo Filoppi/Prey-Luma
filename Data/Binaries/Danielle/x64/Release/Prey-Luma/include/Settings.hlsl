@@ -305,6 +305,7 @@ cbuffer LumaSettings : register(b2)
     float GamePaperWhiteNits; // Access this through the global variables below
     float UIPaperWhiteNits; // Access this through the global variables below
     uint DLSS; // Is DLSS enabled (implies it engaged and it's compatible) (this is on even in fullscreen UI menus that don't use upscaling)
+    uint LensDistortion;
 #if DEVELOPMENT
     // These are reflected in ImGui (the number is hardcoded in c++).
     // You can add up to 3 numbers as comment to their right to define the UI settings sliders default, min and max values, and their name.

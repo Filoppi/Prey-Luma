@@ -125,6 +125,7 @@ namespace
       float ScenePaperWhite;
       float UIPaperWhite;
       uint32_t DLSS;
+      uint32_t LensDistortion;
 #if DEVELOPMENT // In case we disabled the "DEVELOPMENT" shader define while the code is compiled in "DEVELOPMENT" mode, we'll simply push values that aren't read by shaders
       LumaFrameDevSettings DevSettings;
 #endif

@@ -30,7 +30,7 @@ float getRCASLuma(float3 rgb)
 // The color range is roughly expected to be within the SDR 0-1 range, if not, pass in a "paperWhite" scale (which matches the "peak" of the range), that will be used as normalization.
 // It's possible to pass in motion vectors to do additional sharpening based on movement.
 // Sharpness is meant to be between 0 and 1.
-float4 RCAS(uint3 pixelCoord, float sharpness, Texture2D<float4> linearColorTexture, Texture2D<float2> motionVectorsTexture, float paperWhite = 1.0, bool specifyLinearColor = false, float4 linearColor = 0, bool dynamicSharpening = false)
+float4 RCAS(int2 pixelCoord, int2 minPixelCoord, int2 maxPixelCoord, float sharpness, Texture2D<float4> linearColorTexture, Texture2D<float2> motionVectorsTexture, float paperWhite = 1.0, bool specifyLinearColor = false, float4 linearColor = 0, bool dynamicSharpening = false)
 {
     float originalSharpness = sharpness;
 
@@ -40,7 +40,7 @@ float4 RCAS(uint3 pixelCoord, float sharpness, Texture2D<float4> linearColorText
         static const float Threshold = 1;
         static const float ScaleLimit = 1;
         
-        float2 mv = motionVectorsTexture.Load(int3(pixelCoord.x, pixelCoord.y, 0)).rg;
+        float2 mv = motionVectorsTexture.Load(int3(pixelCoord.x, pixelCoord.y, 0)).rg; // No need to check "maxPixelCoord" here
         float motion = max(abs(mv.r), abs(mv.g));
         float add = 0.0f;
 
@@ -54,7 +54,7 @@ float4 RCAS(uint3 pixelCoord, float sharpness, Texture2D<float4> linearColorText
     }
     sharpness = saturate(sharpness);
 
-    float4 e4 = specifyLinearColor ? linearColor : linearColorTexture.Load(int3(pixelCoord.x, pixelCoord.y, 0)).rgba;
+    float4 e4 = specifyLinearColor ? linearColor : linearColorTexture.Load(int3(pixelCoord.x, pixelCoord.y, 0)).rgba; // No need to check "maxPixelCoord" here
 
     // Optional optimization: skip sharpening if it's zero
     if (sharpness == 0.0f)
@@ -62,10 +62,11 @@ float4 RCAS(uint3 pixelCoord, float sharpness, Texture2D<float4> linearColorText
 
     float3 e = e4.rgb / paperWhite;
     // RCAS is always "pixel based" (the next 4 pixels)
-    float3 b = linearColorTexture.Load(int3(pixelCoord.x, pixelCoord.y - 1, 0)).rgb / paperWhite;
-    float3 d = linearColorTexture.Load(int3(pixelCoord.x - 1, pixelCoord.y, 0)).rgb / paperWhite;
-    float3 f = linearColorTexture.Load(int3(pixelCoord.x + 1, pixelCoord.y, 0)).rgb / paperWhite;
-    float3 h = linearColorTexture.Load(int3(pixelCoord.x, pixelCoord.y + 1, 0)).rgb / paperWhite;
+    // We check for "maxPixelCoord" and "minPixelCoord" to support dynamic resolution scaling. We assume "pixelCoord" is already within the limits.
+    float3 b = linearColorTexture.Load(int3(pixelCoord.x, max(pixelCoord.y - 1, minPixelCoord.y), 0)).rgb / paperWhite;
+    float3 d = linearColorTexture.Load(int3(max(pixelCoord.x - 1, minPixelCoord.x), pixelCoord.y, 0)).rgb / paperWhite;
+    float3 f = linearColorTexture.Load(int3(min(pixelCoord.x + 1, maxPixelCoord.x), pixelCoord.y, 0)).rgb / paperWhite;
+    float3 h = linearColorTexture.Load(int3(pixelCoord.x, min(pixelCoord.y + 1, maxPixelCoord.y), 0)).rgb / paperWhite;
 
 #if RCAS_DENOISE >= 1
     // Get lumas times 2. Should use luma weights that are twice as large as normal.

@@ -571,11 +571,15 @@ namespace Hooks
 		a_nFlags |= RE::ETextureFlags::FT_USAGE_MSAA;
 #endif // SUPPORT_MSAA
 		auto nPostAAFlags = a_nFlags;
+		auto bPostAAMipMaps = a_bMipMaps;
 #if FORCE_DLSS_SMAA_UAV && 0
 		nPostAAFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS | RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
 #endif // FORCE_DLSS_SMAA_UAV
+#if FORCE_SMAA_MIPS && 0
+		bPostAAMipMaps = true;
+#endif // FORCE_SMAA_MIPS
 		originalFunc("$TonemapTarget", ptexTonemapTarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, LDRPostProcessFormat, -1, a_nFlags);
-		originalFunc("$PostAATarget", ptexPostAATarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, LDRPostProcessFormat, -1, nPostAAFlags);
+		originalFunc("$PostAATarget", ptexPostAATarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, bPostAAMipMaps, LDRPostProcessFormat, -1, nPostAAFlags);
 		originalFunc("$UpscaleTarget", ptexUpscaleTarget, a_iWidth, a_iHeight, a_cClear, a_bUseAlpha, a_bMipMaps, LDRPostProcessFormat, -1, a_nFlags);
 #endif // ADD_NEW_RENDER_TARGETS
 
@@ -624,7 +628,10 @@ namespace Hooks
 
 #if FORCE_DLSS_SMAA_UAV
 		a_nFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS | RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
-#endif
+#endif // FORCE_DLSS_SMAA_UAV
+#if FORCE_SMAA_MIPS
+		a_nFlags |= RE::ETextureFlags::FT_FORCE_MIPS;
+#endif // FORCE_SMAA_MIPS
 		using OriginalFunction = RE::CTexture*(*)(const char*, int, int, void*, RE::ETEX_Type, RE::ETextureFlags, RE::ETEX_Format, int);
 		OriginalFunction originalFunc = *hookHandle_CreateRenderTarget_PrevBackBuffer0A;
 		auto _ptexPrevBackBuffer = originalFunc(a_name, a_nWidth, a_nHeight, a_cClear, a_eTT, a_nFlags, a_eTF, a_nCustomID);
@@ -646,7 +653,10 @@ namespace Hooks
 
 #if FORCE_DLSS_SMAA_UAV
 		a_nFlags |= RE::ETextureFlags::FT_USAGE_UNORDERED_ACCESS | RE::ETextureFlags::FT_USAGE_UAV_RWTEXTURE;
-#endif
+#endif // FORCE_DLSS_SMAA_UAV
+#if FORCE_SMAA_MIPS
+		a_nFlags |= RE::ETextureFlags::FT_FORCE_MIPS;
+#endif // FORCE_SMAA_MIPS
 		using OriginalFunction = RE::CTexture*(*)(const char*, int, int, void*, RE::ETEX_Type, RE::ETextureFlags, RE::ETEX_Format, int);
 		OriginalFunction originalFunc = *hookHandle_CreateRenderTarget_PrevBackBuffer1A;
 		auto _ptexPrevBackBuffer = originalFunc(a_name, a_nWidth, a_nHeight, a_cClear, a_eTT, a_nFlags, a_eTF, a_nCustomID);

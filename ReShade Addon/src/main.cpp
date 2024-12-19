@@ -499,6 +499,7 @@ namespace
    const uint32_t shader_hash_copy_pixel = std::stoul("FFFFFFF1", nullptr, 16);
    const uint32_t shader_hash_transform_function_copy_pixel = std::stoul("FFFFFFF2", nullptr, 16);
    const uint32_t shader_hash_draw_exposure = std::stoul("FFFFFFF3", nullptr, 16);
+   const uint32_t shader_hash_lens_distortion_pixel = std::stoul("FFFFFFF5", nullptr, 16);
 
    struct __declspec(uuid("cfebf6d4-d184-4e1a-ac14-09d088e560ca")) DeviceData
    {
@@ -576,6 +577,7 @@ namespace
       com_ptr<ID3D11PixelShader> copy_pixel_shader;
       com_ptr<ID3D11PixelShader> transfer_function_copy_pixel_shader;
       com_ptr<ID3D11PixelShader> draw_exposure_pixel_shader; // DLSS (doesn't need "ENABLE_NGX)
+      com_ptr<ID3D11PixelShader> lens_distortion_pixel_shader;
 
       // Exposure
       com_ptr<ID3D11Buffer> exposure_buffer_gpu; // DLSS (doesn't need "ENABLE_NGX)
@@ -618,8 +620,35 @@ namespace
          ssr_diffuse_srv = nullptr;
       }
 
+      // Lens Distortion
+      com_ptr<ID3D11SamplerState> lens_distortion_sampler_state;
+      com_ptr<ID3D11Texture2D> lens_distortion_texture;
+      com_ptr<ID3D11ShaderResourceView> lens_distortion_srv;
+      com_ptr<ID3D11Resource> lens_distortion_rtvs_resources[2];
+      com_ptr<ID3D11RenderTargetView> lens_distortion_rtvs[2];
+      size_t lens_distortion_rtv_index = -1;
+      UINT lens_distortion_texture_width = 0;
+      UINT lens_distortion_texture_height = 0;
+      DXGI_FORMAT lens_distortion_texture_format = DXGI_FORMAT_UNKNOWN;
+
+      void CleanLensDistortionResource()
+      {
+         // "lens_distortion_sampler_state" is peristent (not much point in clearing it)
+         lens_distortion_texture = nullptr;
+         lens_distortion_srv = nullptr;
+         lens_distortion_rtvs_resources[0] = nullptr;
+         lens_distortion_rtvs_resources[1] = nullptr;
+         lens_distortion_rtvs[0] = nullptr;
+         lens_distortion_rtvs[1] = nullptr;
+         lens_distortion_rtv_index = -1;
+         lens_distortion_texture_width = 0;
+         lens_distortion_texture_height = 0;
+         lens_distortion_texture_format = DXGI_FORMAT_UNKNOWN;
+      }
+
       // Misc
       com_ptr<ID3D11BlendState> default_blend_state;
+      std::set<ID3D11Buffer*> ui_vertex_buffers;
 
       // Pointer to the current DX buffer for the "global per view" cbuffer.
       com_ptr<ID3D11Buffer> cb_per_view_global_buffer;
@@ -1250,6 +1279,7 @@ namespace
       CreateShaderObject(device_data->native_device, shader_hash_copy_pixel, device_data->copy_pixel_shader, !(bool)FORCE_KEEP_CUSTOM_SHADERS_LOADED);
       CreateShaderObject(device_data->native_device, shader_hash_transform_function_copy_pixel, device_data->transfer_function_copy_pixel_shader, !(bool)FORCE_KEEP_CUSTOM_SHADERS_LOADED);
       CreateShaderObject(device_data->native_device, shader_hash_draw_exposure, device_data->draw_exposure_pixel_shader, !(bool)FORCE_KEEP_CUSTOM_SHADERS_LOADED);
+      CreateShaderObject(device_data->native_device, shader_hash_lens_distortion_pixel, device_data->lens_distortion_pixel_shader, !(bool)FORCE_KEEP_CUSTOM_SHADERS_LOADED);
       device_data->created_custom_shaders = true; // Some of the shader object creations above might have failed due to filtering, but they will likely be compiled soon after anyway
       if (lock) s_mutex_shader_objects.unlock();
    }
@@ -2179,6 +2209,19 @@ namespace
       blend_desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
       HRESULT hr = native_device->CreateBlendState(&blend_desc, &device_data.default_blend_state);
       assert(SUCCEEDED(hr));
+      
+      D3D11_SAMPLER_DESC sampler_desc = {};
+      // The original "Perspect Perspective" implementation uses this
+      sampler_desc.Filter = D3D11_FILTER_ANISOTROPIC;
+      // "BorderColor" is defaulted to black
+      sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_BORDER;
+      sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_BORDER;
+      sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
+      sampler_desc.MaxAnisotropy = D3D11_REQ_MAXANISOTROPY;
+      sampler_desc.MinLOD = 0;
+      sampler_desc.MaxLOD = D3D11_FLOAT32_MAX;
+      hr = native_device->CreateSamplerState(&sampler_desc, &device_data.lens_distortion_sampler_state);
+      assert(SUCCEEDED(hr));
 
 #if ENABLE_NGX
       com_ptr<IDXGIDevice> native_dxgi_device;
@@ -2806,7 +2849,7 @@ namespace
       case LumaConstantBufferType::LumaData:
       {
          LumaFrameData frame_data;
-         frame_data.PostEarlyUpscaling = device_data.has_drawn_dlss_sr && !device_data.has_drawn_upscaling;
+         frame_data.PostEarlyUpscaling = device_data.has_drawn_dlss_sr && !device_data.has_drawn_upscaling; // TODO: delete? it's unused and kinda useless as we update the resolution scale anyway
          frame_data.CustomData = custom_data;
          frame_data.Padding = 0;
          frame_data.FrameIndex = frame_index;
@@ -2869,6 +2912,69 @@ namespace
 
       // Finally draw:
       device_context->Draw(4, 0);
+   }
+
+   // Sets the viewport to the full render target, useless to anticipate upscaling (before the game would have done it natively)
+   void SetViewportFullscreen(ID3D11DeviceContext* device_context, uint2 size = {})
+   {
+      if (size == uint2{})
+      {
+         com_ptr<ID3D11RenderTargetView> render_target_view;
+         device_context->OMGetRenderTargets(1, &render_target_view, nullptr);
+
+#if DEVELOPMENT
+         D3D11_RENDER_TARGET_VIEW_DESC render_target_view_desc;
+         render_target_view->GetDesc(&render_target_view_desc);
+         ASSERT_ONCE(render_target_view_desc.ViewDimension == D3D11_RTV_DIMENSION::D3D11_RTV_DIMENSION_TEXTURE2D); // This should always be the case
+#endif // DEVELOPMENT
+
+         com_ptr<ID3D11Resource> render_target_resource;
+         render_target_view->GetResource(&render_target_resource);
+         com_ptr<ID3D11Texture2D> render_target_texture_2d;
+         HRESULT hr = render_target_resource->QueryInterface(&render_target_texture_2d);
+         ASSERT_ONCE(SUCCEEDED(hr));
+         D3D11_TEXTURE2D_DESC render_target_texture_2d_desc;
+         render_target_texture_2d->GetDesc(&render_target_texture_2d_desc);
+
+#if DEVELOPMENT
+         // Scissors are often set after viewports in CryEngine, so check them separately.
+         // We need to make sure that all the draw calls after DLSS upscaling run at full resolution and not rendering resolution.
+         com_ptr<ID3D11RasterizerState> state;
+         device_context->RSGetState(&state);
+         if (state.get())
+         {
+            D3D11_RASTERIZER_DESC state_desc;
+            state->GetDesc(&state_desc);
+            if (state_desc.ScissorEnable)
+            {
+               D3D11_RECT scissor_rects[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
+               UINT scissor_rects_num = 1;
+               // This will get the number of scissor rects used
+               device_context->RSGetScissorRects(&scissor_rects_num, nullptr);
+               ASSERT_ONCE(scissor_rects_num == 1); // Possibly innocuous as long as it's > 0, but we should only ever have one viewport and one RT!
+               device_context->RSGetScissorRects(&scissor_rects_num, &scissor_rects[0]);
+
+               // If this ever triggered, we'd need to replace scissors too after DLSS (and make them full resolution).
+               ASSERT_ONCE(scissor_rects[0].left == 0 && scissor_rects[0].top == 0 && scissor_rects[0].right == render_target_texture_2d_desc.Width && scissor_rects[0].bottom == render_target_texture_2d_desc.Height);
+            }
+         }
+#endif // DEVELOPMENT
+
+         size.x = render_target_texture_2d_desc.Width;
+         size.y = render_target_texture_2d_desc.Height;
+      }
+
+      D3D11_VIEWPORT viewports[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
+      UINT viewports_num = 1;
+      device_context->RSGetViewports(&viewports_num, nullptr);
+      ASSERT_ONCE(viewports_num == 1); // Possibly innocuous as long as it's > 0, but we should only ever have one viewport and one RT!
+      device_context->RSGetViewports(&viewports_num, &viewports[0]);
+      for (uint32_t i = 0; i < viewports_num; i++)
+      {
+         viewports[i].Width = size.x;
+         viewports[i].Height = size.y;
+      }
+      device_context->RSSetViewports(viewports_num, &viewports[0]);
    }
 
    void OnPresent(
@@ -3058,6 +3164,10 @@ namespace
          {
             device_data.CleanGTAOResource();
          }
+         if (!device_data.has_drawn_main_post_processing && (device_data.lens_distortion_texture.get() || device_data.lens_distortion_rtvs[0].get() || device_data.lens_distortion_rtvs[1].get())) // This seemengly can't happen
+         {
+            device_data.CleanLensDistortionResource();
+         }
       }
 
       // Update all variables as this is on the only thing guaranteed to run once per frame:
@@ -3099,7 +3209,7 @@ namespace
       device_data.has_drawn_main_post_processing = false;
       device_data.has_drawn_upscaling = false;
 #if 0 // Moved to "OnReShadePresent()"
-      has_drawn_dlss_sr = false;
+      device_data.has_drawn_dlss_sr = false;
 #endif
 #if 1 // Not much need to reset this, but let's do it anyway (e.g. in case the game scene isn't currently rendering)
       device_data.prey_drs_active = false;
@@ -3206,7 +3316,6 @@ namespace
    //TODOFT5: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project?
    //TODOFT5: add asserts for when we meet the shaders we are looking for
    //TODOFT (TODO): make sure DLSS lets scRGB colors pass through... (they don't, but are there any in LUT extrapolation mode?)
-   //TODOFT: fix gamma mode...
    //TODOFT4: add a new RT to draw UI on top (pre-multiplied alpha everywhere), so we could compose it smartly, possibly in the final linearization pass. Or, add a new UI gamma setting for when in full screen menus and swap to gamma space on the spot.
 
    // Return false to prevent the original draw call from running (e.g. if you replaced it or just want to skip it)
@@ -3292,10 +3401,12 @@ namespace
       }
 
       bool is_custom_pass = false;
+      bool updated_cbuffers = false;
 
       auto& cmd_list_data = cmd_list->get_private_data<CommandListData>();
 
       const bool had_drawn_main_post_processing = device_data.has_drawn_main_post_processing;
+      const bool had_drawn_upscaling = device_data.has_drawn_upscaling;
 
 #if DEVELOPMENT
       last_drawn_shader = "";
@@ -3755,9 +3866,233 @@ namespace
          }
          if (!device_data.has_drawn_main_post_processing && original_shader_hashes.Contains(shader_hashes_PostAAComposites))
          {
+            // Do lens distortion just before the post AA composition, which draws film grain and other screen space effects
+            if (is_custom_pass && cb_luma_frame_settings.LensDistortion)
+            {
+               ID3D11RenderTargetView* rtvs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
+               com_ptr<ID3D11DepthStencilView> dsv;
+               native_device_context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &rtvs[0], &dsv);
+
+               com_ptr<ID3D11ShaderResourceView> ps_srv;
+               native_device_context->PSGetShaderResources(0, 1, &ps_srv);
+
+               com_ptr<ID3D11PixelShader> ps;
+               native_device_context->PSGetShader(&ps, nullptr, 0);
+
+               uint2 lens_distortion_resolution = { (UINT)device_data.output_resolution.x, (UINT)device_data.output_resolution.y };
+               DXGI_FORMAT lens_distortion_format = DXGI_FORMAT_UNKNOWN;
+
+               com_ptr<ID3D11Resource> ps_srv_resource;
+               if (ps_srv)
+               {
+                  ps_srv->GetResource(&ps_srv_resource);
+                  if (ps_srv_resource)
+                  {
+                     com_ptr<ID3D11Texture2D> ps_srv_texture_2d;
+                     ps_srv_resource->QueryInterface(&ps_srv_texture_2d);
+                     if (ps_srv_texture_2d)
+                     {
+                        D3D11_TEXTURE2D_DESC ps_srv_texture_2d_desc;
+                        ps_srv_texture_2d->GetDesc(&ps_srv_texture_2d_desc);
+                        lens_distortion_resolution.x = ps_srv_texture_2d_desc.Width;
+                        lens_distortion_resolution.y = ps_srv_texture_2d_desc.Height;
+                        lens_distortion_format = ps_srv_texture_2d_desc.Format; // Maybe we should take the format from the Shader Resource View instead, but in Prey they'd always match
+                        ASSERT_ONCE(device_data.lens_distortion_texture_format != DXGI_FORMAT_R11G11B10_FLOAT); // We need a format that supports alpha as we store borders alpha information on it (all other possibly used formats have alpha)
+                        // If these ever happened, we'd need to create the new texture acknoledging them
+                        ASSERT_ONCE(lens_distortion_resolution.x == device_data.output_resolution.x && lens_distortion_resolution.y == device_data.output_resolution.y);
+                        ASSERT_ONCE(ps_srv_texture_2d_desc.SampleDesc.Count == 1 && ps_srv_texture_2d_desc.SampleDesc.Quality == 0);
+                     }
+                  }
+               }
+               ASSERT_ONCE(ps_srv_resource.get());
+
+               // "Perfect Perspective" original implementation allowed to use mips (from 0 to 4 extra ones) to avoid shimmering at the edges of the screen if distortion was high, we don't distort that much, so we limit it to two extra mips
+               // TODO: lower it to 1 and see if the quality would ever suffer from it?
+               constexpr UINT lens_distortion_max_mip_levels = 2; // 1 for base/native mip only, 2 should be enough for our light default settings, if we ever allowed more distortion, we should increase it
+
+               switch (lens_distortion_format)
+               {
+               case DXGI_FORMAT_R8G8B8A8_TYPELESS:
+               {
+                  lens_distortion_format = DXGI_FORMAT_R8G8B8A8_UNORM;
+                  break;
+               }
+               case DXGI_FORMAT_B8G8R8A8_TYPELESS:
+               {
+                  lens_distortion_format = DXGI_FORMAT_B8G8R8A8_UNORM;
+                  break;
+               }
+               case DXGI_FORMAT_B8G8R8X8_TYPELESS:
+               {
+                  lens_distortion_format = DXGI_FORMAT_B8G8R8X8_UNORM;
+                  break;
+               }
+               case DXGI_FORMAT_R10G10B10A2_TYPELESS:
+               {
+                  lens_distortion_format = DXGI_FORMAT_R10G10B10A2_UNORM;
+                  break;
+               }
+               case DXGI_FORMAT_R16G16B16A16_TYPELESS:
+               {
+                  lens_distortion_format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+                  break;
+               }
+               }
+
+               if (!device_data.lens_distortion_texture.get() || device_data.lens_distortion_texture_width != lens_distortion_resolution.x || device_data.lens_distortion_texture_height != lens_distortion_resolution.y || device_data.lens_distortion_texture_format != lens_distortion_format)
+               {
+                  device_data.lens_distortion_texture_width = lens_distortion_resolution.x; // Note that at this point, the textures might still be using a restricted area of their total size to do dynamic resolution scaling
+                  device_data.lens_distortion_texture_height = lens_distortion_resolution.y;
+                  device_data.lens_distortion_texture_format = lens_distortion_format; // We take whatever format we had previously, the lens distortion doesn't adjust by image encoding (gamma), whatever that was (usually linear)
+
+                  D3D11_TEXTURE2D_DESC texture_desc;
+                  texture_desc.Width = device_data.lens_distortion_texture_width;
+                  texture_desc.Height = device_data.lens_distortion_texture_height;
+                  texture_desc.MipLevels = lens_distortion_max_mip_levels;
+                  texture_desc.ArraySize = 1;
+                  texture_desc.Format = device_data.lens_distortion_texture_format;
+                  texture_desc.SampleDesc.Count = 1;
+                  texture_desc.SampleDesc.Quality = 0;
+                  texture_desc.Usage = D3D11_USAGE_DEFAULT;
+                  texture_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+                  texture_desc.CPUAccessFlags = 0;
+                  texture_desc.MiscFlags = 0;
+                  if (lens_distortion_max_mip_levels > 1)
+                  {
+                     texture_desc.BindFlags |= D3D11_BIND_RENDER_TARGET; // RT required by "D3D11_RESOURCE_MISC_GENERATE_MIPS"
+                     texture_desc.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+                  }
+
+                  device_data.lens_distortion_texture = nullptr;
+                  HRESULT hr = native_device->CreateTexture2D(&texture_desc, nullptr, &device_data.lens_distortion_texture);
+                  assert(SUCCEEDED(hr));
+
+                  D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+                  srv_desc.Format = texture_desc.Format;
+                  srv_desc.ViewDimension = D3D11_SRV_DIMENSION::D3D11_SRV_DIMENSION_TEXTURE2D;
+                  srv_desc.Texture2D.MipLevels = lens_distortion_max_mip_levels;
+                  srv_desc.Texture2D.MostDetailedMip = 0;
+
+                  device_data.lens_distortion_srv = nullptr;
+                  hr = native_device->CreateShaderResourceView(device_data.lens_distortion_texture.get(), &srv_desc, &device_data.lens_distortion_srv);
+                  assert(SUCCEEDED(hr));
+               }
+
+               size_t prev_lens_distortion_rtv_index = device_data.lens_distortion_rtv_index;
+               device_data.lens_distortion_rtv_index = -1;
+
+               if (device_data.lens_distortion_rtvs_resources[0].get() == ps_srv_resource.get())
+               {
+                  device_data.lens_distortion_rtv_index = 0;
+               }
+               else if (device_data.lens_distortion_rtvs_resources[1].get() == ps_srv_resource.get())
+               {
+                  device_data.lens_distortion_rtv_index = 1;
+               }
+               else
+               {
+                  // Use index 0 if it's available (empty) or if they are both taken (we already replace the oldest if we can)
+                  device_data.lens_distortion_rtv_index = device_data.lens_distortion_rtvs_resources[0].get() == nullptr ? 0 : (device_data.lens_distortion_rtvs_resources[1].get() == nullptr ? 1 : 0);
+
+                  // We could re-use the RTV created by the game for the previous pass, but it's hard to track so create a new one.
+                  // Unless "FORCE_DLSS_SMAA_SLIMMED_DOWN_HISTORY" is true, TAA will ping pong between two textures.
+                  // We keep a reference to textures that the game might have unreferenced here but it shouldn't matter.
+                  device_data.lens_distortion_rtvs_resources[device_data.lens_distortion_rtv_index] = ps_srv_resource;
+
+                  D3D11_RENDER_TARGET_VIEW_DESC rtv_desc;
+                  rtv_desc.Format = lens_distortion_format;
+                  rtv_desc.ViewDimension = D3D11_RTV_DIMENSION::D3D11_RTV_DIMENSION_TEXTURE2D;
+                  rtv_desc.Texture2D.MipSlice = 0;
+
+                  device_data.lens_distortion_rtvs[device_data.lens_distortion_rtv_index] = nullptr;
+                  HRESULT hr = native_device->CreateRenderTargetView(device_data.lens_distortion_rtvs_resources[device_data.lens_distortion_rtv_index].get(), &rtv_desc, &device_data.lens_distortion_rtvs[device_data.lens_distortion_rtv_index]);
+                  assert(SUCCEEDED(hr));
+               }
+
+               // If the index didn't change for over two frames, the user probably disabled TAA (or the SMAA versions that holds a history texture),
+               // so we clean up the other one to avoid it persisting in memory.
+               if (device_data.lens_distortion_rtv_index == prev_lens_distortion_rtv_index)
+               {
+                  device_data.lens_distortion_rtvs[device_data.lens_distortion_rtv_index == 0 ? 1 : 0] = nullptr;
+                  device_data.lens_distortion_rtvs_resources[device_data.lens_distortion_rtv_index == 0 ? 1 : 0] = nullptr;
+               }
+
+               // We make a copy of the current "PostAAComposite" source texture (with mip maps), and set that as render target (we draw the lens distortion into it),
+               // and replace the shader resource view it came from with the cloned mip mapped texture, then we restore the previous state and run PostAAComposite on the distorted texture as if nothing happened.
+               // Theoretically we could do the distortion in-line in the "PostAAComposite" shader, but it doesn't work that great given that there's sharpening in there too (so we need the finalized texture to sample it from multiple places that already have distortion applied).
+               //TODOFT: to optimize, we could always only copy the DRS active area.
+               if (lens_distortion_max_mip_levels > 1)
+               {
+                  native_device_context->CopySubresourceRegion(device_data.lens_distortion_texture.get(), 0, 0, 0, 0, ps_srv_resource.get(), 0, nullptr);
+               }
+               else
+               {
+                  native_device_context->CopyResource(device_data.lens_distortion_texture.get(), ps_srv_resource.get());
+               }
+
+               // If we are using high quality lens distortion, generate mips so we can distort with better quality at the edges of the screen, as bilinear sampling wouldn't be enough anymore (the distorted sampling UVs might cover an area greater than 4 source texels, so bilinear isn't enough anymore).
+               // We have a flag to do this directly in CryEngine "FORCE_SMAA_MIPS" through our hooks, but it allocates a higher number of mips so this function would end up generating all of them, which we don't need.
+               if (lens_distortion_max_mip_levels > 1)
+               {
+                  native_device_context->GenerateMips(device_data.lens_distortion_srv.get());
+               }
+
+               // Replace the same SRV as it's now being used as RTV (they can't be in use as both at the same time)
+               ID3D11ShaderResourceView* const lens_distortion_srv = device_data.lens_distortion_srv.get();
+               native_device_context->PSSetShaderResources(0, 1, &lens_distortion_srv);
+
+               ID3D11RenderTargetView* rtv0 = rtvs[0];
+               rtvs[0] = device_data.lens_distortion_rtvs[device_data.lens_distortion_rtv_index].get();
+               native_device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &rtvs[0], dsv.get());
+
+               native_device_context->PSSetShader(device_data.lens_distortion_pixel_shader.get(), nullptr, 0);
+
+               // Add sampler in an unused slot (we don't need to clear this one)
+               ID3D11SamplerState* const lens_distortion_sampler_state = device_data.lens_distortion_sampler_state.get();
+               native_device_context->PSSetSamplers(10, 1, &lens_distortion_sampler_state);
+
+               // We don't need to set send our cbuffers again as they'd already have the latest values, but... let's do it anyway
+               SetPreyLumaConstantBuffers(cmd_list, stages, settings_pipeline_layout, LumaConstantBufferType::LumaSettings);
+               SetPreyLumaConstantBuffers(cmd_list, stages, shared_data_pipeline_layout, LumaConstantBufferType::LumaData);
+               updated_cbuffers = true;
+
+               // In case DLSS upscaled earlier
+               if (device_data.has_drawn_dlss_sr && device_data.prey_drs_active)
+               {
+                  SetViewportFullscreen(native_device_context, lens_distortion_resolution);
+               }
+
+               // This should be the same draw type that the shader would have used.
+               native_device_context->Draw(3, 0);
+
+               native_device_context->PSSetShader(ps.get(), nullptr, 0);
+
+               rtvs[0] = rtv0;
+               rtv0 = nullptr;
+               native_device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &rtvs[0], dsv.get());
+               for (UINT i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; i++)
+               {
+                  if (rtvs[i] != nullptr)
+                  {
+                     rtvs[i]->Release();
+                     rtvs[i] = nullptr;
+                  }
+               }
+
+               ID3D11ShaderResourceView* const ps_srv_const = ps_srv.get();
+               native_device_context->PSSetShaderResources(0, 1, &ps_srv_const);
+
+               // Don't return, let the native "PostAAComposite" draw happen anyway!
+            }
+            else if (device_data.lens_distortion_texture.get() || device_data.lens_distortion_rtvs[0].get() || device_data.lens_distortion_rtvs[1].get())
+            {
+               device_data.CleanLensDistortionResource();
+            }
+
             // This is the last known pass that is guaranteed to run before UI draws in
             device_data.has_drawn_main_post_processing = true;
-            // If DRS is not currently running, upscaling won't happen, pretend it did
+            // If DRS is not currently running, upscaling won't happen, pretend it did (it'd already be true if DLSS had run).
+            // We might not want to set this flag before as we assume it to be turned to true around the time the original upscaling would have run.
             if (!device_data.prey_drs_active)
             {
                device_data.has_drawn_upscaling = true;
@@ -3770,70 +4105,19 @@ namespace
          {
             return true;
          }
-         if (!device_data.has_drawn_upscaling)
+         if (!had_drawn_upscaling)
          {
+            // Viewport is already fullscreen for this pass
             if (original_shader_hashes.Contains(shader_hash_PostAAUpscaleImage, reshade::api::shader_stage::pixel))
             {
                device_data.has_drawn_upscaling = true;
                assert(device_data.has_drawn_main_post_processing && device_data.prey_drs_active);
             }
-
             // Between DLSS SR and upscaling, force the viewport to the full render target resolution at all times, because we upscaled early.
             // Usually this matches the swapchain output resolution, but some lens optics passes actually draw on textures with a different resolution (independently of the game render/output res).
-            if (device_data.has_drawn_dlss_sr && !device_data.has_drawn_upscaling && device_data.prey_drs_active)
+            else if (device_data.has_drawn_dlss_sr && device_data.prey_drs_active)
             {
-               com_ptr<ID3D11RenderTargetView> render_target_view;
-               native_device_context->OMGetRenderTargets(1, &render_target_view, nullptr);
-
-#if DEVELOPMENT
-               D3D11_RENDER_TARGET_VIEW_DESC render_target_view_desc;
-               render_target_view->GetDesc(&render_target_view_desc);
-               ASSERT_ONCE(render_target_view_desc.ViewDimension == D3D11_RTV_DIMENSION::D3D11_RTV_DIMENSION_TEXTURE2D); // This should always be the case
-#endif // DEVELOPMENT
-
-               com_ptr<ID3D11Resource> render_target_resource;
-               render_target_view->GetResource(&render_target_resource);
-               com_ptr<ID3D11Texture2D> render_target_texture_2d;
-               HRESULT hr = render_target_resource->QueryInterface(&render_target_texture_2d);
-               ASSERT_ONCE(SUCCEEDED(hr));
-               D3D11_TEXTURE2D_DESC render_target_texture_2d_desc;
-               render_target_texture_2d->GetDesc(&render_target_texture_2d_desc);
-
-#if DEVELOPMENT
-               // Scissors are often set after viewports in CryEngine, so check them separately.
-               // We need to make sure that all the draw calls after DLSS upscaling run at full resolution and not rendering resolution.
-               com_ptr<ID3D11RasterizerState> state;
-               native_device_context->RSGetState(&state);
-               if (state.get())
-               {
-                  D3D11_RASTERIZER_DESC state_desc;
-                  state->GetDesc(&state_desc);
-                  if (state_desc.ScissorEnable)
-                  {
-                     D3D11_RECT scissor_rects[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
-                     UINT scissor_rects_num = 1;
-                     // This will get the number of scissor rects used
-                     native_device_context->RSGetScissorRects(&scissor_rects_num, nullptr);
-                     ASSERT_ONCE(scissor_rects_num == 1); // Possibly innocuous as long as it's > 0, but we should only ever have one viewport and one RT!
-                     native_device_context->RSGetScissorRects(&scissor_rects_num, &scissor_rects[0]);
-
-                     // If this ever triggered, we'd need to replace scissors too after DLSS (and make them full resolution).
-                     ASSERT_ONCE(scissor_rects[0].left == 0 && scissor_rects[0].top == 0 && scissor_rects[0].right == render_target_texture_2d_desc.Width && scissor_rects[0].bottom == render_target_texture_2d_desc.Height);
-                  }
-               }
-#endif // DEVELOPMENT
-
-               D3D11_VIEWPORT viewports[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
-               UINT viewports_num = 1;
-               native_device_context->RSGetViewports(&viewports_num, nullptr);
-               ASSERT_ONCE(viewports_num == 1); // Possibly innocuous as long as it's > 0, but we should only ever have one viewport and one RT!
-               native_device_context->RSGetViewports(&viewports_num, &viewports[0]);
-               for (uint32_t i = 0; i < viewports_num; i++)
-               {
-                  viewports[i].Width = render_target_texture_2d_desc.Width;
-                  viewports[i].Height = render_target_texture_2d_desc.Height;
-               }
-               native_device_context->RSSetViewports(viewports_num, &viewports[0]);
+               SetViewportFullscreen(native_device_context);
             }
          }
 
@@ -3884,6 +4168,10 @@ namespace
 
                   D3D11_TEXTURE2D_DESC output_texture_desc;
                   output_color->GetDesc(&output_texture_desc);
+
+#if FORCE_SMAA_MIPS // Define from the native plugin (not ever defined here!)
+                  ASSERT_ONCE(output_texture_desc.MipLevels > 1); // To improve "Perfect Perspective" lens distortion
+#endif
 
                   ASSERT_ONCE(std::lrintf(device_data.output_resolution.x) == output_texture_desc.Width && std::lrintf(device_data.output_resolution.y) == output_texture_desc.Height);
                   std::array<uint32_t, 2> dlss_render_resolution = FindClosestIntegerResolutionForAspectRatio((double)output_texture_desc.Width * (double)device_data.dlss_render_resolution_scale, (double)output_texture_desc.Height * (double)device_data.dlss_render_resolution_scale, (double)output_texture_desc.Width / (double)output_texture_desc.Height);
@@ -4124,8 +4412,7 @@ namespace
                            native_device_context->CopyResource(output_color.get(), device_data.dlss_output_color.get()); // DX11 doesn't need barriers
                         }
 
-                        device_data.has_drawn_dlss_sr = true;
-                        return true; // "Cancel" the previously set draw call, DLSS will take care of it
+                        return true; // "Cancel" the previously set draw call, DLSS has taken care of it
                      }
                      // DLSS Failed, suppress it for this frame and fall back on SMAA/TAA, hoping that anything before would have been rendered correctly for it already (otherwise it will start being correct in the next frame, given we suppress it (until manually toggled again, given that it'd likely keep failing))
                      else
@@ -4148,11 +4435,12 @@ namespace
       }
 
       //TODOFT: avoid re-applying these if the data hasn't changed (within the same frame)? Add a flag by shader for who needs them?
-      if (is_custom_pass)
+      if (is_custom_pass && !updated_cbuffers)
       {
          SetPreyLumaConstantBuffers(cmd_list, stages, settings_pipeline_layout, LumaConstantBufferType::LumaSettings);
          //TODOFT: only ever send this after DLSS? We don't really need it before (we barely even need it after!) (we use it in some passes)
          SetPreyLumaConstantBuffers(cmd_list, stages, shared_data_pipeline_layout, LumaConstantBufferType::LumaData);
+         updated_cbuffers = true;
       }
 
 #if !DEVELOPMENT //TODOFT: re-enable once we are sure we replaced all the post tonemap shaders and we are done debugging the blend states (and remove "is_custom_pass" check from below)
@@ -5675,6 +5963,7 @@ namespace
             device_data.copy_pixel_shader = nullptr;
             device_data.transfer_function_copy_pixel_shader = nullptr;
             device_data.draw_exposure_pixel_shader = nullptr;
+            device_data.lens_distortion_pixel_shader = nullptr;
          }
 #endif
       }
@@ -6713,6 +7002,38 @@ namespace
                cb_luma_frame_settings.ScenePeakWhite = cb_luma_frame_settings.ScenePaperWhite;
             }
 
+            bool lens_distortion = cb_luma_frame_settings.LensDistortion;
+            if (ImGui::Checkbox("Perspective Correction", &lens_distortion))
+            {
+               cb_luma_frame_settings.LensDistortion = lens_distortion;
+               reshade::set_config_value(runtime, NAME, "PerspectiveCorrection", lens_distortion);
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            {
+               //TODOFT: write down the suggested FOV value here?
+               ImGui::SetTooltip("Enables \"Perspective Correction\" lens distortion.\nThis is a specific type of lens distortion that is not meant to emulate camera lenses,\nbut is meant to make game's screen projection more natural, as if your display was a window to that place, seen directly through your eyes.\nThe performance cost is low, though it slightly reduces the FOV and sharpness (DLSS is heavily suggested).\nYou can increase the FOV to your liking to counteract the loss of FOV.\nMake sure that the scene and weapons FOVs match for this to look good.");
+            }
+            ImGui::SameLine();
+            if (lens_distortion)
+            {
+               ImGui::PushID("Perspective Correction");
+               if (ImGui::SmallButton(ICON_FK_UNDO))
+               {
+                  bool lens_distortion = false;
+                  cb_luma_frame_settings.LensDistortion = lens_distortion;
+                  reshade::set_config_value(runtime, NAME, "PerspectiveCorrection", lens_distortion);
+               }
+               ImGui::PopID();
+            }
+            else
+            {
+               const auto& style = ImGui::GetStyle();
+               ImVec2 size = ImGui::CalcTextSize(ICON_FK_UNDO);
+               size.x += style.FramePadding.x;
+               size.y += style.FramePadding.y;
+               ImGui::InvisibleButton("", ImVec2(size.x, size.y));
+            }
+
 #if DEVELOPMENT
             ImGui::NewLine();
             ImGui::Text("Developer Settings: ", "");
@@ -7539,6 +7860,7 @@ void Init(bool async)
    cb_luma_frame_settings.ScenePaperWhite = default_paper_white;
    cb_luma_frame_settings.UIPaperWhite = default_paper_white;
    cb_luma_frame_settings.DLSS = 0; // We can't set this to 1 until we verified DLSS engaged correctly and is running
+   cb_luma_frame_settings.LensDistortion = 0;
 
    // Load settings
    {
@@ -7564,6 +7886,7 @@ void Init(bool async)
 
       reshade::get_config_value(runtime, NAME, "DLSSSuperResolution", dlss_sr);
       reshade::get_config_value(runtime, NAME, "TonemapUIBackground", tonemap_ui_background);
+      reshade::get_config_value(runtime, NAME, "PerspectiveCorrection", cb_luma_frame_settings.LensDistortion);
       reshade::get_config_value(runtime, NAME, "DisplayMode", cb_luma_frame_settings.DisplayMode);
 #if !DEVELOPMENT && !TEST // Don't allow "SDR in HDR for HDR" mode (there's no strong reason not to, but it avoids permutations exposed to users)
       if (cb_luma_frame_settings.DisplayMode >= 2)

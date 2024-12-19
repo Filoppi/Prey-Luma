@@ -329,4 +329,15 @@ float2 RemapUVFromScale(float2 UV, float2 resolutionScale /*= CV_HPosScale.xy*/,
   return resolutionScale == 1 ? UV : RemapUV(UV, sourceResolution, sourceResolution / resolutionScale);
 }
 
+//TODOFT4: improve, it's WIP. This is badly named and some of the UI fails it (like the F button to interact)? And it triggers during pause menus?
+bool isViewProjectionMatrix(float4x4 mat)
+{
+	return mat._m00 != 0
+    && mat._m11 != 0
+		&& mat._m22 == 0
+		&& mat._m32 == 0
+		&& mat._m23 == 1
+		&& mat._m33 == 1;
+}
+
 #endif // SRC_COMMON_HLSL

@@ -1,6 +1,7 @@
 #include "include/Common.hlsl"
 #include "include/Tonemap.hlsl"
 #include "include/RCAS.hlsl"
+#include "include/LensDistortion.hlsl"
 
 #include "include/CBuffer_PerViewGlobal.hlsl"
 
@@ -25,6 +26,7 @@ SamplerState ssCompositeSource : register(s0);
 SamplerState ssLensOptics : register(s5);
 SamplerState ssFilmGrain : register(s6);
 SamplerState ssSceneLum : register(s7);
+SamplerState ssCompositeSourceAnisotropicEdges : register(s10); // LUMA FT: added this for lens distortion
 Texture2D<float4> compositeSourceTex : register(t0);
 Texture2D<float4> lensOpticsTex : register(t5);
 Texture3D<float4> filmGrainTex : register(t6);
@@ -39,7 +41,7 @@ float2 MapViewportToRaster(float2 normalizedViewportPos, float2 HPosScale /*= CV
 float GetExposure(float2 scaledTC)
 {
 #if 1 // This is a 1x1 texture, so any UV will return the same value
-    const float fSceneLum = SceneLumTex.Load(0).x;
+  const float fSceneLum = SceneLumTex.Load(0).x;
 #else
 	const float fSceneLum = SceneLumTex.Sample(ssSceneLum, scaledTC).x;
 #endif
@@ -88,7 +90,11 @@ void ApplyFilmGrain(inout float4 cScene, float2 baseTC, float fExposure)
 
 void ApplyVignette(inout float4 cScene, in float4 cVignette, float2 baseTC)
 {
-	float2 vguv = (baseTC * 2.0 - 1.0);
+#if 0 // Test vignette (purple)
+  cVignette.rgb = float4(2.5, 0.0, 2.5, 1.0);
+#endif
+
+	float2 vguv = baseTC * 2.0 - 1.0; // UV to NDC
 
   // LUMA FT: this multiplication prevents vignette from working, supposedly these cvars aren't set if vignette isn't active (there's another vignette implementation in Prey)
 	vguv.x *= vguv.x < 0 ? cbComposites.VignetteBorder.x : cbComposites.VignetteBorder.y;
@@ -101,18 +107,20 @@ void ApplyVignette(inout float4 cScene, in float4 cVignette, float2 baseTC)
 
 	cVignette.a *= (1-fVignette);
 	
-	cScene.rgb = (cVignette.rgb * cVignette.a) + (cScene.rgb * (-cVignette.a + 1));
+  // Straight alpha multiplication
+	cScene.rgb = (cVignette.rgb * cVignette.a) + (cScene.rgb * (1.0 - cVignette.a));
 }
 
 void ApplyLensOptics(inout float4 cScene, float2 scaledTC, float2 invRendRes, float fExposure)
 {
 #if _RT_SAMPLE1
 
-	float4 cLensOpticsComposite = lensOpticsTex.Sample(ssLensOptics, scaledTC.xy); // LUMA FT: "Load()" doesn't seem to work here (sun becomes green?), maybe the texture is scaled (if it was, then clamping to "HPosClamp.xy" wouldn't be right anymore), or maybe they use a weird sampler
-#if _RT_SAMPLE3 && ENABLE_CHROMATIC_ABERRATION
+  // LUMA FT: we don't use "ssCompositeSourceAnisotropicEdges" for lens distortion, it shouldn't really matter
+	float4 cLensOpticsComposite = lensOpticsTex.Sample(ssLensOptics, scaledTC.xy); // LUMA FT: "Load()" doesn't seem to work here (sun becomes green?), maybe the texture is scaled by DRS even with DLSS (if it was, then clamping to "CV_HPosClamp.xy" wouldn't be right anymore), or maybe they use a weird sampler
+#if _RT_SAMPLE3 && ENABLE_CHROMATIC_ABERRATION // LUMA FT: it's fine to do this after lens distortion is applied to the UV anyway (it should roughly look the same as distoring the UV twice again)!
 	float2 vTexelShift = invRendRes * cbComposites.ChromaShift;
   float2 baseTCCenter = 0.5 * CV_HPosScale.xy; // LUMA FT: fixed source texture center not acknowledging resolution scaling (MapViewportToRaster()), resulting in CA being different depending on the resolution
-	cLensOpticsComposite.r = lensOpticsTex.Sample(ssLensOptics, (scaledTC.xy - baseTCCenter) * (1 + vTexelShift) + baseTCCenter).r;
+	cLensOpticsComposite.r = lensOpticsTex.Sample(ssLensOptics, clamp((scaledTC.xy - baseTCCenter) * (1 + vTexelShift) + baseTCCenter, 0.f, CV_HPosClamp.xy)).r; // LUMA FT: fixed missing clamp to "CV_HPosClamp", and added clamp to 0 for lens distortion
 #endif // _RT_SAMPLE3 && ENABLE_CHROMATIC_ABERRATION
 
 #if !ENABLE_LENS_OPTICS
@@ -131,7 +139,7 @@ void ApplyLensOptics(inout float4 cScene, float2 scaledTC, float2 invRendRes, fl
 // It's arguable whether they should be affected, but for visual consistency, given that theoretically they are generated from world images, they should also be affected by exposure,
 // and visually it should look more consistent.
 #if ENABLE_LENS_OPTICS_HDR
-		  cLensOpticsComposite.rgb *= lerp(1.0, fExposure, SunShaftsAndLensOpticsExposureAlpha);
+  cLensOpticsComposite.rgb *= lerp(1.0, fExposure, SunShaftsAndLensOpticsExposureAlpha);
 #endif // ENABLE_LENS_OPTICS_HDR
 
 // LUMA FT: By default, lens optics passes are rendered, tonemapped to a 0-1 range without applying gamma, and then stored on a R11G11B10F texture.
@@ -155,21 +163,61 @@ void ApplyLensOptics(inout float4 cScene, float2 scaledTC, float2 invRendRes, fl
 }
 
 // This runs after any form of AA and before upscaling/MSAA.
-// This uses "FullscreenTriVS".
+// This uses "FullscreenTriVS" so "baseTC.xy" is always in 0-1 range (of the viewport).
 void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
 {
   bool gammaSpace = bool(POST_PROCESS_SPACE_TYPE <= 0);
+  
+#if !ENABLE_SCREEN_DISTORTION // Shortcut to disable all of it
+  LumaSettings.LensDistortion = false;
+#endif // !ENABLE_SCREEN_DISTORTION
+  
+  float2 distortedTC = baseTC.xy;
+  float2 invDistortedTC = baseTC.xy;
+  float4 distortedHPosClamp = float4(0.0, 0.0, CV_HPosClamp.xy); // The clamps for pre-distorted images (it'd go beyond the lens distortion black edges if beyond this). left min, top min, right max, bottom max
+  float borderAlpha = 0.f;
+  if (LumaSettings.LensDistortion)
+  {
+    float2 outputResolution = 0.5 / CV_ScreenSize.zw; // Using "CV_ScreenSize.xy" directly would probably also be fine given this is always meant to be done after upscaling
+    float FOVX = 1.0 / CV_ProjRatio.z;
+    distortedTC = PerfectPerspectiveLensDistortion(distortedTC, FOVX, outputResolution, borderAlpha);
+    // Caclulate what UV a border (e.g. 1 1, bottom right) would match to, so that we start applying vignette from there
+    invDistortedTC = PerfectPerspectiveLensDistortion_Inverse(invDistortedTC, FOVX, outputResolution);
+  }
 	
-    float2 HPosClamp = 1.f - (CV_ScreenSize.zw * LumaData.RenderResolutionScale);
-  // LUMA: If DLSS run, buffers would have already been upscaled, so we want to ignore the logic that acknowledges a different rendering resolution here (CV_HPosScale.xy would have also been replaced by c++ code to be 1).
-    float2 scaledTC = min(MapViewportToRaster(baseTC.xy, CV_HPosScale.xy), HPosClamp); // Scale down the UVs to map to the top left portion of the source texture, in case the resolution scale was < 1 (so UVs might scale to a range smaller than 0-1)
-    float2 forcedScaledTC = min(MapViewportToRaster(baseTC.xy, LumaData.RenderResolutionScale), HPosClamp); // Given that "CV_HPosScale" might be 1, use the real rendering resolution scale, in case we needed it for anything (e.g. sampling from the depth buffer)
+  // LUMA: If DLSS run, buffers would have already been upscaled, so we want to ignore the logic that acknowledges a different rendering resolution here (CV_HPosScale.xy would have also been replaced by c++ code to be 1, and "CV_HPosClamp" too).
+
+  // Scale down the UVs to map to the top left portion of the source texture, in case the resolution scale was < 1 (so UVs might scale to a range smaller than 0-1) (this does nothing with DLSS)
+  // Note that clamping "scaledTC" is kinda useless as the source would already be within the bounds, but ... we do it anyway
+  float2 scaledTC = min(MapViewportToRaster(baseTC.xy, CV_HPosScale.xy), CV_HPosClamp.xy);
+
+  float2 forcedHPosClamp = LumaData.RenderResolutionScale - CV_ScreenSize.zw;
+  float2 distortedScaledTC = clamp(MapViewportToRaster(distortedTC.xy, CV_HPosScale.xy), 0.0, CV_HPosClamp.xy); // Clamped to 0 for lens distortion support
+  float2 distortedForcedScaledTC = clamp(MapViewportToRaster(distortedTC.xy, LumaData.RenderResolutionScale), 0.0, forcedHPosClamp); // Given that "CV_HPosScale" might be 1, use the real rendering resolution scale, in case we needed it for anything (e.g. sampling from the depth buffer)
 
 #if 1 // LUMA FT: Optimization assuming a standard bilinear sampler would always have been used here
-    outColor = compositeSourceTex.Load(WPos.xyz);
+  outColor = compositeSourceTex.Load(WPos.xyz);
 #else
-	outColor = compositeSourceTex.Sample(ssCompositeSource, scaledTC.xy);
+  outColor = compositeSourceTex.Sample(ssCompositeSource, scaledTC.xy);
 #endif
+#if 0 // Show sharpening map (for fun)
+  outColor = 1;
+#endif
+  if (LumaSettings.LensDistortion)
+  {
+    // Early out if the borders are black, we don't want to draw film grain on top of it!
+    if (outColor.a <= 0.0)
+    {
+      outColor = 0;
+      return;
+    }
+    // If we have a border, block as samples beyond it to avoid random sharpening results (e.g. over sharpened borders)
+    if (outColor.a < 1.0 - FLT_EPSILON)
+    {
+      distortedHPosClamp = float4(scaledTC, scaledTC);
+    }
+  }
+
   // LUMA FT: fixed sharpening chromatic aberration using the wrong inverse resolution for sampling (they used "invOutputRes", which isn't adjusted by the rendering resolution scale),
   // though it's arguable whether sharpening should always be run by sampling the mid point between this texel and the adjacent ones, or if it can also sample UVs closer to the current texel (scaled by rend res scale): both have pros and cons).
   float2 invOutputRes = CV_ScreenSize.zw * 2.0; // MapViewportToRaster()
@@ -211,21 +259,32 @@ void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
 
   sharpenAmount -= 1.0; // Scale to the expected range
   //TODOFT: expose extra post TAA/DLSS sharpening multiplier (and hide the newly exposed sharpening setting?, replace other sharpening implementations with RCAS?)
-  if (LumaSettings.DLSS) { // Heuristically found scale to match the native game's TAA sharpness with DLAA
+  if (LumaSettings.DLSS) // Heuristically found scale to match the native game's TAA sharpness with DLAA
+  {
     sharpenAmount *= 2.0;
+  }
+  if (LumaSettings.LensDistortion) // Heuristically found (it makes little difference but helps a bit)
+  {
+    sharpenAmount *= 2.25;
   }
   //TODO LUMA: pass in motion vectors to either increase or reduce sharpening on moving pixels (increase if it they were blurry, decreate it if they had sharpening artifacts)
   // This is probably fine, this code path is never used for "blurring", it's always exclusively for sharpening.
   // This should work independently of "POST_PROCESS_SPACE_TYPE".
-	outColor.rgb = RCAS(WPos.xyz, sharpenAmount, compositeSourceTex, dummyFloat2Texture, normalizationRange, true, outColor, false).rgb;
+	outColor.rgb = RCAS(WPos.xy, distortedHPosClamp.xy / invOutputRes, distortedHPosClamp.zw / invOutputRes, sharpenAmount, compositeSourceTex, dummyFloat2Texture, normalizationRange, true, outColor, false).rgb;
 
 #else // POST_TAA_SHARPENING_TYPE <= 1
 
+  if (LumaSettings.LensDistortion) // Heuristically found
+  {
+    sharpenAmount *= 1.25;
+  }
+
 	// Apply sharpening
-	float3 cTL = DecodeBackBufferToLinearSDRRange(compositeSourceTex.Sample(ssCompositeSource, min(scaledTC + invRenderingRes * float2(-0.5, -0.5), HPosClamp)).rgb);
-	float3 cTR = DecodeBackBufferToLinearSDRRange(compositeSourceTex.Sample(ssCompositeSource, min(scaledTC + invRenderingRes * float2( 0.5, -0.5), HPosClamp)).rgb);
-	float3 cBL = DecodeBackBufferToLinearSDRRange(compositeSourceTex.Sample(ssCompositeSource, min(scaledTC + invRenderingRes * float2(-0.5,  0.5), HPosClamp)).rgb);
-	float3 cBR = DecodeBackBufferToLinearSDRRange(compositeSourceTex.Sample(ssCompositeSource, min(scaledTC + invRenderingRes * float2( 0.5,  0.5), HPosClamp)).rgb);
+  //TODO LUMA: we could do this with .Load() to gain performance
+	float3 cTL = DecodeBackBufferToLinearSDRRange(compositeSourceTex.Sample(ssCompositeSource, clamp(scaledTC + invRenderingRes * float2(-0.5, -0.5), distortedHPosClamp.xy, distortedHPosClamp.zw)).rgb);
+	float3 cTR = DecodeBackBufferToLinearSDRRange(compositeSourceTex.Sample(ssCompositeSource, clamp(scaledTC + invRenderingRes * float2( 0.5, -0.5), distortedHPosClamp.xy, distortedHPosClamp.zw)).rgb);
+	float3 cBL = DecodeBackBufferToLinearSDRRange(compositeSourceTex.Sample(ssCompositeSource, clamp(scaledTC + invRenderingRes * float2(-0.5,  0.5), distortedHPosClamp.xy, distortedHPosClamp.zw)).rgb);
+	float3 cBR = DecodeBackBufferToLinearSDRRange(compositeSourceTex.Sample(ssCompositeSource, clamp(scaledTC + invRenderingRes * float2( 0.5,  0.5), distortedHPosClamp.xy, distortedHPosClamp.zw)).rgb);
 
 	float3 cFiltered = (cTL + cTR + cBL + cBR) * 0.25;
   float3 preSharpenColor = outColor.rgb;
@@ -244,22 +303,25 @@ void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
   float3 preEffectsGammaColor = outColor.rgb;
 #endif
 
-  float fExposure = GetExposure(forcedScaledTC.xy);
+  float fExposure = GetExposure(distortedForcedScaledTC.xy);
 
   // Apply lens composite
-  // LUMA FT: with DLSS, lens optics are also rendered at full resolution
-  ApplyLensOptics(outColor, scaledTC.xy, invRenderingRes, fExposure);
+  // LUMA FT: with DLSS, lens optics are also rendered at full resolution (we distort their UV too!)
+  // We had not distorted them in the previous pass because their distortion quality doesn't really matter and can be approximate.
+  // Ideally maybe we shouldn't distort these, but to do that we'd need to change their vertices etc, which we don't have easy access to (if we don't distort them, they won't match the scene!)
+  ApplyLensOptics(outColor, distortedScaledTC.xy, invRenderingRes, fExposure);
 
 // LUMA FT: moved vignette and film grain after lens optics, as especially with "ENABLE_LENS_OPTICS_HDR", they now render in "HDR"
 // We still keep the sharpening before them, as sharpening is mostly meant to be to counter the blurriner from TAA, which didn't affect lens optics.
 
 #if ENABLE_VIGNETTE
-	ApplyVignette(outColor, cbComposites.VignetteColor, baseTC.xy);
+  // LUMA FT: vignette might have been best applied before lens distortion but it doesn't really matter, we apply it on the inverse UVs to make it match perfectly
+	ApplyVignette(outColor, cbComposites.VignetteColor, invDistortedTC.xy);
 #endif // ENABLE_VIGNETTE
 
 #if ENABLE_FILM_GRAIN
-  // LUMA FT: we are now passing in "baseTC" instead of "scaledTC" (or "forcedScaledTC") to avoid film grain scaling in size with the dynamic render resolution scale
-  // (otherwise now we'd draw the film grain now acknowledging the render scale and then it'd be scaled again later, so basically we draw it pretending we are running at "native res" but in the "render res" portion, so that upscaling later will apply the opposite scaling and normalize it out)
+  // LUMA FT: we are now passing in "baseTC" instead of "scaledTC" (or "distortedForcedScaledTC") to avoid film grain scaling in size with the dynamic render resolution scale
+  // (otherwise now we'd draw the film grain now acknowledging the render scale and then it'd be scaled again later, so basically we draw it pretending we are running at "native res" but in the "render res" portion, so that DRS upscaling later will apply the opposite scaling and normalize it out)
 	ApplyFilmGrain(outColor, baseTC.xy, fExposure);
 #endif // ENABLE_FILM_GRAIN
 

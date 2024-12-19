@@ -10,5 +10,4 @@ void main(
   out float4 outColor : SV_Target0)
 {
   PostAAComposites_PS(WPos, inBaseTC, outColor);
-  return;
 }
