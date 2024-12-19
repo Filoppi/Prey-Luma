@@ -35,8 +35,7 @@ void main(
   
 #if ENABLE_SCREEN_DISTORTION
   // Inverse lens distortion
-  //TODOFT: do we ever need a check in the UI to tell whether the scene rendered or not to avoid unexpected distortions? YES!
-  if (LumaUIData.WritingOnSwapchain && LumaSettings.LensDistortion && isViewProjectionMatrix(cCompositeMat))
+  if (LumaUIData.WritingOnSwapchain == 1 && LumaSettings.LensDistortion && isViewProjectionMatrix(cCompositeMat))
   {
     o0.xyz /= o0.w; // From clip to NDC space
     o0.w = 1; // no need to convert it back to clip space, the GPU would do it again anyway

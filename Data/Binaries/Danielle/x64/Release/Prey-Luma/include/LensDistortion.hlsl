@@ -45,14 +45,14 @@ float aastep(float grad)
    · arXiv:2010.04077 [cs.GR] (2020) */
 float get_radius(float theta, float rcp_f, float k) // get image radius
 {
-	if      (k>0.0)  return tan(abs(k)*theta)/rcp_f/abs(k); // stereographic, rectilinear projections
+	if      (k>0.0)  return tan(k*theta)/rcp_f/k; // stereographic, rectilinear projections
 	else if (k<0.0)  return sin(abs(k)*theta)/rcp_f/abs(k); // equisolid, orthographic projections
 	else  /*k==0.0*/ return            theta /rcp_f;        // equidistant projection
 }
 #define get_rcp_focal(halfOmega, radiusOfOmega, k) get_radius(halfOmega, radiusOfOmega, k) // get reciprocal focal length
 float get_theta(float radius, float rcp_f, float k) // get spherical θ angle
 {
-	if      (k>0.0)  return atan(abs(k)*radius*rcp_f)/abs(k); // stereographic, rectilinear projections
+	if      (k>0.0)  return atan(k*radius*rcp_f)/k; // stereographic, rectilinear projections
 	else if (k<0.0)  return asin(abs(k)*radius*rcp_f)/abs(k); // equisolid, orthographic projections
 	else  /*k==0.0*/ return             radius*rcp_f;         // equidistant projection
 }
@@ -87,19 +87,20 @@ static const float S = LumaSettings.DevSetting02 * 4 + 1.0;
 static const float CroppingFactor = 1.0 - LumaSettings.DevSetting03;
 static const float AspectRatioCorrection = LumaSettings.DevSetting04;
 #else //TODOFT: expose these? And delete branch above
-static const float K = 0.8; // Lower is stronger distortion. 0.5 is the original default value (and a balanced one too, tough it might be a bit too strong for us).
+static const float K = 0.8; // Lower is stronger distortion. 0.5 is the original default value (and a balanced one too, tough it might be a bit too strong for us). Going negative applies the opposite distortion.
 static const float S = 2.0; // Higher is "less" distortion. Matches "golden standard" from the ReShade version, 1 is the original default value (and the lowest allowed).
 static const float CroppingFactor = 0.5; // At 0 we don't crop at all and show black borders on all sides, at 0.5 we match the borders to the edges of the distorted images, at 1 we zoom in completely so no border would be visible.
 static const float AspectRatioCorrection = 1.0 / 3.0; // Emulates the intensity of the lens distortion around 16:9, for consistency across aspect ratios. The higher the value, the higher the borders in Ultrawide
 #endif
 
 // Taken (with permission) from "https://github.com/Fubaxiusz/fubax-shaders".
+//TODO LUMA: try axiomorphic mode?
 float2 PerfectPerspectiveLensDistortion(float2 texCoord, float horFOV, float2 resolution, out float borderAlpha, bool NDC = false, bool clip = false)
 {
 //----------------------------------------------
 // begin of perspective mapping
 
-	float currentAspectRatio = resolution.x / resolution.y;
+	const float currentAspectRatio = resolution.x / resolution.y;
 
 	// This is to make the distortion look roughly the same as it would at 16:9 around the 16:9 part of the image, independently of the aspect ratio.
 	// The cost is that it won't apply as "correctly" anymore for arbitrary aspect ratios, but in UW it was way too strong, so this is preferred.
@@ -174,6 +175,7 @@ float2 PerfectPerspectiveLensDistortion(float2 texCoord, float horFOV, float2 re
 	viewCoord *= croppingScalar;
 
 	// Image radius
+	// This is the actual main and only dynamic lens distortion formula (the result of this depends by pixel, the rest is static)
 	float radius = S == 1.0 ?
 		dot(viewCoord, viewCoord) // spherical
 		: ((viewCoord.y * viewCoord.y / S) + (viewCoord.x * viewCoord.x)); // anamorphic
@@ -224,7 +226,7 @@ float2 PerfectPerspectiveLensDistortion(float2 texCoord, float horFOV, float2 re
 
 float2 PerfectPerspectiveLensDistortion_Inverse(float2 texCoord, float horFOV, float2 resolution, bool NDC = false, bool clip = false)
 {
-	float currentAspectRatio = resolution.x / resolution.y;
+	const float currentAspectRatio = resolution.x / resolution.y;
 
 	// This is to make the distortion look roughly the same as it would at 16:9 around the 16:9 part of the image, independently of the aspect ratio.
 	// The cost is that it won't apply as "correctly" anymore for arbitrary aspect ratios, but in UW it was way too strong, so this is preferred.
@@ -298,10 +300,17 @@ float2 PerfectPerspectiveLensDistortion_Inverse(float2 texCoord, float horFOV, f
 	const float2 toUvCoord = radiusOfOmega/(tan(halfOmega)*viewProportions);
 	viewCoord /= toUvCoord;
 
+	//TODOFT4: find proper inverse formula! Or a good approximation
+	float2 radiusViewCoord = viewCoord;
+#if 0
+	radiusViewCoord = pow(abs(radiusViewCoord), 1.333) * sign(radiusViewCoord);
+#endif
 	// Image radius
 	float radius = S == 1.0 ?
-		dot(viewCoord, viewCoord) // spherical
-		: ((viewCoord.y * viewCoord.y / S) + (viewCoord.x * viewCoord.x)); // anamorphic
+		dot(radiusViewCoord, radiusViewCoord) // spherical
+		: ((radiusViewCoord.y * radiusViewCoord.y / S) + (radiusViewCoord.x * radiusViewCoord.x)); // anamorphic
+
+#if 0
 	float rcp_radius = rsqrt(radius);
 	radius = sqrt(radius);
 
@@ -310,6 +319,14 @@ float2 PerfectPerspectiveLensDistortion_Inverse(float2 texCoord, float horFOV, f
 
 	// Rectilinear perspective transformation
 	viewCoord /= tan(theta)*rcp_radius;
+#elif 0
+	// WIP from Wolframalpha (not real)
+	float inv = rsqrt(radius) * tan(atan(K * rcp_focal * sqrt(radius)) / K);
+	viewCoord /= inv;
+#elif 1
+	//viewCoord = pow(abs(viewCoord), 0.95) * sign(viewCoord);
+	viewCoord *= 0.6;
+#endif
 
 	viewCoord /= croppingScalar;
 	
