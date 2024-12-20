@@ -3,4 +3,4 @@ Changes:
 -I fixed some of the "random" config variables that the Real Lights mods changed, and optionally lowered the objects quality from 4 to 3 as 4 has glitches in some levels (most of them were related to shadow quality, so that's definitely increased now).
 -Defaulted to TAA instead of SMAA 2TX.
 -Defaulted all profiles to quality 4 (the max) instead of 3 (I had to swap them around to make 4 default).
--Optionally fixed the "e_ObjQuality" being set to 4 breaking some objects LODs (making them invisible), setting it to 3 fixes the problem.
+-Optionally fixed the "e_ObjQuality" being set to 4 breaking some objects LODs (making them invisible), setting it to 3 fixes the problem (the "Shuttle Bay Fix" mod (https://www.nexusmods.com/prey2017/mods/140) can also be used to fix it (at least most of it)).

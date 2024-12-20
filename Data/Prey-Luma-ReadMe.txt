@@ -32,7 +32,7 @@ Luma was created by Pumbo (graphics) and Ersh (reverse engineering).
 - Unless you are on Linux/Proton, delete the "d3dcompiler_47.dll" from the main binary folder, it's an outdated shader compiler bundled with the game for "no reason" (Windows will fall back on the latest version of it this way, but Proton doesn't distribute the file so leave it in).
 
 # Information:
-- The performance cost on modern GPUs is negligeable, especially when using DLSS SR + Resolution Scaling (in fact, performance might drastically increase in that case).
+- The performance cost on modern GPUs is negligeable, especially when using DLSS SR + Resolution Scaling (in fact, performance might drastically increase in that case) (GTAO is the only addition that has a perceivable performance cost, but it can be disabled or lowered in quality).
 - The mod is best used with all the graphics settings maxed out in the game, but any setting combination is supported too.
 - Set you "game.cfg" to read only to avoid the game clearing most settings from it if changing settings within the game menu, so it's suggested to change your resolution and other settings directly from config before booting the game, or they will get overwritten every time.
 - The game's HDR uses the HDR calibration data from Windows 11 and display's EDID.
@@ -47,7 +47,7 @@ Luma was created by Pumbo (graphics) and Ersh (reverse engineering).
 - Changing the resolution after starting the game is not suggested, as some effects get initialized for the original resolution without being resized (vanilla issue).
 - FXAA and no AA is not suggested as they lack object highlights and have other bugs (e.g. FXAA can break the game when close to an enemy and looking at the sun) (vanilla issue) (Luma hides FXAA from the settings).
 - Sun shafts can disappear while they are still visible if the sun center gets occluded (this is a bug with the original game, it's slightly more noticeable with LUMA because sun shafts are stronger).
-- Some objects in some levels disappear at certain camera angles (vanilla issue, lowering object details to high or below fixes it).
+- Some objects in some levels disappear at certain camera angles (vanilla issue, lowering object details to high or below fixes it) (it can be fixed with the "Shuttle Bay Fix" mod, see below).
 - Glass can flicker heavily, especially when there's multiple layers of it (vanilla issue).
 - Mission/Items/Enemy indicator icons are misaligned when the game uses lens distortion (vanilla issue).
 - Due to Windows limitations, the game cursor will follow the OS SDR White Level (SDR content brightness) instead of the game's UI paper white. Set the Windows SDR content brightness setting to 31 (out of 100) to make it match ~203 nits, as Luma is set to by default.
@@ -63,6 +63,9 @@ Replace their files with the Luma version if necessary, none of the game's mods 
   If you use it, do not apply the "autoexec.cfg" and "system.cfg" files from it, because they contain a myriad of random and unsafe changes (use the Luma version of the same files, which is compatible with this mod too).
 - 2023 - PREY - Quality of Life Enhancement Mod - https://www.nexusmods.com/prey2017/mods/99
   This shares some features with the mod above, but generally improves on them.
+- Shuttle Bay Fix - https://www.nexusmods.com/prey2017/mods/140
+  Fixes objects disappearing in the "Shuttle Bay" level if the Objects Quality setting was set to Very High.
+- Touch-Up Mod - https://www.nexusmods.com/prey2017/mods/102
 - No-Intro (Skip Startup - Splash Videos) - https://www.nexusmods.com/prey2017/mods/115
 - Chairloader - The Prey Modding Framework - https://www.nexusmods.com/prey2017/mods/103
   Not for general usage but it's great for messing around
