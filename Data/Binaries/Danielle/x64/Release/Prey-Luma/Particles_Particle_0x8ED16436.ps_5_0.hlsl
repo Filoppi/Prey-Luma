@@ -124,9 +124,9 @@ void main(
   r0.yzw = float3(2,2,1) * r0.xyz;
   r1.x = diffuseTex.Sample(ssMaterialAnisoHigh_s, v1.xy).w;
   r1.y = __0RefrBumpScale__1AnimSpeed__2PerturbationScale__3PerturbationStrength.z * v0.w;
-  r1.y = 0.05 * r1.y;
+  r1.y *= 0.05;
   r2.y = CF_Timers[asuint(CM_DetailTilingAndAlphaRef.w)].y * __0RefrBumpScale__1AnimSpeed__2PerturbationScale__3PerturbationStrength.y + 0.5;
-  r0.x = ((r0.x * 2) / CV_ScreenSize.x) + -0.5; // LUMA FT: fixed particles distortion result depending on resolution scaling value
+  r0.x = ((r0.x * 2) / CV_HPosScale.x) - 0.5; // LUMA FT: fixed particles distortion result depending on resolution scaling value
   r1.z = r1.y * r0.x;
   r2.x = 0.5;
   r1.yw = r1.yy * r0.xx + r2.xy;
@@ -145,7 +145,7 @@ void main(
   r2.xyz = MatDifColor.xyz * r2.xyz;
   r1.xy = normalsTex.Sample(ssMaterialAnisoHigh_s, r1.xy).xy;
   r1.xy = __0RefrBumpScale__1AnimSpeed__2PerturbationScale__3PerturbationStrength.xx * r1.yx;
-  r1.xy = r1.xy * v2.xx + r0.yz;
+  r1.xy = (r1.xy * v2.xx * CV_HPosScale.xy) + r0.yz; // LUMA FT: fixed refraction offsetting textures more if dynamic resolution scaling was active
   r1.xy = max(float2(0,0), r1.xy);
   r1.xy = min(CV_HPosClamp.xy, r1.xy);
   r1.xyz = sceneCopyTex.Sample(ssPointClamp_s, r1.xy).xyz;
