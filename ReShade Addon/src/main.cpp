@@ -6410,11 +6410,11 @@ namespace
                            // Pick the default color by shader type
                            if (pipeline->HasVertexShader())
                            {
-                              text_color = IM_COL32(128, 128, 0, 255); // Yellow
+                              text_color = IM_COL32(192, 192, 0, 255); // Yellow
                            }
                            else if (pipeline->HasComputeShader())
                            {
-                              text_color = IM_COL32(128, 0, 128, 255); // Purple
+                              text_color = IM_COL32(192, 0, 192, 255); // Purple
                            }
 
                            const std::shared_lock lock_loading(s_mutex_loading);
@@ -6447,11 +6447,11 @@ namespace
 
                               if (pipeline->HasVertexShader())
                               {
-                                 text_color = IM_COL32(64, 255, 0, 255); // Yellow + Green
+                                 text_color = IM_COL32(128, 255, 0, 255); // Yellow + Green
                               }
                               else if (pipeline->HasComputeShader())
                               {
-                                 text_color = IM_COL32(64, 255, 64, 255); // Purple + Green
+                                 text_color = IM_COL32(128, 255, 128, 255); // Purple + Green
                               }
                               else
                               {

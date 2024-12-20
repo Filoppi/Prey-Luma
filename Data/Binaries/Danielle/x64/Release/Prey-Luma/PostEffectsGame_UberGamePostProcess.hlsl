@@ -2,6 +2,7 @@
 
 cbuffer PER_BATCH : register(b0)
 {
+  // None of these are scaled based on the screen's resolution
   float4 UberPostParams2 : packoffset(c0);
   float4 UberPostParams3 : packoffset(c1);
   float4 UberPostParams1 : packoffset(c2);
@@ -29,12 +30,18 @@ void ApplyRadialBlur(inout float4 cScreen, float2 tcFinal)
 	float2 vScreenPos = RadialBlurParams.xy;
   
 	float2 vBlurVec = ( vScreenPos.xy - tcFinal.xy);
+	// LUMA FT: matched the look to 16:9 (radial blur might still not be circular at it)
+	float screenAspectRatio = CV_ScreenSize.x / CV_ScreenSize.y;
+#if 1
+	vBlurVec.x *= NativeAspectRatio / screenAspectRatio;
+#else // Force circular radius
+	vBlurVec.x /= screenAspectRatio;
+#endif
   
 	float fInvRadius = RadialBlurParams.z;
 	float blurDist = saturate( 1- dot( vBlurVec.xy * fInvRadius, vBlurVec.xy * fInvRadius));
 	RadialBlurParams.w *= blurDist*blurDist;
 
-	//TODOFT: Verify this scales correctly by aspect ratio
 	vBlurVec *= RadialBlurParams.w;
   
 	const int nSamples = 8; 
@@ -60,8 +67,12 @@ void ApplyRadialBlurAndChromaShift(inout float4 cScreen, float2 tcFinal)
 #define RadialBlurParams UberPostParams5
 
 	float2 vScreenPos = RadialBlurParams.xy;
+	
+	// LUMA FT: matched the look to 16:9 (blur and chroma shift are stil not circular/squared but that's fine)
+	float screenAspectRatio = CV_ScreenSize.x / CV_ScreenSize.y;
   
 	float2 vBlurVec = ( vScreenPos.xy - tcFinal.xy);
+	vBlurVec.x *= NativeAspectRatio / screenAspectRatio;
   
 	float fInvRadius = RadialBlurParams.z;
 	float blurDist = saturate( 1- dot( vBlurVec.xy * fInvRadius, vBlurVec.xy * fInvRadius));
@@ -70,8 +81,7 @@ void ApplyRadialBlurAndChromaShift(inout float4 cScreen, float2 tcFinal)
 	const int nSamples = 8; 
 	const float fWeight = 1.0 / (float) nSamples;
   	
-	//TODOFT: Verify this scales correctly by aspect ratio
-	float fChromaShiftScale = 1 - UberPostParams1.w*0.15;
+	float2 fChromaShiftScale = (1 - UberPostParams1.w*0.15) * float2(NativeAspectRatio / screenAspectRatio, 1.0);
 
 	vBlurVec *= RadialBlurParams.w;
 	
@@ -90,7 +100,7 @@ void ApplyRadialBlurAndChromaShift(inout float4 cScreen, float2 tcFinal)
 	cScreen =  cAcc * fWeight;
 
 #if ENABLE_CHROMATIC_ABERRATION
-	fChromaShiftScale = 1 - UberPostParams1.w*0.1;
+	fChromaShiftScale = (1 - UberPostParams1.w*0.1) * float2(NativeAspectRatio / screenAspectRatio, 1.0);
 
 	cAcc.gb = _tex0.Sample(_tex0_s, ((tcFinal.xy + vBlurVec.xy ) -0.5) * fChromaShiftScale + 0.5).gb;
 	cAcc.gb += _tex0.Sample(_tex0_s, ((tcFinal.xy + vBlurVec.xy * 2 ) -0.5) * fChromaShiftScale + 0.5).gb;
@@ -122,6 +132,8 @@ void UberGamePostProcessPS(float4 WPos, float4 inBaseTC, out float4 outColor)
 		outColor = _tex0.Sample(_tex0_s, inBaseTC.xy);
 		return;
 	}
+
+	//TODOFT: clamp UVs if we are at the borders of lens distortion?
   
 	/////////////////////////////////////////////////////////////////////////////////////////////////
 	// Apply interlation
@@ -136,9 +148,17 @@ void UberGamePostProcessPS(float4 WPos, float4 inBaseTC, out float4 outColor)
 	vInterlationRot = vInterlationRot.xy * cos(fAngle) + float2(-vInterlationRot.y, vInterlationRot.x) * sin(fAngle);
 
 	// Compute interlation/vsync
-	fInterlation = abs( frac(( vInterlationRot.y ) * PS_ScreenSize.y * 0.25 * UberPostParams0.z) * 2 - 1) * 0.8 + 0.5;
-	float fVsync = abs( frac((inBaseTC.y + UberPostParams1.x * CV_AnimGenParams.z) * PS_ScreenSize.y * 0.01 ) * 2 - 1) * 0.05 + 1.0;
+	// LUMA FT: fix interlation and v-sync basically being invisible at higher resolutions (pixel lines got too small, and the v-sync wave got too fast)
+	static const float BaseInterlationVerticalResolution = 1080.0; // Not based on the global "BaseVerticalResolution" as it's not a multiple of common resolutions
+	float interlationVerticalResolution = CV_ScreenSize.y;
+	// Find the closest matching interlation to the original size (we can't divide the resolution by anything other than 2 as it's a pixel based effect).
+	// This will map 1440 to 720 (1440p is already too high to see individual lines, and scaling it to 1080 would look bad), and 2160 to 1080 etc. We halve until we are close enough to 1080p.
+	int interlationVerticalResolutionScale = (interlationVerticalResolution / (BaseInterlationVerticalResolution * 1.5)) + FLT_EPSILON;
+	interlationVerticalResolution /= interlationVerticalResolutionScale + 1;
+	fInterlation = abs( frac(( vInterlationRot.y ) * interlationVerticalResolution * 0.25 * UberPostParams0.z) * 2 - 1) * 0.8 + 0.5;
+	float fVsync = abs( frac((inBaseTC.y + UberPostParams1.x * CV_AnimGenParams.z) * BaseVerticalResolution * 0.01 ) * 2 - 1) * 0.05 + 1.0;
 	fInterlation =  lerp(1, fVsync, UberPostParams0.x) * lerp( 1, fInterlation, saturate(UberPostParams0.y));
+	fInterlation = pow(fInterlation, 13);
 
 #endif // _RT_SAMPLE2
 

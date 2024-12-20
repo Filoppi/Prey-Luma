@@ -224,7 +224,8 @@ float2 PerfectPerspectiveLensDistortion(float2 texCoord, float horFOV, float2 re
 	return PerfectPerspectiveLensDistortion(texCoord, horFOV, resolution, dummyBorderAlpha, NDC, clip);
 }
 
-float2 PerfectPerspectiveLensDistortion_Inverse(float2 texCoord, float horFOV, float2 resolution, bool NDC = false, bool clip = true)
+// Note: clipping is off by default as it breaks some UI polygons.
+float2 PerfectPerspectiveLensDistortion_Inverse(float2 texCoord, float horFOV, float2 resolution, bool NDC = false, bool clip = false)
 {
 	const float currentAspectRatio = resolution.x / resolution.y;
 

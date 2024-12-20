@@ -514,7 +514,7 @@ void main(
 		//TODO LUMA: rebalance this a bit, maybe apply a pow? reflections don't get that much bluerried with distance, they don't scale exactly as one'd expect
 		outDiffuse = reflectionLength / currentMaxDiffusenessReflectionLength; // We tried applied a pow to this result but it's good as it is
 
-#if 0 //TODOFT: test more and finish or delete, it doesn't really seem to be needed?
+#if 0 //TODOFT: test more and finish or delete, it doesn't really seem to be needed? We could use a rebalancing of the ray distance control to blur more aggressively when the distance changes
 		// As the reflected point gets closer to the screen (up to a threshold), scale up its diffuness, as a way to make them blur more, because they'd be bigger in the view and require a lower mip map to give the same perceived diffuseness
 		float cameraPlaneDistance = fDepth * CV_NearFarClipDist.y; // Distance from the camera plane to the reflecting point (in world units)		
 		outDiffuse *= max(maxDiffusenessReflectionLength / cameraPlaneDistance, 1.0); // Re-use "maxDiffusenessReflectionLength" even if theoretically this is unrelated
