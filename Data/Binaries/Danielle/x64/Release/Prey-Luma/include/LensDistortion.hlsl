@@ -300,34 +300,10 @@ float2 PerfectPerspectiveLensDistortion_Inverse(float2 texCoord, float horFOV, f
 	const float2 toUvCoord = radiusOfOmega/(tan(halfOmega)*viewProportions);
 	viewCoord /= toUvCoord;
 
-	//TODOFT4: find proper inverse formula! Or a good approximation
-	float2 radiusViewCoord = viewCoord;
-	radiusViewCoord *= 0.6;
-#if 0
-	radiusViewCoord = pow(abs(radiusViewCoord), 1.333) * sign(radiusViewCoord);
-#endif
-	// Image radius
-	float radius = S == 1.0 ?
-		dot(radiusViewCoord, radiusViewCoord) // spherical
-		: ((radiusViewCoord.y * radiusViewCoord.y / S) + (radiusViewCoord.x * radiusViewCoord.x)); // anamorphic
-
-#if 1
-	float rcp_radius = rsqrt(radius);
-	radius = sqrt(radius);
-
-	// get θ from anamorphic radius
-	float theta = get_theta(radius, rcp_focal, K);
-
-	// Rectilinear perspective transformation
-	viewCoord /= tan(theta)*rcp_radius;
-#elif 0
-	// WIP from Wolframalpha (not real)
-	float inv = rsqrt(radius) * tan(atan(K * rcp_focal * sqrt(radius)) / K);
-	viewCoord /= inv;
-#elif 1
-	//viewCoord = pow(abs(viewCoord), 0.95) * sign(viewCoord);
-	viewCoord *= 0.6;
-#endif
+	// Inverse formula from Fubax (approximate as it doesn't acknowlege "S", but it's close enough):
+	float theta = atan(length(viewCoord));
+	float radius = tan(theta * K) / K / rcp_focal;
+	viewCoord = normalize(viewCoord) * radius;
 
 	viewCoord /= croppingScalar;
 	

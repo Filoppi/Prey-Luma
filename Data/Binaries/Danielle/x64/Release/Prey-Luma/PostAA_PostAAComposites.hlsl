@@ -92,7 +92,7 @@ void ApplyVignette(inout float4 cScene, in float4 cVignette, float2 baseTC)
 {
 #if 0 // Test vignette (purple)
   cVignette.rgb = float4(1.0, 0.0, 1.0, 0.5);
-  cbComposites.VignetteFalloff = 0.667; // Higher means slower falloff (more vignette in the center)
+  cbComposites.VignetteFalloff = 0.8; // Higher means slower falloff (more vignette in the center)
   cbComposites.VignetteBorder = 1.0;
 #endif
 
@@ -177,15 +177,11 @@ void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
   float2 distortedTC = baseTC.xy;
   float2 invDistortedTC = baseTC.xy;
   float4 distortedHPosClamp = float4(0.0, 0.0, CV_HPosClamp.xy); // The clamps for pre-distorted images (it'd go beyond the lens distortion black edges if beyond this). left min, top min, right max, bottom max
-  float borderAlpha = 0.f;
   if (LumaSettings.LensDistortion)
   {
     float2 outputResolution = 0.5 / CV_ScreenSize.zw; // Using "CV_ScreenSize.xy" directly would probably also be fine given this is always meant to be done after upscaling
     float FOVX = 1.0 / CV_ProjRatio.z;
-    distortedTC = PerfectPerspectiveLensDistortion(distortedTC, FOVX, outputResolution, borderAlpha);
-    // Caclulate what UV a border (e.g. 1 1, bottom right) would match to, so that we start applying vignette from there
-    invDistortedTC = PerfectPerspectiveLensDistortion_Inverse(invDistortedTC, FOVX, outputResolution);
-    invDistortedTC = saturate(baseTC.xy + (baseTC.xy - distortedTC)); //TODOFT: fix formula above
+    distortedTC = PerfectPerspectiveLensDistortion(distortedTC, FOVX, outputResolution);
   }
 	
   // LUMA: If DLSS run, buffers would have already been upscaled, so we want to ignore the logic that acknowledges a different rendering resolution here (CV_HPosScale.xy would have also been replaced by c++ code to be 1, and "CV_HPosClamp" too).
@@ -212,7 +208,9 @@ void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
     if (outColor.a <= 0.0)
     {
       outColor = 0;
+#if 1
       return;
+#endif
     }
     // If we have a border, block as samples beyond it to avoid random sharpening results (e.g. over sharpened borders)
     if (outColor.a < 1.0 - FLT_EPSILON)
@@ -318,8 +316,8 @@ void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
 // We still keep the sharpening before them, as sharpening is mostly meant to be to counter the blurriner from TAA, which didn't affect lens optics.
 
 #if ENABLE_VIGNETTE
-  // LUMA FT: vignette might have been best applied before lens distortion but it doesn't really matter, we apply it on the inverse UVs to make it match perfectly
-	ApplyVignette(outColor, cbComposites.VignetteColor, invDistortedTC.xy);
+  // LUMA FT: vignette might have been best applied before lens distortion but it doesn't really matter, we apply it on the distorted UVs to make it match perfectly
+	ApplyVignette(outColor, cbComposites.VignetteColor, distortedTC.xy);
 #endif // ENABLE_VIGNETTE
 
 #if ENABLE_FILM_GRAIN
