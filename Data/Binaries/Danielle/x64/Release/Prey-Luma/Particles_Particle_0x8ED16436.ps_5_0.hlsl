@@ -108,7 +108,6 @@ void main(
   float4 v6 : TEXCOORD5,
   float4 v7 : TEXCOORD6,
   float4 v8 : TEXCOORD7,
-  float4 v9 : TEXCOORD8,
   out float4 o0 : SV_Target0)
 {
   float4 r0,r1,r2;
@@ -125,9 +124,8 @@ void main(
   r0.yzw = float3(2,2,1) * r0.xyz;
   r1.x = diffuseTex.Sample(ssMaterialAnisoHigh_s, v1.xy).w;
   r1.y = __0RefrBumpScale__1AnimSpeed__2PerturbationScale__3PerturbationStrength.z * v0.w;
-  r1.y = 0.0500000007 * r1.y;
-  r1.z = CM_DetailTilingAndAlphaRef.w;
-  r2.y = CF_Timers[r1.z].y * __0RefrBumpScale__1AnimSpeed__2PerturbationScale__3PerturbationStrength.y + 0.5;
+  r1.y = 0.05 * r1.y;
+  r2.y = CF_Timers[asuint(CM_DetailTilingAndAlphaRef.w)].y * __0RefrBumpScale__1AnimSpeed__2PerturbationScale__3PerturbationStrength.y + 0.5;
   r0.x = ((r0.x * 2) / CV_ScreenSize.x) + -0.5; // LUMA FT: fixed particles distortion result depending on resolution scaling value
   r1.z = r1.y * r0.x;
   r2.x = 0.5;
@@ -139,28 +137,28 @@ void main(
   r1.yz = __0RefrBumpScale__1AnimSpeed__2PerturbationScale__3PerturbationStrength.ww * r1.yz;
   r1.xy = r1.yz * r1.xx + v1.xy;
   r2.xyzw = diffuseTex.Sample(ssMaterialAnisoHigh_s, r1.xy).xyzw;
-  r0.x = -v3.y + r2.w;
+  r0.x = -v2.y + r2.w;
   r1.z = cmp(0.00400000019 >= r0.x);
   if (r1.z != 0) discard;
-  r0.x = min(v3.z, r0.x);
-  r0.x = saturate(v3.x * r0.x);
+  r0.x = min(v2.z, r0.x);
+  r0.x = saturate(v2.x * r0.x);
   r2.xyz = MatDifColor.xyz * r2.xyz;
   r1.xy = normalsTex.Sample(ssMaterialAnisoHigh_s, r1.xy).xy;
   r1.xy = __0RefrBumpScale__1AnimSpeed__2PerturbationScale__3PerturbationStrength.xx * r1.yx;
-  r1.xy = r1.xy * v3.xx + r0.yz;
+  r1.xy = r1.xy * v2.xx + r0.yz;
   r1.xy = max(float2(0,0), r1.xy);
   r1.xy = min(CV_HPosClamp.xy, r1.xy);
   r1.xyz = sceneCopyTex.Sample(ssPointClamp_s, r1.xy).xyz;
   r2.xyz = r2.xyz * r0.xxx;
   r1.xyz = r2.xyz * MatEmiColor.xyz + r1.xyz;
-  r1.xyz = v6.xyz * r1.xyz;
+  r1.xyz = v5.xyz * r1.xyz;
   r1.xyz = r1.xyz * r0.xxx;
   r0.y = sceneLinearDepthTex.Sample(ssPointClamp_s, r0.yz).x;
   r0.y = r0.y * CV_NearFarClipDist.y + -r0.w;
   r0.y = min(r0.y, r0.w);
   r0.y = max(0, r0.y);
   r0.y = -r0.y * r0.y;
-  r0.y = v3.w * r0.y;
+  r0.y = v2.w * r0.y;
   r0.y = 1.44269502 * r0.y;
   r0.y = exp2(r0.y);
   r0.y = 1 + -r0.y;

@@ -1,9 +1,3 @@
-cbuffer PER_INSTANCE : register(b1)
-{
-  float4 SceneSelection : packoffset(c0);
-  float4 ParticleLightParams : packoffset(c1);
-}
-
 cbuffer PER_MATERIAL : register(b3)
 {
   float4 MatDifColor : packoffset(c0);
@@ -93,7 +87,6 @@ Texture2D<float4> diffuseTex : register(t0);
 Texture2D<float4> normalsTex : register(t1);
 Texture2D<float4> sceneCopyTex : register(t2);
 Texture2D<float4> sceneLinearDepthTex : register(t3);
-Texture2D<float4> sceneMaskLinearTex : register(t4);
 Texture2D<float4> customTex : register(t9);
 
 #define cmp -
@@ -112,21 +105,13 @@ void main(
 {
   float4 r0,r1,r2;
 
-  r0.xy = (int2)v0.xy;
-  r0.zw = float2(0,0);
-  r0.x = sceneMaskLinearTex.Load(r0.xyz).x;
-  r0.x = v0.w * CV_NearFarClipDist.w + -r0.x;
-  r0.x = SceneSelection.x * r0.x;
-  r0.x = cmp(r0.x < 0);
-  if (r0.x != 0) discard;
   r0.xy = CV_ScreenSize.zw * v0.xy;
   r0.z = v0.w;
   r0.yzw = float3(2,2,1) * r0.xyz;
   r1.x = diffuseTex.Sample(ssMaterialAnisoHigh_s, v1.xy).w;
   r1.y = __0RefrBumpScale__1AnimSpeed__2PerturbationScale__3PerturbationStrength.z * v0.w;
-  r1.y = 0.0500000007 * r1.y;
-  r1.z = CM_DetailTilingAndAlphaRef.w;
-  r2.y = CF_Timers[r1.z].y * __0RefrBumpScale__1AnimSpeed__2PerturbationScale__3PerturbationStrength.y + 0.5;
+  r1.y *= 0.05;
+  r2.y = CF_Timers[asuint(CM_DetailTilingAndAlphaRef.w)].y * __0RefrBumpScale__1AnimSpeed__2PerturbationScale__3PerturbationStrength.y + 0.5;
   r0.x = ((r0.x * 2) / CV_ScreenSize.x) + -0.5; // LUMA FT: fixed particles distortion result depending on resolution scaling value
   r1.z = r1.y * r0.x;
   r2.x = 0.5;
