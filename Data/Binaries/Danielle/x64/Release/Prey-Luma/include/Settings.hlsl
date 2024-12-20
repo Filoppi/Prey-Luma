@@ -109,6 +109,9 @@
 #ifndef DLSS_RELATIVE_PRE_EXPOSURE
 #define DLSS_RELATIVE_PRE_EXPOSURE 1
 #endif
+#ifndef CORRECT_CRT_INTERLACING_SIZE
+#define CORRECT_CRT_INTERLACING_SIZE 1
+#endif
 // If true, the motion vectors generated for dynamic objects are generated with both the current and previous jitters acknowledged in the calculations (and baked in their velocity, so they wouldn't be zero even if nothing was moving).
 // If false, motion vectors are generated (and then interpreted in Motion Blur and TAA) like in the vanilla code, so they kinda include the jitter of the current frame, but not the one from the previous frame, which isn't really great and caused micro shimmers in blur and TAA.
 // This needs to be mirrored in c++ so do not change it directly from ere. In post process shaders it simply determines how to interpret/dejitter the MVs. When DLSS is on, the behaviour is always is if this was true.

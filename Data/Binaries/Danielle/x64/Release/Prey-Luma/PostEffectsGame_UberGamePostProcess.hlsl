@@ -151,10 +151,12 @@ void UberGamePostProcessPS(float4 WPos, float4 inBaseTC, out float4 outColor)
 	// LUMA FT: fix interlation and v-sync basically being invisible at higher resolutions (pixel lines got too small, and the v-sync wave got too fast)
 	static const float BaseInterlationVerticalResolution = 1080.0; // Not based on the global "BaseVerticalResolution" as it's not a multiple of common resolutions
 	float interlationVerticalResolution = CV_ScreenSize.y;
+#if CORRECT_CRT_INTERLACING_SIZE
 	// Find the closest matching interlation to the original size (we can't divide the resolution by anything other than 2 as it's a pixel based effect).
 	// This will map 1440 to 720 (1440p is already too high to see individual lines, and scaling it to 1080 would look bad), and 2160 to 1080 etc. We halve until we are close enough to 1080p.
 	int interlationVerticalResolutionScale = (interlationVerticalResolution / (BaseInterlationVerticalResolution * 1.5)) + FLT_EPSILON;
 	interlationVerticalResolution /= interlationVerticalResolutionScale + 1;
+#endif
 	fInterlation = abs( frac(( vInterlationRot.y ) * interlationVerticalResolution * 0.25 * UberPostParams0.z) * 2 - 1) * 0.8 + 0.5;
 	float fVsync = abs( frac((inBaseTC.y + UberPostParams1.x * CV_AnimGenParams.z) * BaseVerticalResolution * 0.01 ) * 2 - 1) * 0.05 + 1.0;
 	fInterlation =  lerp(1, fVsync, UberPostParams0.x) * lerp( 1, fInterlation, saturate(UberPostParams0.y));
