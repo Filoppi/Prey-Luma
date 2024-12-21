@@ -1490,7 +1490,7 @@ namespace
       {
          const auto& entry_path = entry.path();
 #if DEVELOPMENT && ALLOW_LOADING_DEV_SHADERS
-         //TODOFT: this currently needs a junction to the "include" folder
+         //TODOFT: this currently needs a junction to the "include" folder, or another copy of them... maybe simply put ".../" in the include dirs?
          bool is_in_dev_directory = entry_path.parent_path() == dev_directory;
          if (entry_path.parent_path() != directory && !is_in_dev_directory)
          {
@@ -3368,14 +3368,11 @@ namespace
       frame_index++;
    }
 
-   //TODOFT5: "_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR" as define at the top?
+   //TODOFT0: "_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR" as define at the top?
    //TODOFT5: Add "UpdateSubresource" to check whether they map buffers with that (it's not optimized so probably it's unused by CryEngine)? Also make sure that our CopyTexture() func works!
-   //TODOFT5: merge all the shader permutations that use the same code (and then move shader binaries to bin folder?)
-   //TODOFT5: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project?
-   //TODOFT5: add asserts for when we meet the shaders we are looking for
-   //TODOFT5: gravity jump/transport corridors flowy material doesn't scale properly with DRS
-   //TODOFT4: describe the stashed changes about geometry shaders to distort UI
-   //TODOFT (TODO): make sure DLSS lets scRGB colors pass through... (they don't, but are there any in LUT extrapolation mode?)
+   //TODOFT3: merge all the shader permutations that use the same code (and then move shader binaries to bin folder?)
+   //TODOFT0: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project?
+   //TODOFT3: add asserts for when we meet the shaders we are looking for
    //TODOFT4: add a new RT to draw UI on top (pre-multiplied alpha everywhere), so we could compose it smartly, possibly in the final linearization pass. Or, add a new UI gamma setting for when in full screen menus and swap to gamma space on the spot.
 
    // Return false to prevent the original draw call from running (e.g. if you replaced it or just want to skip it)
@@ -4080,7 +4077,6 @@ namespace
                // We make a copy of the current "PostAAComposite" source texture (with mip maps), and set that as render target (we draw the lens distortion into it),
                // and replace the shader resource view it came from with the cloned mip mapped texture, then we restore the previous state and run PostAAComposite on the distorted texture as if nothing happened.
                // Theoretically we could do the distortion in-line in the "PostAAComposite" shader, but it doesn't work that great given that there's sharpening in there too (so we need the finalized texture to sample it from multiple places that already have distortion applied).
-               //TODOFT: to optimize, we could always only copy the DRS active area.
                if (lens_distortion_max_mip_levels > 1)
                {
                   native_device_context->CopySubresourceRegion(device_data.lens_distortion_texture.get(), 0, 0, 0, 0, ps_srv_resource.get(), 0, nullptr);
@@ -4192,7 +4188,8 @@ namespace
             // To achieve that, we need to add both DRS+DLSS scaling support to all shaders that run after DLSS, as DLSS would upscale the image before the final upscale pass (and native TAA would be skipped).
             // Sun shafts and lens optics effects would (actually, could) draw in native resolution after upscaling then.
             // Overall that solution has no downsides other than the difficulty of running multiple passes at a different resolution (which really isn't hard as we already have a set up for it).
-            // TODO: increase the number of Halton sequence phases when there's no camera rotation happening, in movement it can benefit from being lower, but when steady (or rotating the camera only, which conserves most of the TAA history),
+            // DLSS currently clips all BT.2020 colors (there's no proper way around it).
+            // TODO: (idea) increase the number of Halton sequence phases when there's no camera rotation happening, in movement it can benefit from being lower, but when steady (or rotating the camera only, which conserves most of the TAA history),
             // a higher phase count can drastically improve the quality.
 
             // We do DLSS after some post processing (e.g. exposure, tonemap, color grading, bloom, blur, objects highlight, sun shafts, other possible AA forms, etc) because running it before post processing
@@ -4496,11 +4493,10 @@ namespace
 #endif // ENABLE_NGX
       }
 
-      //TODOFT: avoid re-applying these if the data hasn't changed (within the same frame)? Add a flag by shader for who needs them?
+      //TODOFT4: avoid re-applying these if the data hasn't changed (within the same frame)? Add a flag by shader for who needs them?
       if (is_custom_pass && !updated_cbuffers)
       {
          SetPreyLumaConstantBuffers(cmd_list, stages, settings_pipeline_layout, LumaConstantBufferType::LumaSettings);
-         //TODOFT: only ever send this after DLSS? We don't really need it before (we barely even need it after!) (we use it in some passes)
          SetPreyLumaConstantBuffers(cmd_list, stages, shared_data_pipeline_layout, LumaConstantBufferType::LumaData);
          updated_cbuffers = true;
       }
@@ -4532,7 +4528,9 @@ namespace
                // This is a "perfect" way to check if gameplay is paused (sometimes it might still be rendering, but usually there would be no world mapped UI).
                //TODOFT: this has a one frame delay when we unpause, do we still want to do it?
                bool paused = cb_per_view_global.CV_AnimGenParams.z == cb_per_view_global_previous.CV_AnimGenParams.z;
-               paused = false; // Disabled for now as the anim gen doesn't seem to update every frame at high frame rates? We should then check shaders that made that assumption
+#if 1 // Disabled for now as the anim gen doesn't seem to update every frame at high frame rates? We should then check shaders that made that assumption
+               paused = false;
+#endif
                // Highlight that the game is paused or that we are in a menu with no scene rendering (e.g. allows us to fully skip lens distortion on the UI, as sometimes it'd apply in loading screen menus).
                if (paused || !device_data.has_drawn_composed_gbuffers)
                {
@@ -4939,7 +4937,7 @@ namespace
          || (desc.Filter == D3D11_FILTER_MIN_MAG_MIP_POINT && samplers_upgrade_mode_2 >= 5)
          || (desc.Filter == D3D11_FILTER_COMPARISON_MIN_MAG_MIP_POINT && samplers_upgrade_mode_2 >= 6))
       {
-         //TODOFT4: research. Forced this on to see how it behaves. Doesn't work, it doesn't really help any further with (e.g.) blurry decal textures
+         //TODOFT4: research. Force this on to see how it behaves. Doesn't work, it doesn't really help any further with (e.g.) blurry decal textures
          // Note: this doesn't seem to do anything really, it doesn't help with the occasional blurry texture (probably because all samplers that needed anisotropic already had it set)
          if (samplers_upgrade_mode >= 7)
          {
@@ -5217,7 +5215,7 @@ namespace
 #if DEVELOPMENT
          if (fix_prev_matrix_mode == 5)
          {
-            //TODOFT4: try to use current frame's jitters here? We have ghosting in DLSS when zooming in and out (changing FOV), though that's not caused here!
+            //TODOFT4: try to use current frame's jitters here? We have ghosting in DLSS when zooming in and out (changing FOV), though that's not caused here! Test by visualizing MVs
             cb_per_view_global.CV_PrevViewProjMatr = previous_projection_matrix;
             cb_per_view_global.CV_PrevViewProjNearestMatr = previous_nearest_projection_matrix;
          }
@@ -5382,7 +5380,7 @@ namespace
          // This is a reliable check to tell whether TAA is enabled. Jitters are "never" zero if they are enabled:
          // they can be if we use the "srand" method, but it would happen one in a billion years;
          // they could also be zero with Halton if the frame index was reset to zero (it is every x frames), but that happens very rarely, and for one frame only (we have two frames as tolerance).
-         device_data.prey_taa_active = (std::abs(projection_jitters.x * device_data.render_resolution.x) >= 0.00075) || (std::abs(projection_jitters.y * device_data.render_resolution.y) >= 0.00075); //TODOFT: make calculations more accurate (the threshold)
+         device_data.prey_taa_active = (std::abs(projection_jitters.x * device_data.render_resolution.x) >= 0.00075) || (std::abs(projection_jitters.y * device_data.render_resolution.y) >= 0.00075); //TODOFT: make calculations more accurate (the threshold), especially with higher Halton phases!
 #if DEVELOPMENT
          device_data.prey_taa_active = device_data.prey_taa_active || disable_taa_jitters;
 #endif // DEVELOPMENT

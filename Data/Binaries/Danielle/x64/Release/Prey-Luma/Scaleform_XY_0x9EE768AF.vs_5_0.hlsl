@@ -38,6 +38,8 @@ void main(
   bool isOnNearPlane = (o0.z / o0.w) <= FLT_MIN; // Basically flat on the screen/viewport (2D), doesn't seem to be much used
   bool isOnFarPlane = ((o0.z / o0.w) > 1.0 - FLT_EPSILON) || ((o0.z / o0.w) < 1.0 + FLT_EPSILON); // It seems like most of the UI is on the far plane... whether it's relative to world locations or not
   bool hasPlaneScaling = o0.w != 1; // Seems to be false almost always
+  // Note that distoring per vertex is fine, though will squish the geometry. If the implementation was perfect, we'd offset the whole geometry of the draw call, and potentially scale it (e.g. if it's a reticle that maps a scene area to the screen).
+  // That would require replacing vertices in c++ though, not even a geometry shader would be enough as it only has access to individual triangles.
   if (LumaUIData.WritingOnSwapchain == 1 && LumaSettings.LensDistortion && isLinearProjectionMatrix(cCompositeMat))
   {
     o0.xyz /= o0.w; // From clip to NDC space

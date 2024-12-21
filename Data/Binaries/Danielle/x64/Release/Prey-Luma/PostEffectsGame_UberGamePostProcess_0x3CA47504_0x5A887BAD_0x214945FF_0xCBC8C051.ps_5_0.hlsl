@@ -137,6 +137,7 @@ void ApplyRadialBlurAndChromaShift(inout float4 cScreen, float2 tcFinal)
 // UberGamePostProcessPS
 // This is only called when any of the parameters are in use.
 // This runs after upscaling/MSAA.
+// We let these draw on top of lens distortion black borders, as it's a screen overlay
 void main(float4 WPos : SV_Position0, float4 inBaseTC : TEXCOORD0, out float4 outColor : SV_Target0)
 {
 	outColor = 0;
@@ -150,8 +151,6 @@ void main(float4 WPos : SV_Position0, float4 inBaseTC : TEXCOORD0, out float4 ou
 		outColor = _tex0.Sample(_tex0_s, inBaseTC.xy);
 		return;
 	}
-
-	//TODOFT: clamp UVs if we are at the borders of lens distortion?
   
 	/////////////////////////////////////////////////////////////////////////////////////////////////
 	// Apply interlation

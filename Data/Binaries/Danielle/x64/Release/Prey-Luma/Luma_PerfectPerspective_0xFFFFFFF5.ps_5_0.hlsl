@@ -41,8 +41,8 @@ void main(float4 WPos : SV_Position0, float4 inBaseTC : TEXCOORD0, out float4 ou
     outColor = sourceTexture.Load(WPos.xyz);
 	borderAlpha = 0;
 #endif
-//TODOFT: could this benefit from running FSR 1 for upscaling/sharpening after? Probably not!
-//TODOFT: why does this look awful if DLSS is off?
+//TODOFT: could this benefit from running FSR 1 for upscaling/sharpening after? Probably not, seems fine!
+//TODOFT: why does this look awful if DLSS is off with DRS?
 
    	outColor.rgb = lerp(outColor.rgb, 0, borderAlpha); // Blend towards black as the border is black (we could ignore this if "CroppingFactor" was 1 but it doesn't matter)
 	outColor.a = 1.0 - borderAlpha; // Take advantage of the alpha texture to store whether this is a black texel (outside of the new lens distortion edges) (doesn't support R11G11B10F)
