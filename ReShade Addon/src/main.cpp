@@ -3351,19 +3351,19 @@ namespace
       }
       else
 #endif
+      {
          if (device_data.dlss_sr && !device_data.dlss_sr_suppressed && device_data.prey_taa_detected && device_data.cloned_pipeline_count != 0)
          {
             NativePlugin::SetHaltonSequencePhases(device_data.render_resolution.y, device_data.output_resolution.y);
          }
-      // Restore the default value for the game's native TAA, though instead of going to "16" as "r_AntialiasingTAAPattern" "10" would do, we set the phase to 8, which is actually the game's default for TAA/SMAA 2TX, and more appropriate for its short history (4 works too and looks about the same, maybe better, as it's what SMAA defaulted to in CryEngine)
+         // Restore the default value for the game's native TAA, though instead of going to "16" as "r_AntialiasingTAAPattern" "10" would do, we set the phase to 8, which is actually the game's default for TAA/SMAA 2TX, and more appropriate for its short history (4 works too and looks about the same, maybe better, as it's what SMAA defaulted to in CryEngine)
          else
          {
             NativePlugin::SetHaltonSequencePhases(8);
          }
-#else
-      NativePlugin::SetHaltonSequencePhases(8); // We could do this once only on boot but whatever
-#endif // ENABLE_NGX
+      }
 #endif // ENABLE_NATIVE_PLUGIN
+#endif // ENABLE_NGX
 
       frame_index++;
    }
@@ -4283,7 +4283,9 @@ namespace
                   bool dlss_output_supports_uav = dlss_use_native_uav && (output_texture_desc.BindFlags & D3D11_BIND_UNORDERED_ACCESS) != 0;
                   if (!dlss_output_supports_uav)
                   {
+#if ENABLE_NATIVE_PLUGIN
                      ASSERT_ONCE(false); // Should never happen anymore ("SUPPORT_MSAA" is true)
+#endif
 
                      output_texture_desc.BindFlags |= D3D11_BIND_UNORDERED_ACCESS;
 

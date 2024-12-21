@@ -25,7 +25,7 @@ Luma was created by Pumbo (graphics) and Ersh (reverse engineering).
 - More (e.g. added optional HDR post process filter on pre-rendered video, added settings to turn off Vignette or Camera Motion Blur)!
 
 # How to install:
-- Drop all the files into the game installation folder (including "autoexec.cfg" and "system.cfg") (the root folder, not the one with the executable). Override all files (you can make a backup, but Luma just changes a couple configs in the game packages, these changes simply increase the rendering quality and can persist without Luma). If you are updating the mod, delete the "Prey-Luma" folder in the game binaries folder before applying the new one.
+- Drop all the files into the game installation folder (including "autoexec.cfg" and "system.cfg") (the root folder, not the one with the executable). Override all files (you can make a backup, but Luma just changes a couple configs in the game packages, these changes simply increase the rendering quality and can persist without Luma). If you are updating the mod, delete the "Prey-Luma" folder in the game binaries folder before applying the new one. These files will automatically load the mod for the Mooncrash DLC too.
 - If you are on GOG, move the files in ".\Binaries\Danielle\x64\" to ".\Binaries\Danielle\x64-GOG\".
 - Install the latest VC++ redist before using (https://aka.ms/vs/17/release/vc_redist.x64.exe).
 - Install ReShade 6.3.3+ (with Addons support, for DX11, preferably as dxgi.dll) (you can disable the "Generic Depth" and "Effects Runtime Sync" Addons for performance gains).
