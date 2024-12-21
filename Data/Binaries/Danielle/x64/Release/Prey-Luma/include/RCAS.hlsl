@@ -5,7 +5,7 @@
 // which is in turn based on: "https://github.com/RdenBlaauwen/RCAS-for-ReShade",
 // which is in turn based on AMD FSR 1 RCAS: https://github.com/GPUOpen-Effects/FidelityFX-FSR/blob/master/ffx-fsr/ffx_fsr1.h
 
-// Try to detect noise or grain and not over sharpen it.
+// Try to detect noise or grain and not over sharpen it. This seemengly assumes the input is in the SDR 0-1 range.
 #ifndef RCAS_DENOISE
 #define RCAS_DENOISE 0
 #endif

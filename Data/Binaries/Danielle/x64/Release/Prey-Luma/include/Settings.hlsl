@@ -109,6 +109,7 @@
 #ifndef DLSS_RELATIVE_PRE_EXPOSURE
 #define DLSS_RELATIVE_PRE_EXPOSURE 1
 #endif
+// Disable to keep the vanilla behaviour of CRT like emulated effects becoming near inperceptible at higher resolutions (which defeats their purpose)
 #ifndef CORRECT_CRT_INTERLACING_SIZE
 #define CORRECT_CRT_INTERLACING_SIZE 1
 #endif
@@ -118,7 +119,7 @@
 #ifndef FORCE_MOTION_VECTORS_JITTERED
 #define FORCE_MOTION_VECTORS_JITTERED 1
 #endif
-// Allows to disable this given it might not be liked (it can't be turned off individually) and can make DLSS worse
+// Allows to disable this given it might not be liked (it can't be turned off individually) and can make DLSS worse. This needs "r_MotionBlurCameraMotionScale" to not be zero too (it's not by default).
 #ifndef ENABLE_CAMERA_MOTION_BLUR
 #define ENABLE_CAMERA_MOTION_BLUR 0
 #endif
@@ -153,6 +154,11 @@
 // 1 High
 #ifndef BLOOM_QUALITY
 #define BLOOM_QUALITY 1
+#endif
+// 0 Vanilla (based on user setting)
+// 1 Ultra
+#ifndef MOTION_BLUR_QUALITY
+#define MOTION_BLUR_QUALITY 1
 #endif
 // 0 Vanilla
 // 1 High (best balance)
@@ -210,7 +216,7 @@
 #endif
 // Note that this only disables the tonemap step sun shafts, not the secondary ones from lens optics
 #define ENABLE_SUNSHAFTS (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
-//TODOFT2: also check "ShouldSkipPostProcess()" on this and the define below
+// Note that these might ignore "ShouldSkipPostProcess()"
 #define ENABLE_ARK_CUSTOM_POST_PROCESS (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
 #define ENABLE_LENS_OPTICS (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
 // Disable this for a softer image
@@ -231,6 +237,7 @@
 #undef ENABLE_FILM_GRAIN
 #define ENABLE_FILM_GRAIN (ENABLE_POST_PROCESS && (!DEVELOPMENT || 1))
 #endif
+// Note: when disabling this, exposure can go to 0 or +INF when the game is paused somehow
 #define ENABLE_EXPOSURE_CLAMPING (!DEVELOPMENT || 1)
 // This might also disable decals interfaces (like computer screens) in the 3D scene
 #define ENABLE_UI (!DEVELOPMENT || 1)

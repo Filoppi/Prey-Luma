@@ -7,6 +7,7 @@ cbuffer PER_BATCH : register(b0)
 
 #include "include/CBuffer_PerViewGlobal.hlsl"
 
+// This means it's the second pass (on an already bloomed texture)
 #if _0A210C5D
 #define _RT_SAMPLE0 1
 #endif
@@ -14,9 +15,6 @@ cbuffer PER_BATCH : register(b0)
 SamplerState ssBloom : register(s0);
 Texture2D<float4> bloomSourceTex : register(t0);
 Texture2D<float4> bloomSecondSourceTex : register(t1);
-
-// 3Dmigoto declarations
-#define cmp -
 
 float2 MapViewportToRaster(float2 normalizedViewportPos, bool bOtherEye = false)
 {

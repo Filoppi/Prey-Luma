@@ -113,6 +113,7 @@ pixout main(vtxOut IN)
 	}
 #endif
 
+	// "vMotionBlurParams.x" is directly tied to the frame time "(1 / (delta time * shutter speed))"", this should theoretically make the MB look right at any frame rate (without making it weaker at higher FPS)
 	vVelocity *= vMotionBlurParams.x;
 
 #if !ENABLE_CAMERA_MOTION_BLUR
@@ -123,13 +124,13 @@ pixout main(vtxOut IN)
 #endif
 	
 	// Limit velocity
-	const float MaxVelocityLen = noVelocityObj ? vMotionBlurParams.z : vMotionBlurParams.y;
+	const float MaxVelocityLen = noVelocityObj ? vMotionBlurParams.z : vMotionBlurParams.y; // "vMotionBlurParams.z" would be "0.05 * camera motion blur scale", the other 0.05 (at least sometimes), it's seemengly the inverse resolution of the soon to be made mip maps
 	float vVelocityLenght = length(vVelocity.xy);
 #if 0 // LUMA FT: tried to re-write their velocity clamping code to make it more clear but I failed
 	float2 vNormalizedVelocity = normalize(vVelocity.xy);
 	vVelocity = vNormalizedVelocity * min(vVelocityLenght, MaxVelocityLen);
 #else
-	const float invLen = 1.0 / vVelocityLenght; // LUMA FT: fixed approximation that added noise to velocity
+	const float invLen = 1.0 / vVelocityLenght; // LUMA FT: fixed approximation that added noise to velocity (we could give the division below a tiny bit more threshold if ever needed)
 	vVelocity *= vVelocityLenght == 0.0 ? 1.0 : saturate(MaxVelocityLen * invLen);
 #endif
 	

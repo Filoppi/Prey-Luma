@@ -73,5 +73,4 @@ void main(
 #if !ENABLE_ARK_CUSTOM_POST_PROCESS
   o0 = 0;
 #endif
-  return;
 }

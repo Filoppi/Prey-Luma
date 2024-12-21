@@ -20,7 +20,6 @@ SamplerState PNoiseSampler_s : register(s1);
 Texture2D<float4> PNoiseSampler : register(t1);
 Texture2D<float4> sceneMaskDeviceTex : register(t26);
 
-// 3Dmigoto declarations
 #define cmp -
 
 // This draws some objects highlights directly on the back buffer, after tonemapping but before AA (the output alpha is ignored, it's adding the color anyway).
@@ -86,5 +85,4 @@ void main(
 #if !ENABLE_ARK_CUSTOM_POST_PROCESS
   o0 = 0;
 #endif
-  return;
 }

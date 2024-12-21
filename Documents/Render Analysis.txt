@@ -25,7 +25,8 @@ Draw Eyes
 Calculate exposure or something like that
 Draw "post process" material stuff, like some late decals (probably emissive stuff drawn through Scaleform, like in world TVs/Monitors), glass, emissive surfaces, hair, fog, beams, light volumes, ...
 Draw Motion Blur (uses "MotionBlurPS") (this copies the backbuffer from FP16 to FP11 and then from FP11 back to FP16, thus losing quality)
-Calculate some more exposure stuff
+Some random decals on the first person camera models (e.g. weapons)
+Calculate scene (auto) exposure (first it takes 64x64 samples from the a double downscaled backbuffer, then downscales that 3 times to 1x1)
 Downscale buffers for bloom
 Update LUT (e.g. apply contrast curves etc)
 Apply Tonemap (HDR->SDR) (this also applied bloom, sun shafts, ...) (from here on, or soon after, we'll be writing on the swapchain texture directly)

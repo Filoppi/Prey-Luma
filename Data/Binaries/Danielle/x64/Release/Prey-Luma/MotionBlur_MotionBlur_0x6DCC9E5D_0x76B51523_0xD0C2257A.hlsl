@@ -1,34 +1,47 @@
 #include "include/Common.hlsl"
 
+// Qualities
+#if _76B51523
+#define _RT_SAMPLE1 1
+#elif _D0C2257A
+#define _RT_SAMPLE2 1
+#endif
+
 cbuffer PER_BATCH : register(b0)
 {
-  float4 vMotionBlurParams : packoffset(c0);
+  float4 vMotionBlurParams : packoffset(c0); // xy are the inverse size of "_tex2", zw are unused and zero
 }
 
 #include "include/CBuffer_PerViewGlobal.hlsl"
 
-Texture2D<float4> _tex0 : register(t0); // Color texture
-Texture2D<float4> _tex1 : register(t1); // Motion Blur Motion Vectors X and Y offsets
-Texture2D<float4> _tex2 : register(t2); // Motion Blur Motion Vectors Length and Depth (actually the same texture as above, probably just a different view, both produced by "PackVelocitiesPS()")
-SamplerState _tex0_s : register(s0);
-SamplerState _tex1_s : register(s1);
-SamplerState _tex2_s : register(s2);
+Texture2D<float4> _tex0 : register(t0); // Color texture, R11G11B10F without Luma
+Texture2D<float4> _tex1 : register(t1); // (R8G8B8A8UNORM) Motion Blur Motion Vectors X and Y offsets (produced by "PackVelocitiesPS()"), this is fullscreen and the inner size depends on DRS
+Texture2D<float4> _tex2 : register(t2); // (R8G8B8A8UNORM) Motion Blur Motion Vectors Length and Depth, this is a downscaled 20x20 version of the texture above (first compressed horizontally, then vertically, then blurred (the DRS area is scaled to fullscreen)), unfortunately the size doesn't depend on aspect ratio.
+SamplerState _tex0_s : register(s0); // Bilinear
+SamplerState _tex1_s : register(s1); // Point
+SamplerState _tex2_s : register(s2); // Point
 
 #include "include/MotionBlur.hlsl"
 
+// MotionBlurPS
 // This shader is run with pre-multiplied alpha blend, so if it alpha zero, it's purely additive, while if it returns alpha 1, it's purely override.
-float4 MotionBlurPS(float4 WPos, float4 inBaseTC)
+float4 main(float4 WPos : SV_Position0, float4 inBaseTC : TEXCOORD0) : SV_Target0
 {
 #if !ENABLE_MOTION_BLUR
 	return 0;
 #endif
 
+	// Samples num needs to be divisible by 2
+#if MOTION_BLUR_QUALITY >= 1 // LUMA FT
+	const int numSamples = 36; // Ultra spec
+#else
 #if _RT_SAMPLE2
 	const int numSamples = 24; // High spec
 #elif _RT_SAMPLE1
 	const int numSamples = 14; // Medium spec
 #else
 	const int numSamples = 6;  // Low spec
+#endif
 #endif
  
 	const float weightStep = 1.0 / ((float)numSamples);
@@ -49,7 +62,7 @@ float4 MotionBlurPS(float4 WPos, float4 inBaseTC)
 	
 	// LUMA FT: Motion vectors in "uv space". Once multiplied by the rendering resolution, the value here represents the horizontal and vertical pixel offset (encoded to have more precision around smaller values) (so not the max velocity as the name would imply),
 	// a value of 0.3 -2 means that we need to move 0.3 pixels on the x and -2 pixels on the y to find where this texel remapped on the previous frame buffers.
-	float3 maxVel = _tex2.SampleLevel(_tex2_s, inBaseTC.xy + tileOffset * vMotionBlurParams.xy, 0).rgb;
+	float3 maxVel = _tex2.SampleLevel(_tex2_s, inBaseTC.xy + tileOffset * vMotionBlurParams.xy, 0).xyz;
 	maxVel.xy = DecodeMotionVector(maxVel.xy, false, jitters);
 	const float2 blurStep = maxVel.xy * weightStep;
 
@@ -64,16 +77,17 @@ float4 MotionBlurPS(float4 WPos, float4 inBaseTC)
 		return float4(_tex0.SampleLevel(_tex0_s, baseTC, 0).rgb, 1.0f);
 #endif
 	return float4(maxVel.x * 2.5, maxVel.y * 2.5, 0, 1); // "maxVel.z" seems to be the length
-#endif
+#endif // TEST_MOTION_BLUR_TYPE == 1
 
 // LUMA FT: re-enabled this to avoid R11G11B10F motion blur buffers from writing back on the R16G16B16A16F main color buffer on pixels that have no motion blur and thus lowering its quality.
 // Note that LUMA actually upgrades motion blur buffers to FP16 too so it doesn't matter as much.
 #if 1
-	// Crytek/Arkane: Early out when no motion (disabled to have more predictable costs)
-	// LUMA FT: anything higher than this threshold will cause motion blur to blur stuff that isn't actually moving, because they forgot to take out the jitters from the MB calculations (there might also be some some floating point math errors)
-	if (length(maxVel.xy) < 0.001f) //TODOFT: normalize this with delta time? It doesn't seem to be needed, it's somehow independent from FPS.
+	// Crytek/Arkane: Early out when no motion in the blurred MVs texture (disabled to have more predictable costs)
+	// LUMA FT: anything higher than this threshold will cause motion blur to blur stuff that isn't actually moving, because they forgot to take out the jitters from the MB calculations (there might also be some some floating point math errors).
+	// This is already adjusted by delta time.
+	if (length(maxVel.xy) < 0.001f)
 	{
-#if 1 // LUMA FT: modified to actually simply return zero, so it's faster to execute and ends up not influencing the back buffer (it might change its alpha, but that is ignored)
+#if 1 // LUMA FT: modified to actually simply return zero, so it's faster to execute and ends up not influencing the back buffer (it might change its alpha, but that is ignored). This uses alpha blending (we could discard too but it's probably worse).
 		return 0;
 #else
 		const float4 sampleCenter = _tex0.SampleLevel(_tex0_s, baseTC, 0);
@@ -82,7 +96,7 @@ float4 MotionBlurPS(float4 WPos, float4 inBaseTC)
 	}
 #if TEST_MOTION_BLUR_TYPE == 2 // This only works if the early out branch is enabled, so put it inside of it
 	return float4(1.0, 0, 0, 1);
-#endif
+#endif // TEST_MOTION_BLUR_TYPE == 2
 #endif
 
 	// LUMA FT: note that these also include jitters (in both the length/x component and depth/y component), so they account for sub-pixel movement, which generally isn't really wanted in MB,
@@ -90,7 +104,7 @@ float4 MotionBlurPS(float4 WPos, float4 inBaseTC)
 	
 #if TEST_MOTION_BLUR_TYPE == 3
 	return float4(centerLenDepth.x, 0, 0, 1);
-#endif
+#endif // TEST_MOTION_BLUR_TYPE == 3
 
 	float4 acc = float4(0, 0, 0, 0);
 	
@@ -98,8 +112,9 @@ float4 MotionBlurPS(float4 WPos, float4 inBaseTC)
 	for (int s = 0; s < numSamples/2; ++s)
 	{
 		const float curStep = (s + samplingDither);
-		const float2 tc0 = ClampScreenTC(baseTC + blurStep * curStep);
-		const float2 tc1 = ClampScreenTC(baseTC - blurStep * curStep);
+		// LUMA FT: fixed additive tex coordinates not being scaled by DRS factor
+		const float2 tc0 = ClampScreenTC(baseTC + blurStep * curStep * CV_HPosScale.xy);
+		const float2 tc1 = ClampScreenTC(baseTC - blurStep * curStep * CV_HPosScale.xy);
 	
 		float2 lenDepth0 = UnpackLengthAndDepth(_tex1.SampleLevel(_tex1_s, tc0.xy, 0).zw, length(jitters));
 		float2 lenDepth1 = UnpackLengthAndDepth(_tex1.SampleLevel(_tex1_s, tc1.xy, 0).zw, length(jitters));

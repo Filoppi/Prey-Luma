@@ -4,8 +4,6 @@
 
 #include "include/CBuffer_PerViewGlobal.hlsl"
 
-#define cmp -
-
 void main(
   float4 v0 : SV_Position0,
   float4 v1 : TEXCOORD0,
@@ -40,5 +38,4 @@ void main(
 #if !ENABLE_ARK_CUSTOM_POST_PROCESS
   o0 = 0;
 #endif
-  return;
 }

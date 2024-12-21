@@ -160,7 +160,6 @@ void UberGamePostProcessPS(float4 WPos, float4 inBaseTC, out float4 outColor)
 	fInterlation = abs( frac(( vInterlationRot.y ) * interlationVerticalResolution * 0.25 * UberPostParams0.z) * 2 - 1) * 0.8 + 0.5;
 	float fVsync = abs( frac((inBaseTC.y + UberPostParams1.x * CV_AnimGenParams.z) * BaseVerticalResolution * 0.01 ) * 2 - 1) * 0.05 + 1.0;
 	fInterlation =  lerp(1, fVsync, UberPostParams0.x) * lerp( 1, fInterlation, saturate(UberPostParams0.y));
-	fInterlation = pow(fInterlation, 13);
 
 #endif // _RT_SAMPLE2
 

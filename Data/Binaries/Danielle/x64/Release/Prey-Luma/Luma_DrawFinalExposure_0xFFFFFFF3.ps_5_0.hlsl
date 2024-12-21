@@ -3,9 +3,11 @@
 
 cbuffer PER_BATCH : register(b0)
 {
+  float4 HDRColorBalance : packoffset(c0); // Unused here
   float4 Param1 : packoffset(c1); // Could be "SunShafts_SunCol" or "HDREyeAdaptation"
   float4 Param2 : packoffset(c2); // Could be "HDREyeAdaptation" or "HDRFilmCurve" (the latter one is unused so it's garbage)
   float4 Param3 : packoffset(c3); // Could be "HDRFilmCurve" or "HDRBloomColor"
+  float4 Param4 : packoffset(c4); // Could be "HDRBloomColor" or "ArkDistanceSat" or none
 }
 
 Texture2D<float2> adaptedLumTex : register(t1);
