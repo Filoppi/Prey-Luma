@@ -70,7 +70,7 @@ void main(
 	// Edge Pulling/Pushing
 #if _RT_SAMPLE0
 	{
-		//TODOFT4: this permutations stretches a little bit too much in ultrawide? test whenever you get it happening (with gravity bombs? it actually doesn't seem to be used in Prey). Also test in general how does this shader react to non default FOVs
+		//TODOFT: this permutations stretches a little bit too much in ultrawide? test whenever you get it happening (with gravity bombs? it actually doesn't seem to be used in Prey). Also test in general how does this shader react to non default FOVs
 
 		// radius need to be 1 at screen side
 		float2 vCurrentScaled = vCurrentOffset * 2.0;

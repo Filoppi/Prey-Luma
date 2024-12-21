@@ -35,8 +35,10 @@ void main(
   
 #if ENABLE_SCREEN_DISTORTION
   // Inverse lens distortion
-  //TODOFT: avoid distorting the mission indicators when they are at the edges of the screen?
-  if (LumaUIData.WritingOnSwapchain == 1 && LumaSettings.LensDistortion && isViewProjectionMatrix(cCompositeMat))
+  bool isOnNearPlane = (o0.z / o0.w) <= FLT_MIN; // Basically flat on the screen/viewport (2D), doesn't seem to be much used
+  bool isOnFarPlane = ((o0.z / o0.w) > 1.0 - FLT_EPSILON) || ((o0.z / o0.w) < 1.0 + FLT_EPSILON); // It seems like most of the UI is on the far plane... whether it's relative to world locations or not
+  bool hasPlaneScaling = o0.w != 1; // Seems to be false almost always
+  if (LumaUIData.WritingOnSwapchain == 1 && LumaSettings.LensDistortion && isLinearProjectionMatrix(cCompositeMat))
   {
     o0.xyz /= o0.w; // From clip to NDC space
     o0.w = 1; // no need to convert it back to clip space, the GPU would do it again anyway

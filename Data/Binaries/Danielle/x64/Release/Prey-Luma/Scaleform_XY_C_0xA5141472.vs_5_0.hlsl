@@ -27,11 +27,10 @@ void main(
   // LUMA FT: There shouldn't be any other vertices that draw black on edge vertices (hopefully...)
   // The vertices borders check is a bit random, I'm not sure about the math, but it should be safe enough.
   bool isBlackBar = all(o1.rgb == 0) && ((abs(o0.x) > 1.0 - FLT_EPSILON) || (abs(o0.y) > 1.0 - FLT_EPSILON)) && o0.z == 1 && o0.w == 1;
-  //TODOFT4: we can probably remove this workaround now!
   
 #if ENABLE_SCREEN_DISTORTION
   // Inverse lens distortion
-  if (LumaUIData.WritingOnSwapchain == 1 && LumaSettings.LensDistortion && isViewProjectionMatrix(cCompositeMat) && !isBlackBar) // Workaround to disable shifting black bars with lens distortion
+  if (LumaUIData.WritingOnSwapchain == 1 && LumaSettings.LensDistortion && isLinearProjectionMatrix(cCompositeMat) && !isBlackBar) // Workaround to disable shifting invisible black bars (flattened at the edge) with lens distortion
   {
     o0.xyz /= o0.w; // From clip to NDC space
     o0.w = 1; // no need to convert it back to clip space, the GPU would do it again anyway

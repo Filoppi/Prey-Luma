@@ -81,17 +81,14 @@ float GetBorderMask(float2 borderCoord)
 	return aastep(glength(0u, abs(borderCoord))-1.0);
 }
 
-#if 0
-static const float K = 1.0 - LumaSettings.DevSetting01;
-static const float S = LumaSettings.DevSetting02 * 4 + 1.0;
-static const float CroppingFactor = 1.0 - LumaSettings.DevSetting03;
-static const float AspectRatioCorrection = LumaSettings.DevSetting04;
-#else //TODOFT: expose these? And delete branch above
+//TODOFT: expose more of these to the user?
 static const float K = 0.8; // Lower is stronger distortion. 0.5 is the original default value (and a balanced one too, tough it might be a bit too strong for us). Going negative applies the opposite distortion.
 static const float S = 2.0; // Higher is "less" distortion. Matches "golden standard" from the ReShade version, 1 is the original default value (and the lowest allowed).
-static const float CroppingFactor = 0.5; // At 0 we don't crop at all and show black borders on all sides, at 0.5 we match the borders to the edges of the distorted images, at 1 we zoom in completely so no border would be visible.
-static const float AspectRatioCorrection = 1.0 / 3.0; // Emulates the intensity of the lens distortion around 16:9, for consistency across aspect ratios. The higher the value, the higher the borders in Ultrawide
-#endif
+static const float CroppingFactor = (bool)ALLOW_LENS_DISTORTION_BLACK_BORDERS ? 0.5 : 1.0; // At 0 we don't crop at all and show black borders on all sides, at 0.5 we match the borders to the edges of the distorted images, at 1 we zoom in completely so no border would be visible.
+static const float AspectRatioCorrection = (bool)ALLOW_LENS_DISTORTION_BLACK_BORDERS ? (1.0 / 3.0) : 0.0; // Emulates the intensity of the lens distortion around 16:9, for consistency across aspect ratios. The higher the value, the larger the borders in Ultrawide
+static const float Inverse_BorderYThreshold = 0.5; // Neutral (disabled) at 1. Lower values provide smoother transitions
+static const float Inverse_OutOfBorderRestorationRange = 0.9; // Neutral at 1. Linear scaling
+static const float Inverse_OutOfBorderBorderPow = 0.9; // Neutral at 1. Pow scaling
 
 // Taken (with permission) from "https://github.com/Fubaxiusz/fubax-shaders".
 //TODO LUMA: try axiomorphic mode?
@@ -225,7 +222,7 @@ float2 PerfectPerspectiveLensDistortion(float2 texCoord, float horFOV, float2 re
 }
 
 // Note: clipping is off by default as it breaks some UI polygons.
-float2 PerfectPerspectiveLensDistortion_Inverse(float2 texCoord, float horFOV, float2 resolution, bool NDC = false, bool clip = false)
+float2 PerfectPerspectiveLensDistortion_Inverse(float2 texCoord, float horFOV, float2 resolution, bool NDC = false, bool adjust = true, bool clip = false)
 {
 	const float currentAspectRatio = resolution.x / resolution.y;
 
@@ -301,10 +298,12 @@ float2 PerfectPerspectiveLensDistortion_Inverse(float2 texCoord, float horFOV, f
 	const float2 toUvCoord = radiusOfOmega/(tan(halfOmega)*viewProportions);
 	viewCoord /= toUvCoord;
 
-	// Inverse formula from Fubax (approximate as it doesn't acknowlege "S", but it's close enough):
+	// Inverse formula from Fubax:
 	float theta = atan(length(viewCoord));
 	float radius = tan(theta * K) / K / rcp_focal;
-	viewCoord = normalize(viewCoord) * radius;
+	viewCoord = (S == 1.f || true) ?
+		(normalize(viewCoord) * radius) :
+		(normalize(viewCoord) * float2(radius, sqrt(S) * radius));
 
 	viewCoord /= croppingScalar;
 	
@@ -313,10 +312,25 @@ float2 PerfectPerspectiveLensDistortion_Inverse(float2 texCoord, float horFOV, f
 	// Undo aspect ratio normalization
 	viewCoord *= aspectRatioOffsetScale;
 	
-	if (clip) 
+	// Adjust vertices at the edges, so that they are less 
+	// Doing it only on Y because usually there's no borders cropping on X, at least with the settings we have settings.
+	//TODO LUMA: If we wanted to improve it, we could link this with the current FOV and scaling parameters (UI can still go out of range at very high FOVs).
+	if (adjust)
+	{
+		if (abs(viewCoord.y) > Inverse_BorderYThreshold)
+		{
+			float outOfBorderAmount = (abs(viewCoord.y) - Inverse_BorderYThreshold) / (1.0 - Inverse_BorderYThreshold); // Within custom borders at 0, outside custom borders at > 0, outside screen borders at > 1.
+			outOfBorderAmount *= Inverse_OutOfBorderRestorationRange * aspectRatioOffsetScale; // Scale back towards the center of the screen some vertices that would have ended up outside...
+			outOfBorderAmount = pow(outOfBorderAmount, 1.0 / lerp(1.0, Inverse_OutOfBorderBorderPow, aspectRatioOffsetScale));
+			viewCoord.y = (Inverse_BorderYThreshold + (outOfBorderAmount * (1.0 - Inverse_BorderYThreshold))) * sign(viewCoord.y);
+		}
+	}
+	// This can end up in vertices compressed as the edges, but also helps in case they ended up being cropped out
+	if (clip)
 	{
 		viewCoord = clamp(viewCoord, -1.0, 1.0);
 	}
+
 	// Back to UV Coordinates
 	texCoord = NDC ? viewCoord : (viewCoord * 0.5 + 0.5);
 

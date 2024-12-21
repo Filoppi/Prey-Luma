@@ -32,11 +32,9 @@ void main(
 	// LUMA FT: Alpha mask (or simply an optimization threshold to avoid drawing pixels with alpha that is near zero and thus not perceivable)
 	clip(outColor.w - fAlphaTest);
 
-	LumaUIData.BackgroundTonemappingAmount = 0.f; // Workaround to avoid UI tonemapping
-	outColor = ConditionalLinearizeUI(outColor); // This will take care of any "POST_PROCESS_SPACE_TYPE" case
-	outColor *= GamePaperWhiteNits / UIPaperWhiteNits; // Workaround to force use the scene paper white as opposed to the UI one
+	outColor = ConditionalLinearizeUI(outColor, false, false, true); // This will take care of any "POST_PROCESS_SPACE_TYPE" case
 
-//TODOFT4: test this shader mode and detect what it draws, could it ever be UI stuff? Probably not anyway, and even if it was... it'd still be fine to be using the scene HDR paper white (and thus we wouldn't wanna hide it with the "ENABLE_UI" flag)
+//TODOFT: test this shader mode and detect what it draws, could it ever be UI stuff? Probably not anyway, and even if it was... it'd still be fine to be using the scene HDR paper white (and thus we wouldn't wanna hide it with the "ENABLE_UI" flag)
 //Also, does this need linearization in all cases? It seems so, as it always runs at the end probably, whether it's writing on the swapchain or not.
 //Delete this tests!
 #if 0

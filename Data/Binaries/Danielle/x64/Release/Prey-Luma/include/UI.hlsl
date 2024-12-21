@@ -41,7 +41,7 @@ float UIColorIntensity(float3 Color, bool LinearSpace = false)
 #endif
 }
 
-float4 ConditionalLinearizeUI(float4 UIColor, bool PreMultipliedAlphaByAlpha = false, bool ForceStraightAlphaBlend = false)
+float4 ConditionalLinearizeUI(float4 UIColor, bool PreMultipliedAlphaByAlpha = false, bool ForceStraightAlphaBlend = false, bool IsSceneColor = false)
 {
 	// LUMA FT: In this case, the game is likely drawing on scene/world interactive computers that use Scaleform UI
 	// (it's the first thing it does every frame, so as long as we are before "PostAAComposites", we know that'd be the case).
@@ -112,7 +112,10 @@ float4 ConditionalLinearizeUI(float4 UIColor, bool PreMultipliedAlphaByAlpha = f
 		// Simplified emulated background tonemapping to make the UI more readable on HDR backgrounds.
 		// We can't do much else other than increasing the UI alpha to further darken the background (we do that exponentially more based on how big the alpha was in the first place).
 		// We might further modulate the alpha based on the current color of the UI (e.g. whether its black or white), but this is not needed until proven otherwise.
-		targetBackgroundAlpha = lerp(targetBackgroundAlpha, max(targetBackgroundAlpha, 1), LumaUIData.BackgroundTonemappingAmount * saturate(UIColor.a));
+		if (!IsSceneColor)
+		{
+			targetBackgroundAlpha = lerp(targetBackgroundAlpha, max(targetBackgroundAlpha, 1), LumaUIData.BackgroundTonemappingAmount * saturate(UIColor.a));
+		}
 
 		UIColor.a = targetBackgroundAlpha;
 		// Pre-divide the color by the alpha it will be multiplied by later, so we can exactly control its final color independently of the alpha (this makes the alpha only affect the background)
@@ -177,5 +180,27 @@ float4 ConditionalLinearizeUI(float4 UIColor, bool PreMultipliedAlphaByAlpha = f
 	}
 #endif // POST_PROCESS_SPACE_TYPE == 1
 
-	return SDRToHDR(UIColor, gammaSpace, true);
+	return SDRToHDR(UIColor, gammaSpace, true, !IsSceneColor);
+}
+
+// Note: this is randomly named, but it basically checks if a matrix projects some vertices from whatever space they were to screen space (or well, clip space),
+// any UI that is not related to the player (e.g. pause menu) or that is distorted on screen (e.g. player health bar) ends up having matrices that have huge numbers for some reason.
+bool isLinearProjectionMatrix(float4x4 mat)
+{
+	return mat._m00 != 0 && abs(mat._m00) <= 1.0
+    && abs(mat._m01) <= 1.0
+    && mat._m02 == 0
+    && mat._m03 != 0 && abs(mat._m03) <= 1.0
+    && abs(mat._m10) <= 1.0
+    && mat._m11 != 0 && abs(mat._m11) <= 1.0
+    && mat._m12 == 0
+    && mat._m13 != 0 && abs(mat._m13) <= 1.0
+    && mat._m20 == 0
+    && mat._m21 == 0
+	&& mat._m22 == 0
+	&& mat._m23 == 1
+	&& mat._m30 == 0
+	&& mat._m31 == 0
+	&& mat._m32 == 0
+	&& mat._m33 == 1;
 }

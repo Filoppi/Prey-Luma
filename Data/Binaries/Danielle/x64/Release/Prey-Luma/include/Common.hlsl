@@ -143,9 +143,10 @@ float3 PumboAutoHDR(float3 SDRColor, float _PeakWhiteNits, float _PaperWhiteNits
 
 // LUMA FT: functions to convert an SDR color (optionally in gamma space) to an HDR one (optionally linear * paper white).
 // This should be used for any color that writes on the color buffer (or back buffer) from tonemapping on.
-float3 SDRToHDR(float3 Color, bool InGammaSpace = true, bool UI = false)
+// The "IsAfterDisplayTransfer" flag tells this function whether we are post "PostAAComposites" (which would optionally be the first pass space to store output in gamma space based on "POST_PROCESS_SPACE_TYPE" for Luma)
+float3 SDRToHDR(float3 Color, bool InGammaSpace = true, bool IsAfterDisplayTransfer = false, bool IsUI = false)
 {
-  bool OutLinearSpace = bool(POST_PROCESS_SPACE_TYPE == 1) || (bool(POST_PROCESS_SPACE_TYPE >= 2) && !UI);
+  bool OutLinearSpace = bool(POST_PROCESS_SPACE_TYPE == 1) || (bool(POST_PROCESS_SPACE_TYPE >= 2) && !IsAfterDisplayTransfer);
   if (OutLinearSpace)
   {
     if (InGammaSpace)
@@ -153,14 +154,14 @@ float3 SDRToHDR(float3 Color, bool InGammaSpace = true, bool UI = false)
       Color.rgb = game_gamma_to_linear(Color.rgb);
       InGammaSpace = false;
     }
-    const float paperWhite = (UI ? UIPaperWhiteNits : GamePaperWhiteNits) / sRGB_WhiteLevelNits;
+    const float paperWhite = (IsUI ? UIPaperWhiteNits : GamePaperWhiteNits) / sRGB_WhiteLevelNits;
     Color.rgb *= paperWhite;
   }
   else
   {
     // We do not scale by game paper white here, as gamma space buffers are stored with the SDR white level,
     // but we scale the UI by its relative ratio.
-    if (UI)
+    if (IsUI)
     {
       // Linearize for the brightness multiplication
       if (InGammaSpace)
@@ -178,9 +179,9 @@ float3 SDRToHDR(float3 Color, bool InGammaSpace = true, bool UI = false)
   }
 	return Color;
 }
-float4 SDRToHDR(float4 Color, bool InGammaSpace = true, bool UI = false)
+float4 SDRToHDR(float4 Color, bool InGammaSpace = true, bool IsAfterDisplayTransfer = false, bool IsUI = false)
 {
-	return float4(SDRToHDR(Color.rgb, InGammaSpace, UI), Color.a);
+	return float4(SDRToHDR(Color.rgb, InGammaSpace, IsAfterDisplayTransfer, IsUI), Color.a);
 }
 
 // LUMA FT: added these functions to decode and re-encode the "back buffer" from any range to a range that roughly matched SDR linear space
@@ -327,33 +328,6 @@ float2 RemapUVFromScale(float2 UV, float2 resolutionScale /*= CV_HPosScale.xy*/,
 {
   // Avoid "degrading" the quality if the resolution scale is 1
   return resolutionScale == 1 ? UV : RemapUV(UV, sourceResolution, sourceResolution / resolutionScale);
-}
-
-//TODOFT4: improve, it's WIP. This is badly named and some of the UI fails it? It seems perfect now? Clean it up. Update: some textures (like the turrettes health indicators) are shifted
-bool isViewProjectionMatrix(float4x4 mat)
-{
-	return mat._m00 != 0 && abs(mat._m00) <= 1.0
-#if 1
-    && mat._m01 == 0
-    && mat._m02 == 0
-    && mat._m03 != 0 && abs(mat._m03) <= 1.0
-    && mat._m10 == 0
-#endif
-    && mat._m11 != 0 && abs(mat._m11) <= 1.0
-#if 1
-    && mat._m12 == 0
-    && mat._m13 != 0 && abs(mat._m13) <= 1.0
-    && mat._m20 == 0
-    && mat._m21 == 0
-#endif
-		&& mat._m22 == 0
-		&& mat._m23 == 1
-#if 1
-		&& mat._m30 == 0
-		&& mat._m31 == 0
-#endif
-		&& mat._m32 == 0
-		&& mat._m33 == 1;
 }
 
 #endif // SRC_COMMON_HLSL

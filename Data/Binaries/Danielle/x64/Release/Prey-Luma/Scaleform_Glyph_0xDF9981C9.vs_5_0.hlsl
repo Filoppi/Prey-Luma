@@ -10,6 +10,7 @@ cbuffer PER_BATCH : register(b0)
 }
 
 // Match both "VS_Glyph" and "VS_GlyphStereoVideo" vertex shaders (they are identical once compiled, the second one probably wasn't used by Prey)
+// This is the only shader that uses float as position input, yet it's not the only one to maps world space positions to the display (this is relevant for our lens distortion), I'm not sure how...
 void main(
   float4 v0 : POSITION0,
   float2 v1 : TEXCOORD0,
@@ -27,7 +28,7 @@ void main(
   
 #if ENABLE_SCREEN_DISTORTION
   // Inverse lens distortion
-  if (LumaUIData.WritingOnSwapchain == 1 && LumaSettings.LensDistortion && isViewProjectionMatrix(cCompositeMat))
+  if (LumaUIData.WritingOnSwapchain == 1 && LumaSettings.LensDistortion && isLinearProjectionMatrix(cCompositeMat))
   {
     o0.xyz /= o0.w; // From clip to NDC space
     o0.w = 1; // no need to convert it back to clip space, the GPU would do it again anyway

@@ -15,7 +15,7 @@ Texture2D<float4> tex1 : register(t1);
 Texture2D<float4> tex2 : register(t2);
 Texture2D<float4> tex3 : register(t3);
 
-// Draws videos with an alpha channel (transparency or mask). We don't apply "Auto HDR" on this one as it's likely used to draw videos on the 3D scene.
+// Draws videos with an alpha channel (transparency or mask). Likely used to draw videos on the 3D scene.
 void main(
   float4 v0 : SV_Position0,
   float4 inBaseTC : TEXCOORD0,

@@ -768,6 +768,8 @@ namespace
        {"ENABLE_SHARPENING", '1', false, false, "Allows you to disable Sharpening globally\nDisabling it is not suggested, especially if you use TAA (you can use \"POST_TAA_SHARPENING_TYPE\" for that anyway)"},
        {"ENABLE_FILM_GRAIN", '1', false, false, "Allows you to disable Film Grain\nIt's not that prominent in Prey, it's only used in certain cases to convey gameplay information,\nso don't disable it unless you know what you are doing"},
    #endif
+       {"CORRECT_CRT_INTERLACING_SIZE", '1', false, false, "Disable to keep the vanilla behaviour of CRT like emulated effects becoming near inperceptible at higher resolutions (which defeats their purpose)\nThese are occasionally used in Prey as a fullscreen screen overlay"},
+       {"ALLOW_LENS_DISTORTION_BLACK_BORDERS", '1', false, false, "Disable to force lens distortion to crop all black borders (further increasing FOV is suggested if you turn this off)"},
        {"ENABLE_DITHERING", '0', false, false, "Temporal Dithering control\nIt doesn't seem to be needed in this game so Luma disabled it by default"},
        {"DITHERING_BIT_DEPTH", '9', false, false, "Dithering quantization (values between 7 and 9 should be best)"},
    };
@@ -7043,8 +7045,7 @@ namespace
             }
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             {
-               //TODOFT: write down the suggested FOV value here? And specify that the reticle offset should be adjusted accordingly? Or expose it to the menu?
-               ImGui::SetTooltip("Enables \"Perspective Correction\" lens distortion.\nThis is a specific type of lens distortion that is not meant to emulate camera lenses,\nbut is meant to make game's screen projection more natural, as if your display was a window to that place, seen directly through your eyes.\nFor example, round objects will appear round even if they are at the edges of the screen.\nThe performance cost is low, though it slightly reduces the FOV and sharpness (DLSS is heavily suggested).\nYou can increase the FOV to your liking to counteract the loss of FOV.\nMake sure that the scene and weapons FOVs match for this to look good.");
+               ImGui::SetTooltip("Enables \"Perspective Correction\" lens distortion.\nThis is a specific type of lens distortion that is not meant to emulate camera lenses,\nbut is meant to make game's screen projection more natural, as if your display was a window to that place, seen directly through your eyes.\nFor example, round objects will appear round at any FOV even if they are at the edges of the screen.\nThe performance cost is low, though it slightly reduces the FOV and sharpness (DLSS is heavily suggested).\nYou can increase the FOV to your liking to counteract the loss of FOV (a vertical FOV around 57.5 (+2.5 degrees) is suggested for it at 16:9, and exponentially more in ultrawide).\nMake sure that the scene and weapons FOVs match for this to look good.\n\"g_reticleYPercentage\" can be changed in the \"game.cfg\" file to move the reticle more or loss towards the center of the screen.");
             }
             ImGui::SameLine();
             if (lens_distortion)

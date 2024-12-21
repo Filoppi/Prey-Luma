@@ -847,6 +847,13 @@
               <ArkOptionSlider Min="0.33333333" Max="1.0" Decimals="3" Unit="0.01" Normalize="false"/>
              </Widget>
             </ArkOptionAttribute>
+				 <!--Disabled as this crashes on set (not sure why)
+            <ArkOptionAttribute Action="g_reticleYPercentage" Label="Reticle Vertical Position" SetOnChange="false" Default="0.575" Platform="PC">
+             <Widget>
+              <ArkOptionSlider Min="0.25" Max="0.75" Decimals="3" Unit="0.01" Normalize="false"/>
+             </Widget>
+            </ArkOptionAttribute>
+				-->
           </Attributes>
         </ArkOptionLayoutSubPage>
       </SubPages>
