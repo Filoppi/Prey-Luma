@@ -42,6 +42,7 @@ namespace Hooks
 		}
 
 		// Patch internal CryEngine RGBA8 to RGBA16F (or whatever format)
+		// This is the "main" backbuffer, it's not the same texture as the swapchain, but the closest one to it. It needs alpha in some cases (e.g. FXAA).
 		{
 			// CTexture::GenerateSceneMap
 			const auto address = Offsets::GetAddress(Offsets::CTexture_GenerateSceneMap);
@@ -61,21 +62,21 @@ namespace Hooks
 		}
 
 		// These were R11G11B10F (or possibly already R16G16B16A16F?)
-		// Upgrading these from R11G11B10F to R16G16B16A16F is "optional" and returns little additional quality for the performance cost.
-		// Bloom might be the only exception, as it's got a large influence on every pixel of the final scene, so it could bring its quality down.
+		// Upgrading most these from R11G11B10F to R16G16B16A16F is "optional" and returns little additional quality for the performance cost.
+		// Bloom is the main exception, as it's got a large influence on every pixel of the final scene, so it could bring its quality down.
+		// Motion Blur is additive so it's not a particular problem.
 		// Highly specular screen space reflections might also exhibit banding if this is not true (to be researched more accurately).
-		// Most of the other linear HDR render textures were already R16G16B16A16F so need no upgrade
-		//TODOFT: do we even need to upgrade these from R11G11B10F?
+		// Most of the other linear HDR render textures were already R16G16B16A16F so need no upgrade.
 		{
 			// CTexture::GenerateHDRMaps
 			const auto address = Offsets::GetAddress(Offsets::CTexture_GenerateHDRMaps);
 
 			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_BitsPerPixel), HDRPostProcessFormat);  // used to calculate bits per pixel
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_HDRTargetPrev), HDRPostProcessFormat);  // $HDRTargetPrev: used for screen space reflections (SSR), Water Volumes (? possibly not in Prey), SVO (? probably not in Prey), Motion Blur (if DoF is disabled?)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_HDRTargetPrev), HDRPostProcessFormat);  // $HDRTargetPrev: used for screen space reflections (SSR), Water Volumes (? possibly not in Prey), SVO (? probably not in Prey), Motion Blur (if DoF is enabled?)
 			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_HDRTempBloom0), HDRPostProcessFormat);  // $HDRTempBloom0: Bloom intermediary texture
 			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_HDRTempBloom1), HDRPostProcessFormat);  // $HDRTempBloom1: Bloom intermediary texture
 			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_HDRFinalBloom), HDRPostProcessFormat);  // $HDRFinalBloom: Bloom final target
-			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_SceneTargetR11G11B10F_0), HDRPostProcessFormat);  // $SceneTargetR11G11B10F_0: used by Lens Optics, Motion Blur (?), and DoF (?)
+			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_SceneTargetR11G11B10F_0), HDRPostProcessFormat);  // $SceneTargetR11G11B10F_0: used by Lens Optics, Motion Blur (if DoF is disabled?), and DoF (?)
 			dku::Hook::WriteImm(address + Offsets::Get(Offsets::CTexture_GenerateHDRMaps_SceneTargetR11G11B10F_1), HDRPostProcessFormat);  // $SceneTargetR11G11B10F_1: used by Screen Space SubSurfaceScattering (SSSSS), Water Volume Caustics (?), ...
 		}
 

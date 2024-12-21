@@ -472,8 +472,10 @@ namespace
    bool disable_taa_jitters = false;
    int force_taa_jitter_phases = 0; // Ignored if 0 (automatic mode), set to 1 to basically disable jitters
    int frame_sleep_ms = 0;
-   RE::ETEX_Format LDR_textures_upgrade_format = RE::ETEX_Format::eTF_R16G16B16A16F;
-   RE::ETEX_Format HDR_textures_upgrade_format = RE::ETEX_Format::eTF_R16G16B16A16F;
+   RE::ETEX_Format LDR_textures_upgrade_confirmed_format = ENABLE_NATIVE_PLUGIN ? RE::ETEX_Format::eTF_R16G16B16A16F : RE::ETEX_Format::eTF_R8G8B8A8; // Native hooks and vanilla game start with these
+   RE::ETEX_Format HDR_textures_upgrade_confirmed_format = ENABLE_NATIVE_PLUGIN ? RE::ETEX_Format::eTF_R16G16B16A16F : RE::ETEX_Format::eTF_R11G11B10F; // Native hooks and vanilla game start with these
+   RE::ETEX_Format LDR_textures_upgrade_requested_format = RE::ETEX_Format::eTF_R16G16B16A16F;
+   RE::ETEX_Format HDR_textures_upgrade_requested_format = RE::ETEX_Format::eTF_R16G16B16A16F;
 #endif
 
    // Game specific constants:
@@ -2339,16 +2341,16 @@ namespace
 #if DEVELOPMENT
    bool OnCreateSwapchain(reshade::api::swapchain_desc& desc, void* hwnd)
    {
-#if 0 // Enforce for edge cases
-      if (LDR_textures_upgrade_format != RE::ETEX_Format::eTF_R16G16B16A16F)
-#endif
+      // There's only one swapchain so it's fine if this is global
+      HDR_textures_upgrade_confirmed_format = HDR_textures_upgrade_requested_format;
+      if (LDR_textures_upgrade_requested_format != LDR_textures_upgrade_confirmed_format)
       {
          desc.present_flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
-         if (LDR_textures_upgrade_format == RE::ETEX_Format::eTF_R8G8B8A8)
+         if (LDR_textures_upgrade_requested_format == RE::ETEX_Format::eTF_R8G8B8A8)
          {
             desc.back_buffer.texture.format = reshade::api::format::r8g8b8a8_unorm;
          }
-         else if (LDR_textures_upgrade_format == RE::ETEX_Format::eTF_R10G10B10A2)
+         else if (LDR_textures_upgrade_requested_format == RE::ETEX_Format::eTF_R10G10B10A2)
          {
             desc.back_buffer.texture.format = reshade::api::format::r10g10b10a2_unorm;
          }
@@ -2356,6 +2358,8 @@ namespace
          {
             desc.back_buffer.texture.format = reshade::api::format::r16g16b16a16_float;
          }
+         // Assume this will succeed. If the swapchain was re-created, we are guaranteed that all game render targets are recreated too.
+         LDR_textures_upgrade_confirmed_format = LDR_textures_upgrade_requested_format;
          return true;
       }
       return false;
@@ -2430,13 +2434,36 @@ namespace
          }
 
 #if DEVELOPMENT
+         if (LDR_textures_upgrade_requested_format != LDR_textures_upgrade_confirmed_format)
+         {
+            UINT flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+            DXGI_FORMAT format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+            if (LDR_textures_upgrade_requested_format == RE::ETEX_Format::eTF_R8G8B8A8)
+            {
+               format = DXGI_FORMAT_R8G8B8A8_UNORM;
+            }
+            else if (LDR_textures_upgrade_requested_format == RE::ETEX_Format::eTF_R10G10B10A2)
+            {
+               format = DXGI_FORMAT_R10G10B10A2_UNORM;
+            }
+            else // Also applies to R11G11B10F
+            {
+               format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+            }
+            hr = native_swapchain3->ResizeBuffers(0, 0, 0, format, flags); // Pass in zero to not change any values if not the format
+            ASSERT_ONCE(SUCCEEDED(hr));
+            // Assume this will succeed. If the swapchain was re-created, we are guaranteed that all game render targets are recreated too.
+            LDR_textures_upgrade_confirmed_format = LDR_textures_upgrade_requested_format;
+         }
+         HDR_textures_upgrade_confirmed_format = HDR_textures_upgrade_requested_format;
+         // Enforce this independently of "LDR_textures_upgrade_requested_format"
          {
             DXGI_COLOR_SPACE_TYPE colorSpace;
-            if (LDR_textures_upgrade_format == RE::ETEX_Format::eTF_R8G8B8A8)
+            if (LDR_textures_upgrade_confirmed_format == RE::ETEX_Format::eTF_R8G8B8A8)
             {
                colorSpace = DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
             }
-            else if (LDR_textures_upgrade_format == RE::ETEX_Format::eTF_R10G10B10A2)
+            else if (LDR_textures_upgrade_confirmed_format == RE::ETEX_Format::eTF_R10G10B10A2)
             {
                colorSpace = DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
             }
@@ -3011,7 +3038,7 @@ namespace
 #if DEVELOPMENT
       bool needs_debug_draw_texture = device_data.debug_draw_texture.get() != nullptr;
       // Disable linearization if we are not running on scRGB HDR (more handling is required, this is a quick workaround, we'd need to wait until the changes applied anyway)
-      bool expects_linear_output = LDR_textures_upgrade_format == RE::ETEX_Format::eTF_R16G16B16A16F;
+      bool expects_linear_output = LDR_textures_upgrade_confirmed_format == RE::ETEX_Format::eTF_R16G16B16A16F || LDR_textures_upgrade_confirmed_format == RE::ETEX_Format::eTF_R11G11B10F;
 #else
       constexpr bool expects_linear_output = true;
       constexpr bool needs_debug_draw_texture = false;
@@ -5737,6 +5764,8 @@ namespace
 
             // If we detected incompatible formats that were likely caused by Luma upgrading texture formats (of render targets only...),
             // do the copy in shader
+            // TODO: add gamma to linear support (e.g. sRGB views)?
+            //TODOFT: this doesn't fully work
             if (((isUnorm8(target_desc.Format) || isFloat11(target_desc.Format)) && isFloat16(source_desc.Format))
                || ((isUnorm8(source_desc.Format) || isFloat11(source_desc.Format)) && isFloat16(target_desc.Format)))
             {
@@ -7284,7 +7313,7 @@ namespace
             }
 
             ImGui::NewLine();
-            //TODOFT4: these aren't really working yet... figure out how to make them work or remove it
+            //TODOFT4: test formats and expose to user
             const char* ldr_formats[4] = {
                 "R8G8B8A8",
                 "R10G10B10A2",
@@ -7295,72 +7324,73 @@ namespace
                 "R11G11B10F",
                 "R16G16B16A16F",
             };
-            int LDR_textures_upgrade_format_int = 3;
-            if (LDR_textures_upgrade_format == RE::ETEX_Format::eTF_R8G8B8A8)
+            int LDR_textures_upgrade_requested_format_int = 3;
+            if (LDR_textures_upgrade_requested_format == RE::ETEX_Format::eTF_R8G8B8A8)
             {
-               LDR_textures_upgrade_format_int = 0;
+               LDR_textures_upgrade_requested_format_int = 0;
             }
-            else if (LDR_textures_upgrade_format == RE::ETEX_Format::eTF_R10G10B10A2)
+            else if (LDR_textures_upgrade_requested_format == RE::ETEX_Format::eTF_R10G10B10A2)
             {
-               LDR_textures_upgrade_format_int = 1;
+               LDR_textures_upgrade_requested_format_int = 1;
             }
-            else if (LDR_textures_upgrade_format == RE::ETEX_Format::eTF_R11G11B10F)
+            else if (LDR_textures_upgrade_requested_format == RE::ETEX_Format::eTF_R11G11B10F)
             {
-               LDR_textures_upgrade_format_int = 2;
+               LDR_textures_upgrade_requested_format_int = 2;
             }
             bool textures_upgrade_format_changed = false;
             // These expect the game to resize the swapchain to apply (we'd need to cache the requested and applied format to do it properly)
-            if (ImGui::SliderInt("LDR Post Process Texture Upgrades Format", &LDR_textures_upgrade_format_int, 0, 3, ldr_formats[(uint32_t)LDR_textures_upgrade_format_int], ImGuiSliderFlags_NoInput))
+            if (ImGui::SliderInt("LDR Post Process Texture Upgrades Format", &LDR_textures_upgrade_requested_format_int, 0, 3, ldr_formats[(uint32_t)LDR_textures_upgrade_requested_format_int], ImGuiSliderFlags_NoInput))
             {
-               if (LDR_textures_upgrade_format_int == 0)
+               if (LDR_textures_upgrade_requested_format_int == 0)
                {
-                  LDR_textures_upgrade_format = RE::ETEX_Format::eTF_R8G8B8A8;
+                  LDR_textures_upgrade_requested_format = RE::ETEX_Format::eTF_R8G8B8A8;
                }
-               else if (LDR_textures_upgrade_format_int == 1)
+               else if (LDR_textures_upgrade_requested_format_int == 1)
                {
-                  LDR_textures_upgrade_format = RE::ETEX_Format::eTF_R10G10B10A2;
+                  LDR_textures_upgrade_requested_format = RE::ETEX_Format::eTF_R10G10B10A2;
                }
-               else if (LDR_textures_upgrade_format_int == 2)
+               else if (LDR_textures_upgrade_requested_format_int == 2)
                {
-                  LDR_textures_upgrade_format = RE::ETEX_Format::eTF_R11G11B10F;
+                  LDR_textures_upgrade_requested_format = RE::ETEX_Format::eTF_R11G11B10F;
                }
                else
                {
-                  LDR_textures_upgrade_format = RE::ETEX_Format::eTF_R16G16B16A16F;
+                  LDR_textures_upgrade_requested_format = RE::ETEX_Format::eTF_R16G16B16A16F;
                }
                textures_upgrade_format_changed = true;
             }
-            int HDR_textures_upgrade_format_int = (HDR_textures_upgrade_format == RE::ETEX_Format::eTF_R11G11B10F) ? 0 : 1;
-            if (ImGui::SliderInt("HDR Post Process Texture Upgrades Format", &HDR_textures_upgrade_format_int, 0, 1, hdr_formats[(uint32_t)HDR_textures_upgrade_format_int], ImGuiSliderFlags_NoInput))
+            int HDR_textures_upgrade_requested_format_int = (HDR_textures_upgrade_requested_format == RE::ETEX_Format::eTF_R11G11B10F) ? 0 : 1;
+            if (ImGui::SliderInt("HDR Post Process Texture Upgrades Format", &HDR_textures_upgrade_requested_format_int, 0, 1, hdr_formats[(uint32_t)HDR_textures_upgrade_requested_format_int], ImGuiSliderFlags_NoInput))
             {
-               HDR_textures_upgrade_format = HDR_textures_upgrade_format_int == 0 ? RE::ETEX_Format::eTF_R11G11B10F : RE::ETEX_Format::eTF_R16G16B16A16F;
+               HDR_textures_upgrade_requested_format = HDR_textures_upgrade_requested_format_int == 0 ? RE::ETEX_Format::eTF_R11G11B10F : RE::ETEX_Format::eTF_R16G16B16A16F;
                textures_upgrade_format_changed = true;
             }
             if (textures_upgrade_format_changed)
             {
 #if ENABLE_NATIVE_PLUGIN
-               NativePlugin::SetTexturesFormat(LDR_textures_upgrade_format, HDR_textures_upgrade_format);
+               NativePlugin::SetTexturesFormat(LDR_textures_upgrade_requested_format, HDR_textures_upgrade_requested_format);
 #endif // ENABLE_NATIVE_PLUGIN
+            }
+            if (LDR_textures_upgrade_requested_format != LDR_textures_upgrade_confirmed_format || HDR_textures_upgrade_requested_format != HDR_textures_upgrade_confirmed_format)
+            {
+               ImGui::PushID("Texture Formats Change Warning");
+               ImGui::BeginDisabled();
+               ImGui::SmallButton(ICON_FK_WARNING);
+               ImGui::EndDisabled();
+               ImGui::PopID();
 
-#if 0 //TODOFT4: verify this is safe. Does the game cache the pointers to this somehow (probably not!)? Can we change it within Present()?
-               //Update: it doesn't work!
-               UINT flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
-               DXGI_FORMAT format = DXGI_FORMAT_R16G16B16A16_FLOAT;
-               if (LDR_textures_upgrade_format == RE::ETEX_Format::eTF_R8G8B8A8)
+               if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
                {
-                  format = DXGI_FORMAT_R8G8B8A8_UNORM;
+                  ImGui::SetTooltip("A manual graphics settings change is required for the texture quality change to apply.\nSimply toggle the game's resolution or reset the basic graphics settings.");
                }
-               else if (LDR_textures_upgrade_format == RE::ETEX_Format::eTF_R10G10B10A2)
-               {
-                  format = DXGI_FORMAT_R10G10B10A2_UNORM;
-               }
-               else // Also applies to R11G11B10F
-               {
-                  format = DXGI_FORMAT_R16G16B16A16_FLOAT;
-               }
-               HRESULT hr = device_data.GetMainNativeSwapchain()->ResizeBuffers(0, 0, 0, format, flags); // Pass in zero to not change any values if not the format
-               ASSERT_ONCE(SUCCEEDED(hr));
-#endif
+            }
+            else
+            {
+               const auto& style = ImGui::GetStyle();
+               ImVec2 size = ImGui::CalcTextSize(ICON_FK_UNDO);
+               size.x += style.FramePadding.x;
+               size.y += style.FramePadding.y;
+               ImGui::InvisibleButton("", ImVec2(size.x, size.y));
             }
 
             ImGui::NewLine();

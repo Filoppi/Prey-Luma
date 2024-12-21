@@ -38,6 +38,7 @@ namespace DKUtil
 
 namespace Hooks
 {
+	// Note: these are mirrored in the ReShade addon code
 	constexpr RE::ETEX_Format defaultLDRPostProcessFormat = RE::ETEX_Format::eTF_R16G16B16A16F;
 	constexpr RE::ETEX_Format defaultHDRPostProcessFormat = RE::ETEX_Format::eTF_R16G16B16A16F;
 
