@@ -20,7 +20,7 @@ void main(
 #if TEST_UI //TODOFT: if this ever happened, we might need to add alpha handling. Otherwise, linearization is already done above.
   if (any(outColor.xyz != 0) || outColor.w != 1)
   {
-    outColor.xyzw = float3(0, 1, 2, 1);
+    outColor.xyzw = float4(0, 1, 2, 1);
   }
 #endif
   return;

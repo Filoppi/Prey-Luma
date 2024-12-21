@@ -81,6 +81,7 @@
 #define TEST_DLSS (DEVELOPMENT && 0)
 
 #define FORCE_KEEP_CUSTOM_SHADERS_LOADED 1
+#define ALLOW_LOADING_DEV_SHADERS 1
 
 // This might not disable all shaders dumping related code, but it disables enough to remove any performance cost
 #define ALLOW_SHADERS_DUMPING (DEVELOPMENT || TEST)
@@ -1202,14 +1203,27 @@ namespace
       {
          return;
       }
-
+      
+#if DEVELOPMENT && ALLOW_LOADING_DEV_SHADERS
+      auto dev_directory = directory;
+      dev_directory /= "unused"; // WIP and test and unused shaders
+      for (const auto& entry : std::filesystem::recursive_directory_iterator(directory))
+#else
       for (const auto& entry : std::filesystem::directory_iterator(directory))
+#endif
       {
+         const auto& entry_path = entry.path();
+#if DEVELOPMENT && ALLOW_LOADING_DEV_SHADERS
+         bool is_in_dev_directory = entry_path.parent_path() == dev_directory;
+         if (entry_path.parent_path() != directory && !is_in_dev_directory)
+         {
+            continue;
+         }
+#endif
          if (!entry.is_regular_file())
          {
             continue;
          }
-         const auto& entry_path = entry.path();
          const bool is_cso = entry_path.extension().compare(".cso") == 0;
          if (!entry_path.has_extension() || !entry_path.has_stem() || !is_cso)
          {
@@ -1466,14 +1480,28 @@ namespace
 
       std::unordered_set<uint32_t> changed_shaders_hashes;
 
+#if DEVELOPMENT && ALLOW_LOADING_DEV_SHADERS
+      auto dev_directory = directory;
+      dev_directory /= "unused"; // WIP and test and unused shaders
+      for (const auto& entry : std::filesystem::recursive_directory_iterator(directory))
+#else
       for (const auto& entry : std::filesystem::directory_iterator(directory))
+#endif
       {
+         const auto& entry_path = entry.path();
+#if DEVELOPMENT && ALLOW_LOADING_DEV_SHADERS
+         //TODOFT: this currently needs a junction to the "include" folder
+         bool is_in_dev_directory = entry_path.parent_path() == dev_directory;
+         if (entry_path.parent_path() != directory && !is_in_dev_directory)
+         {
+            continue;
+         }
+#endif
          if (!entry.is_regular_file())
          {
             reshade::log::message(reshade::log::level::warning, "LoadCustomShaders(not a regular file)");
             continue;
          }
-         const auto& entry_path = entry.path();
          const bool is_hlsl = entry_path.extension().compare(".hlsl") == 0;
          const bool is_cso = entry_path.extension().compare(".cso") == 0;
          if (!entry_path.has_extension() || !entry_path.has_stem() || (!is_hlsl && !is_cso))
