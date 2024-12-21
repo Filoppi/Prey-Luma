@@ -520,7 +520,7 @@ float4 XeGTAO_MainPass( float2 pixCoord, lpfloat sliceCount, lpfloat stepsPerSli
                 // LUMA FT: this won't work properly if "XE_GTAO_SCALED_DEPTH_FLOAT4" is true, we'd need to round to a unit of 2 or something, but we don't care enough until proven it's necessary.
                 sampleOffset = round(sampleOffset) * (lpfloat2)consts.ScaledViewportPixelSize;
 
-                //TODOFT: pass in both textures and dynamically pick the best one based on "mipLevel"? Sampling from the lower res depth currently looks bad and has a lot of artifacts on close flat surfaces (due to low precision)
+                //TODO LUMA: dynamically pick the higher or lower quality depth based on "mipLevel"? Sampling from the lower res depth currently looks bad and has a lot of artifacts on close flat surfaces (due to low precision), it's an optional lower quality setting to improving it is low priority
                 float2 sampleScreenPos0 = normalizedScreenPos + sampleOffset;
 #if XE_GTAO_SCALED_DEPTH_FLOAT4
                 float  SZ0 = sourceViewspaceScaledDepth.SampleLevel( depthSampler, min(sampleScreenPos0 * consts.RenderResolutionScale, consts.SampleScaledUVClamp), mipLevel ).z * consts.DepthFar;

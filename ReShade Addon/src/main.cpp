@@ -648,7 +648,6 @@ namespace
 
       // Misc
       com_ptr<ID3D11BlendState> default_blend_state;
-      std::set<ID3D11Buffer*> ui_vertex_buffers;
 
       // Pointer to the current DX buffer for the "global per view" cbuffer.
       com_ptr<ID3D11Buffer> cb_per_view_global_buffer;
@@ -698,6 +697,8 @@ namespace
 
       std::atomic<bool> cloned_pipelines_changed = false; // Atomic so it doesn't rely on "s_mutex_generic"
       uint32_t cloned_pipeline_count = 0; // How many pipelines (shaders/passes) we replaced with custom ones (if zero, we can assume the mod isn't doing much)
+
+      bool has_drawn_dlss_sr_imgui = false;
    };
 
    struct __declspec(uuid("c5805458-2c02-4ebf-b139-38b85118d971")) SwapchainData
@@ -755,6 +756,7 @@ namespace
    #endif
        {"ENABLE_SSAO_TEMPORAL", '1', false, false, "Disable if you don't use TAA to avoid seeing noise in Ambient Occlusion (though it won't have the same quality)\nYou can disable it for you use TAA too but it's not suggested"},
        {"BLOOM_QUALITY", '1', false, false, "0 - Vanilla\n1 - High"},
+       {"MOTION_BLUR_QUALITY", '0', false, false, "0 - Vanilla (user graphics setting based)\n1 - Ultra"},
        {"SSR_QUALITY", '1', false, false, "Screen Space Reflections\n0 - Vanilla\n1 - High\n2 - Ultra\nThis can be fairly expensive so lower it if you are having performance issues"},
    #if DEVELOPMENT || TEST
        {"FORCE_MOTION_VECTORS_JITTERED", force_motion_vectors_jittered ? '1' : '0', false, false, "Forces Motion Vectors generation to include the jitters from the previous frame too, as DLSS needs\nEnabling this forces the native TAA to work as when we have DLSS enabled, making it look a little bit better (less shimmery)"},
@@ -3210,9 +3212,8 @@ namespace
       device_data.has_drawn_main_post_processing_previous = device_data.has_drawn_main_post_processing;
       device_data.has_drawn_main_post_processing = false;
       device_data.has_drawn_upscaling = false;
-#if 0 // Moved to "OnReShadePresent()"
+      device_data.has_drawn_dlss_sr_imgui = device_data.has_drawn_dlss_sr;
       device_data.has_drawn_dlss_sr = false;
-#endif
 #if 1 // Not much need to reset this, but let's do it anyway (e.g. in case the game scene isn't currently rendering)
       device_data.prey_drs_active = false;
 #endif
@@ -3757,7 +3758,7 @@ namespace
             device_data.has_drawn_ssao = true;
             if (is_custom_pass && GetShaderDefineCompiledNumericalValue(SSAO_TYPE_HASH) >= 1) // If using GTAO
             {
-               uint2 gtao_edges_target_resolution = { (UINT)device_data.output_resolution.x, (UINT)device_data.output_resolution.y };
+               uint2 gtao_edges_target_resolution = { (UINT)device_data.output_resolution.x, (UINT)device_data.output_resolution.y }; // Note that the swapchain resolution can end up being changed with a delay? Or are we somehow missing resize events?
 
                ID3D11RenderTargetView* rtvs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
                com_ptr<ID3D11DepthStencilView> dsv;
@@ -5228,6 +5229,7 @@ namespace
 
          // Clamp at the last texel center (half pixel offset) at the bottom right of the rendering (which is now equal to output) resolution area.
          // We could probably set these to 1 as well, and skip the last half texel, but that would make the behaviour different from when DRS is running.
+         // Note that usually these would be set relative to the render target viewport resolution, not source texture resolution.
          cb_per_view_global.CV_HPosClamp.x = 1.f - cb_per_view_global.CV_ScreenSize.z;
          cb_per_view_global.CV_HPosClamp.y = 1.f - cb_per_view_global.CV_ScreenSize.w;
          cb_per_view_global.CV_HPosClamp.z = cb_per_view_global.CV_HPosClamp.x;
@@ -5909,9 +5911,6 @@ namespace
 #endif
       }
 #endif // DEVELOPMENT
-
-      // Moved here so we can read it from ImGUI
-      device_data.has_drawn_dlss_sr = false;
 
       // Dump new shaders (checking the "shaders_to_dump" count is theoretically not thread safe but it should work nonetheless as this is run every frame)
       if (auto_dump && !thread_auto_dumping_running && !shaders_to_dump.empty())
@@ -6773,8 +6772,7 @@ namespace
             }
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             {
-               //TODOFT: add a negative tick if we detected TAA isn't running and the game rendered (and specify that in the tooltip)
-               ImGui::SetTooltip("This replaces the game's native AA and dynamic resolution scaling implementations.\nSelect \"SMAA 2TX\" or \"TAA\" in the game's AA settings for DLSS/DLAA to engage.\nA tick will appear here when it's engaged and a warning might appear if it failed.\n\nRequires compatible Nvidia GPUs.");
+               ImGui::SetTooltip("This replaces the game's native AA and dynamic resolution scaling implementations.\nSelect \"SMAA 2TX\" or \"TAA\" in the game's AA settings for DLSS/DLAA to engage.\nA tick will appear here when it's engaged and a warning will appear if it failed.\n\nRequires compatible Nvidia GPUs.");
             }
             ImGui::SameLine();
             if (dlss_sr != true && device_data.dlss_sr_supported)
@@ -6790,12 +6788,13 @@ namespace
             }
             else
             {
-               // If DLSS currently can't run due to the user settings/state, don't show a warning
-               if (device_data.dlss_sr && device_data.prey_taa_detected && device_data.cloned_pipeline_count != 0)
+               // Show that DLSS is engaged. Ignored if the game scene isn't rendering.
+               // If DLSS currently can't run due to the user settings/state, or failed, show a warning.
+               if (device_data.has_drawn_main_post_processing_previous && device_data.dlss_sr && device_data.cloned_pipeline_count != 0)
                {
                   ImGui::PushID("DLSS Super Resolution Active");
                   ImGui::BeginDisabled();
-                  ImGui::SmallButton((device_data.has_drawn_dlss_sr && !device_data.dlss_sr_suppressed) ? ICON_FK_OK : ICON_FK_WARNING); // Show that DLSS is engaged (or failed) (this will reset if we open a menu etc)
+                  ImGui::SmallButton((device_data.prey_taa_detected && device_data.has_drawn_dlss_sr_imgui && !device_data.dlss_sr_suppressed) ? ICON_FK_OK : ICON_FK_WARNING);
                   ImGui::EndDisabled();
                   ImGui::PopID();
                }

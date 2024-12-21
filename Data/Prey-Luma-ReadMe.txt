@@ -25,16 +25,16 @@ Luma was created by Pumbo (graphics) and Ersh (reverse engineering).
 - More (e.g. added optional HDR post process filter on pre-rendered video, added settings to turn off Vignette or Camera Motion Blur)!
 
 # How to install:
-- Drop all the files into the game installation folder (including "autoexec.cfg" and "system.cfg") (the root folder, not the one with the executable). Override all files (you can make a backup, but Luma just changes a couple configs in the game packages, these changes simply increase the rendering quality and can persist without Luma).
+- Drop all the files into the game installation folder (including "autoexec.cfg" and "system.cfg") (the root folder, not the one with the executable). Override all files (you can make a backup, but Luma just changes a couple configs in the game packages, these changes simply increase the rendering quality and can persist without Luma). If you are updating the mod, delete the "Prey-Luma" folder in the game binaries folder before applying the new one.
 - If you are on GOG, move the files in ".\Binaries\Danielle\x64\" to ".\Binaries\Danielle\x64-GOG\".
 - Install the latest VC++ redist before using (https://aka.ms/vs/17/release/vc_redist.x64.exe).
 - Install ReShade 6.3.3+ (with Addons support, for DX11, preferably as dxgi.dll) (you can disable the "Generic Depth" and "Effects Runtime Sync" Addons for performance gains).
 - Unless you are on Linux/Proton, delete the "d3dcompiler_47.dll" from the main binary folder, it's an outdated shader compiler bundled with the game for "no reason" (Windows will fall back on the latest version of it this way, but Proton doesn't distribute the file so leave it in).
 
 # Information:
-- The performance cost on modern GPUs is negligeable, especially when using DLSS SR + Resolution Scaling (in fact, performance might drastically increase in that case) (GTAO is the only addition that has a perceivable performance cost, but it can be disabled or lowered in quality).
+- You can press Home to show ReShade's interface, and there you will find a new window with Luma settings.
+- The performance cost on modern GPUs is negligeable, especially when using DLSS SR + Resolution Scaling (in fact, performance might drastically increase in that case) (GTAO is the only addition that has a perceivable performance cost, but it can be disabled or lowered in quality in the advanced settings section).
 - The mod is best used with all the graphics settings maxed out in the game, but any setting combination is supported too.
-- Set you "game.cfg" to read only to avoid the game clearing most settings from it if changing settings within the game menu, so it's suggested to change your resolution and other settings directly from config before booting the game, or they will get overwritten every time.
 - The game's HDR uses the HDR calibration data from Windows 11 and display's EDID.
 - The in game brightness slider is best left at default value.
 - Before updating the mod, make sure to delete all its previous files. To uninstall, delete all the files and restore the original version of the overwritten ones (or not, they simply change a couple of quality configs, they can stay without Luma).
@@ -68,7 +68,7 @@ Replace their files with the Luma version if necessary, none of the game's mods 
 - Touch-Up Mod - https://www.nexusmods.com/prey2017/mods/102
 - No-Intro (Skip Startup - Splash Videos) - https://www.nexusmods.com/prey2017/mods/115
 - Chairloader - The Prey Modding Framework - https://www.nexusmods.com/prey2017/mods/103
-  Not for general usage but it's great for messing around
+  Not for general usage but it's great for messing around. It only works on the Epic Store version of the game, which Luma doesn't run on, otherwise it would probably be compatible.
 - Sensitivity Sprint Scale - https://www.nexusmods.com/prey2017/mods/117
 
 # References:

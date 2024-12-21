@@ -105,7 +105,7 @@
 #define AUTO_HDR_VIDEOS 1
 #endif
 #define DELAY_DITHERING 1
-//TODOFT: test more with this off (which theoretically should be better), and possibly disable it
+//TODOFT: test more with this off (which theoretically should be better), and possibly disable it (or remove it if you move the AA pass)
 #ifndef DLSS_RELATIVE_PRE_EXPOSURE
 #define DLSS_RELATIVE_PRE_EXPOSURE 1
 #endif
