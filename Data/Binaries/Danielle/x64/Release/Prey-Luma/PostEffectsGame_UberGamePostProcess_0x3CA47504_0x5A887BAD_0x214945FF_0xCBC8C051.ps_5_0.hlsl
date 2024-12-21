@@ -1,5 +1,22 @@
 #include "include/Common.hlsl"
 
+#if _3CA47504
+// Mostly passthrough
+#elif _5A887BAD
+// v-sync effect
+#define _RT_SAMPLE2 1
+#elif _214945FF
+// chroma shift
+#define _RT_SAMPLE0 1
+#define _RT_SAMPLE1 0
+// v-sync effect
+#define _RT_SAMPLE2 1
+#elif _CBC8C051
+// chroma shift
+#define _RT_SAMPLE0 1
+#define _RT_SAMPLE1 0
+#endif
+
 cbuffer PER_BATCH : register(b0)
 {
   // None of these are scaled based on the screen's resolution
@@ -117,9 +134,10 @@ void ApplyRadialBlurAndChromaShift(inout float4 cScreen, float2 tcFinal)
 #undef RadialBlurParams
 }
 
+// UberGamePostProcessPS
 // This is only called when any of the parameters are in use.
 // This runs after upscaling/MSAA.
-void UberGamePostProcessPS(float4 WPos, float4 inBaseTC, out float4 outColor)
+void main(float4 WPos : SV_Position0, float4 inBaseTC : TEXCOORD0, out float4 outColor : SV_Target0)
 {
 	outColor = 0;
 

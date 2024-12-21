@@ -1,4 +1,18 @@
-#include "PostEffectsGame_MergeColorChart.hlsl"
+#include "include/Common.hlsl"
+
+struct a2v_cch
+{
+	float4 Position : POSITION0;
+	float2 baseTC : TEXCOORD0;
+	float4 Color : COLOR0;
+};
+
+struct v2f_cch
+{
+	float4 HPosition : SV_Position0;
+	float2 baseTC : TEXCOORD0;
+	float3 Color : TEXCOORD1;
+};
 
 // LUMA: Unchanged.
 // MergeColorChartsVS
