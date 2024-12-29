@@ -128,9 +128,12 @@ namespace
       uint32_t LensDistortion;
 #if DEVELOPMENT // In case we disabled the "DEVELOPMENT" shader define while the code is compiled in "DEVELOPMENT" mode, we'll simply push values that aren't read by shaders
       LumaFrameDevSettings DevSettings;
+#else
+      float2 Padding = { 0, 0 };
 #endif
    };
    static_assert(sizeof(LumaFrameSettings) % sizeof(uint32_t) == 0); // ReShade limitation, we probably don't depend on these anymore, still, it's not bad to have 4 bytes alignment, even if cbuffers are seemengly 8 byte aligned?
+   static_assert(sizeof(LumaFrameSettings) % (sizeof(uint32_t) * 4) == 0); // Needed by DX?
    static_assert(sizeof(LumaFrameSettings) >= 16); // Needed by DX (there's a minimum size of 16 byte)
 
    //TODOFT: rename to PassData or something
@@ -151,6 +154,7 @@ namespace
       Matrix44A ReprojectionMatrix;
    };
    static_assert(sizeof(LumaFrameData) % sizeof(uint32_t) == 0);
+   static_assert(sizeof(LumaFrameData) % (sizeof(uint32_t) * 4) == 0);
    static_assert(sizeof(LumaFrameData) >= 16);
 
    struct LumaUIData
@@ -161,5 +165,6 @@ namespace
       uint32_t padding = 0;
    };
    static_assert(sizeof(LumaUIData) % sizeof(uint32_t) == 0);
+   static_assert(sizeof(LumaUIData) % (sizeof(uint32_t) * 4) == 0);
    static_assert(sizeof(LumaUIData) >= 16);
 }

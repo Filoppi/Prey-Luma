@@ -2223,7 +2223,7 @@ namespace
    {
       // s_mutex_reshade should already be locked here, it's not necessary anyway
       GetShaderDefineData(GAMMA_CORRECTION_TYPE_HASH).editable = cb_luma_frame_settings.DisplayMode != 0;
-      GetShaderDefineData(AUTO_HDR_VIDEOS_HASH).editable = cb_luma_frame_settings.DisplayMode != 0;
+      GetShaderDefineData(AUTO_HDR_VIDEOS_HASH).editable = cb_luma_frame_settings.DisplayMode == 1;
    }
 
    // Prey seems to create new devices when resetting the game settings (either manually from the menu, or on boot in case the config had invalid ones), but then the new devices might not actually be used?
@@ -2490,7 +2490,8 @@ namespace
             cb_luma_frame_settings.ScenePaperWhite = srgb_white_level;
             cb_luma_frame_settings.UIPaperWhite = srgb_white_level;
          }
-         else if (cb_luma_frame_settings.DisplayMode < 2)
+         // Avoid increasing the peak if the user has SDR mode set, SDR mode might still rely on the peak white value
+         else if (cb_luma_frame_settings.DisplayMode > 0 && cb_luma_frame_settings.DisplayMode < 2)
          {
             cb_luma_frame_settings.ScenePeakWhite = device_data.default_user_peak_white;
          }
@@ -6995,12 +6996,18 @@ namespace
                         bool dummy_bool;
                         IsHDRSupportedAndEnabled(game_window, dummy_bool, hdr_enabled_display, swapchain); // This should always succeed, so we don't fallback to SDR in case it didn't
                      }
-                     if (reshade::get_config_value(runtime, NAME, "ScenePeakWhite", cb_luma_frame_settings.ScenePeakWhite) && cb_luma_frame_settings.ScenePeakWhite <= 0.f)
+                     if (!reshade::get_config_value(runtime, NAME, "ScenePeakWhite", cb_luma_frame_settings.ScenePeakWhite) || cb_luma_frame_settings.ScenePeakWhite <= 0.f)
                      {
                         cb_luma_frame_settings.ScenePeakWhite = device_data.default_user_peak_white;
                      }
-                     reshade::get_config_value(runtime, NAME, "ScenePaperWhite", cb_luma_frame_settings.ScenePaperWhite);
-                     reshade::get_config_value(runtime, NAME, "UIPaperWhite", cb_luma_frame_settings.UIPaperWhite);
+                     if (!reshade::get_config_value(runtime, NAME, "ScenePaperWhite", cb_luma_frame_settings.ScenePaperWhite))
+                     {
+                        cb_luma_frame_settings.ScenePaperWhite = default_paper_white;
+                     }
+                     if (!reshade::get_config_value(runtime, NAME, "UIPaperWhite", cb_luma_frame_settings.UIPaperWhite))
+                     {
+                        cb_luma_frame_settings.UIPaperWhite = default_paper_white;
+                     }
                      // Align all the parameters for the SDR on HDR mode (the game paper white can still be changed)
                      if (display_mode >= 2)
                      {
@@ -7011,7 +7018,7 @@ namespace
                   }
                   else
                   {
-                     cb_luma_frame_settings.ScenePeakWhite = display_mode == 0 ? srgb_white_level : default_paper_white;
+                     cb_luma_frame_settings.ScenePeakWhite = display_mode == 0 ? srgb_white_level : (display_mode >= 2 ? default_paper_white : default_peak_white);
                      cb_luma_frame_settings.ScenePaperWhite = display_mode == 0 ? srgb_white_level : default_paper_white;
                      cb_luma_frame_settings.UIPaperWhite = display_mode == 0 ? srgb_white_level : default_paper_white;
                   }
@@ -7104,7 +7111,7 @@ namespace
                {
                   if (cb_luma_frame_settings.ScenePeakWhite == device_data.default_user_peak_white)
                   {
-                     reshade::set_config_value(runtime, NAME, "ScenePeakWhite", 0.f);
+                     reshade::set_config_value(runtime, NAME, "ScenePeakWhite", 0.f); // Store it as 0 to highlight that it's default (whatever the current or next display peak white is)
                   }
                   else
                   {
@@ -8102,6 +8109,7 @@ void Init(bool async)
    shader_hashes_SSDO_Blur.pixel_shaders.emplace(std::stoul("1023CD1B", nullptr, 16));
    //TODOFT: once we have collected 100% of the game shaders, update these hashes lists, and make global functions to convert hashes between string and int
 
+   cb_luma_frame_settings.DisplayMode = 1; // Default to HDR in case we had no prior config, it will be automatically disabled if the current display doesn't support it (when the swapchain is created, which should be guaranteed to be after)
    cb_luma_frame_settings.ScenePeakWhite = default_peak_white;
    cb_luma_frame_settings.ScenePaperWhite = default_paper_white;
    cb_luma_frame_settings.UIPaperWhite = default_paper_white;
@@ -8149,7 +8157,7 @@ void Init(bool async)
 
       if (reshade::get_config_value(runtime, NAME, "ScenePeakWhite", cb_luma_frame_settings.ScenePeakWhite) && cb_luma_frame_settings.ScenePeakWhite <= 0.f)
       {
-         const std::shared_lock lock(s_mutex_device); // This is not completely safe as the write to "default_user_peak_white" isn't protected by this mutex but it's fine
+         const std::shared_lock lock(s_mutex_device); // This is not completely safe as the write to "default_user_peak_white" isn't protected by this mutex but it's fine, it shouldn't have been written yet when we get here
          cb_luma_frame_settings.ScenePeakWhite = global_devices_data.empty() ? default_peak_white : global_devices_data[0]->default_user_peak_white;
       }
       reshade::get_config_value(runtime, NAME, "ScenePaperWhite", cb_luma_frame_settings.ScenePaperWhite);
