@@ -25,6 +25,8 @@ Windows 11 SDK 10.0.26100.0 (older versions work, but don't support HDR as good)
 - Vcpkg package dependencies are forced to the version I tested the mod on, upgrading is possible but there seem to be no issues.
 - There's some warnings in the DKUtil code, we haven't fixed them as they seem harmless.
 - The mod also comes with some replaced game files. These are packaged in ".pak" files in CryEngine, and they are simple zips (they can be extracted and re-compressed as zip).
+- This mod is a good template for any other deep graphic refactor of DX11 games.
+- Install the latest VC++ redist before running the code (https://aka.ms/vs/17/release/vc_redist.x64.exe), we enforced users to update to the latest versions, but "_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR" could be defined to avoid that.
 
 # Shaders development
 - The mod automatically dumps the game's shaders in development mode.

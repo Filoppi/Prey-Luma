@@ -8,4 +8,6 @@ PostAA.cfx PostAAComposites_PS (some permutations?)
 DeferredShading.cfx ShadowMaskGenPS (_RT_SCENE_SELECTION and _RT_SAMPLE2)
 LensOptics.cfx (lensGhostPS (ghostSpriteTiles, HDRParams) (_RT_SAMPLE3), ChromaticRingPS (HDRParams), CameraOrbsPS permutations? (HDRParams) (probably unused), CameraLensPS permutations? (HDRParams) (probably unused), some vertex shaders permutations (xform))
 SkyHDR (some permutation)
+Depth of Field? (seemengly unused)
 Other permutations within functions of common headers? Try to lower the quality settings to catch other shaders (sunshafts, BinocularView, ...).
+All DLC new and changes shaders? Diffing the shader caches paks can help show them

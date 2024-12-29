@@ -769,12 +769,13 @@
               </Widget>
             </ArkOptionAttribute>
             -->
-            <!-- Optional sharpening. Luma already has AMD RCAS running after TAA, which should be enough, but this adds a second sharpening pass for users that wanted it. This can go beyond 1 but it looks terrible -->
+            <!-- Optional sharpening. Luma already has AMD RCAS running after TAA, which should be enough, but this adds a second sharpening pass for users that wanted it. This can go beyond 1 but it looks terrible. Disabled as we've exposed multiple sharpening settings for users ("POST_TAA_SHARPENING_TYPE")
             <ArkOptionAttribute Action="r_Sharpening" Label="Additional Sharpening" Default="0" SetOnChange="true">
               <Widget>
                 <ArkOptionSlider Min="0.0" Max="1.0" Decimals="2" Unit="0.05" Normalize="true" />
               </Widget>
             </ArkOptionAttribute>
+				-->
             <!-- Not compatible with LUMA (probably because it upgrades textures to formats that don't support MSAA (in case it used that), or simply their code was hardcoded for certain texture formats (or because we missed replacing some MSAA render targets with HDR versions) 
             <ArkOptionAttribute Action="r_supersampling" Label="Supersampling (Experimental)" Default="0" SetOnChange="true" Platform="PC">
               <Widget>
