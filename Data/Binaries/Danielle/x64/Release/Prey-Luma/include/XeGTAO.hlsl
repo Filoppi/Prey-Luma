@@ -47,6 +47,7 @@
 #define XE_GTAO_FP32_DEPTHS
 // LUMA FT: this doesn't seem to do anything in DX11, also it doesn't work with "XE_GTAO_FP32_DEPTHS"
 //#define XE_GTAO_USE_HALF_FLOAT_PRECISION 1
+#define XE_GTAO_EXTREME_QUALITY 0
 
 // cpp<->hlsl mapping
 #define Matrix4x4       float4x4
@@ -74,9 +75,11 @@ struct GTAOConstants
     Vector2                 SampleUVClamp;                      // 1
     Vector2                 SampleScaledUVClamp;                // 1
 
-#if 1 // LUMA FT: changed to support Prey
+#if 1 // LUMA FT: changed to support Prey (make sure to align these by 64 bits (float2))
     float                   DepthFar;
-    float                   Padding0;
+    float                   RadiusScalingMinDepth;
+    float                   RadiusScalingMaxDepth;
+    float                   RadiusScalingMultiplier;
 #else
     Vector2                 DepthUnpackConsts;
 #endif
@@ -111,7 +114,7 @@ struct GTAOConstants
 #define XE_GTAO_DEFAULT_FALLOFF_RANGE                   (0.615f  )  // distant samples contribute less
 #define XE_GTAO_DEFAULT_SAMPLE_DISTRIBUTION_POWER       (2.0f    )  // small crevices more important than big surfaces. Set to 2.1 for even better quality, at some performance cost
 #define XE_GTAO_DEFAULT_THIN_OCCLUDER_COMPENSATION      (0.0f    )  // the new 'thickness heuristic' approach
-#define XE_GTAO_DEFAULT_FINAL_VALUE_POWER               (2.2f    )  // modifies the final ambient occlusion value using power function - this allows some of the above heuristics to do different things
+#define XE_GTAO_DEFAULT_FINAL_VALUE_POWER               (2.2f    )  // modifies the final ambient occlusion value using power function - this allows some of the above heuristics to do different things (not exactly related to display's 2.2 gamma)
 #define XE_GTAO_DEFAULT_DEPTH_MIP_SAMPLING_OFFSET       (3.30f   )  // main trade-off between performance (memory bandwidth) and quality (temporal stability is the first affected, thin objects next)
 
 // LUMA FT: changed to 1 to be neutral, this only works if we have one filtering pass and the AO pass RT texture is float and not UNORM
@@ -330,7 +333,7 @@ float4 XeGTAO_MainPass( float2 pixCoord, lpfloat sliceCount, lpfloat stepsPerSli
     Texture2D<float> sourceViewspaceScaledDepth,
 #endif
     SamplerState depthSampler, out float packedEdges )
-{                                                                       
+{
     float2 normalizedScreenPos = pixCoord * consts.ScaledViewportPixelSize; // 0 Up Left, 1 Bottom Right. Always matches the center of a texel
     pixCoord -= 0.5; // For depth gather/samples (given that gather needs to happen in the center of 4 texels)
 
@@ -389,7 +392,10 @@ float4 XeGTAO_MainPass( float2 pixCoord, lpfloat sliceCount, lpfloat stepsPerSli
     const lpfloat thinOccluderCompensation  = (lpfloat)XE_GTAO_DEFAULT_THIN_OCCLUDER_COMPENSATION;
     const lpfloat falloffRange              = (lpfloat)XE_GTAO_DEFAULT_FALLOFF_RANGE * effectRadius;
 #else
-    const lpfloat effectRadius              = (lpfloat)consts.EffectRadius * (lpfloat)consts.RadiusMultiplier;
+    lpfloat effectRadius              = (lpfloat)consts.EffectRadius * (lpfloat)consts.RadiusMultiplier;
+    // LUMA FT: dynamically scale the radius here, to make it "bigger" when it's far, otherwise the falloff below will have a tiny range in the distance (somehow that depends on the depth length?), making AO near invisible
+    float radiusIncrease = remap(clamp(viewspaceZ, consts.RadiusScalingMinDepth, consts.RadiusScalingMaxDepth), consts.RadiusScalingMinDepth, consts.RadiusScalingMaxDepth, 1.0, consts.RadiusScalingMultiplier);
+    effectRadius *= radiusIncrease;
     const lpfloat sampleDistributionPower   = (lpfloat)consts.SampleDistributionPower;
     const lpfloat thinOccluderCompensation  = (lpfloat)consts.ThinOccluderCompensation;
     const lpfloat falloffRange              = (lpfloat)consts.EffectFalloffRange * effectRadius;
@@ -414,18 +420,21 @@ float4 XeGTAO_MainPass( float2 pixCoord, lpfloat sliceCount, lpfloat stepsPerSli
         const lpfloat noiseSample = (lpfloat)localNoise.y;
 
         // quality settings / tweaks / hacks
-        const lpfloat pixelTooCloseThreshold  = 1.3;      // if the offset is under approx pixel size (pixelTooCloseThreshold), push it out to the minimum distance
+        const lpfloat pixelTooCloseThreshold  = 1.3;      // if the offset is under approx pixel size (pixelTooCloseThreshold), push it out to the minimum distance // LUMA FT: this seems like a sensible default, there's no need to change it
 
         // approx viewspace pixel size at pixCoord; approximation of NDCToViewspace( normalizedScreenPos.xy + consts.ViewportPixelSize.xy, pixCenterPos.z ).xy - pixCenterPos.xy;
-        const float2 pixelDirRBViewspaceSizeAtCenterZ = viewspaceZ.xx * consts.NDCToViewMul_x_PixelSize;
+        const float2 pixelDirRBViewspaceSizeAtCenterZ = viewspaceZ * consts.NDCToViewMul_x_PixelSize;
 
         // Use the x value of "pixelDirRBViewspaceSizeAtCenterZ", given it's the pixel size scaled by the FOV tan, so unless the FOV was stretched, it'd have the same exact value for x and y (so this supports arbitrary aspect ratios)
         lpfloat screenspaceRadius   = effectRadius / (lpfloat)pixelDirRBViewspaceSizeAtCenterZ.x;
 
-        // fade out for small screen radii
-        visibility += saturate((10 - screenspaceRadius)/100)*0.5; //TODOFT: test arbitrary values
+#if 1 // LUMA FT: this can be disabled as it doesn't seem to do much helpful
+        // fade out for small screen radii (so far in the distance) (values have been found heuristically)
+        visibility += saturate((10.0 - screenspaceRadius)/100.0)*0.5;
+#endif
 
-#if 0   // sensible early-out for even more performance. This seems to skip drawing AO in the far distance (not close by as the name seems to imply) // LUMA FT: disabled as Prey is almost always indoor and has not much stuff far (nor very close to the camera), except the sky, which is already earlied out above. Also we don't need the "[branch]" indicator
+#if 0 // LUMA FT: disabled as Prey is almost always indoor and has not much stuff far (nor very close to the camera), except the sky, which is already earlied out above. Also we don't need the "[branch]" indicator
+        // sensible early-out for even more performance. This seems to skip drawing AO in the far distance (not close by as the name seems to imply) 
         if( screenspaceRadius < pixelTooCloseThreshold )
         {
             return float4(viewspaceNormal, 0.0);
@@ -547,38 +556,63 @@ float4 XeGTAO_MainPass( float2 pixCoord, lpfloat sliceCount, lpfloat stepsPerSli
                 lpfloat3 sampleHorizonVec1 = (lpfloat3)(sampleDelta1 / sampleDist1);
 
                 // any sample out of radius should be discarded - also use fallof range for smooth transitions; this is a modified idea from "4.3 Implementation details, Bounding the sampling area"
-#if XE_GTAO_USE_DEFAULT_CONSTANTS != 0 && XE_GTAO_DEFAULT_THIN_OBJECT_HEURISTIC == 0
-                lpfloat weight0         = saturate( sampleDist0 * falloffMul + falloffAdd );
-                lpfloat weight1         = saturate( sampleDist1 * falloffMul + falloffAdd );
+#if XE_GTAO_USE_DEFAULT_CONSTANTS != 0
+                bool ignoreThinObjectHeuristic = true;
 #else
-                // this is our own thickness heuristic that relies on sooner discarding samples behind the center
-                lpfloat falloffBase0    = length( lpfloat3(sampleDelta0.x, sampleDelta0.y, sampleDelta0.z * (1+thinOccluderCompensation) ) );
-                lpfloat falloffBase1    = length( lpfloat3(sampleDelta1.x, sampleDelta1.y, sampleDelta1.z * (1+thinOccluderCompensation) ) );
-                lpfloat weight0         = saturate( falloffBase0 * falloffMul + falloffAdd );
-                lpfloat weight1         = saturate( falloffBase1 * falloffMul + falloffAdd );
+                bool ignoreThinObjectHeuristic = thinOccluderCompensation == 0.0; // Statically defined in Luma
 #endif
+
+                lpfloat weight0;
+                lpfloat weight1;
+                if (ignoreThinObjectHeuristic)
+                {
+                    weight0         = saturate( sampleDist0 * falloffMul + falloffAdd );
+                    weight1         = saturate( sampleDist1 * falloffMul + falloffAdd );
+                }
+                else
+                {
+                    // this is our own thickness heuristic that relies on sooner discarding samples behind the center
+                    lpfloat falloffBase0    = length( lpfloat3(sampleDelta0.x, sampleDelta0.y, sampleDelta0.z * (1+thinOccluderCompensation) ) );
+                    lpfloat falloffBase1    = length( lpfloat3(sampleDelta1.x, sampleDelta1.y, sampleDelta1.z * (1+thinOccluderCompensation) ) );
+                    weight0         = saturate( falloffBase0 * falloffMul + falloffAdd );
+                    weight1         = saturate( falloffBase1 * falloffMul + falloffAdd );
+                }
 
                 // sample horizon cos
                 lpfloat shc0 = (lpfloat)dot(sampleHorizonVec0, viewVec);
                 lpfloat shc1 = (lpfloat)dot(sampleHorizonVec1, viewVec);
 
                 // discard unwanted samples
-                shc0 = lerp( lowHorizonCos0, shc0, weight0 ); // this would be more correct but too expensive: cos(lerp( acos(lowHorizonCos0), acos(shc0), weight0 ));
-                shc1 = lerp( lowHorizonCos1, shc1, weight1 ); // this would be more correct but too expensive: cos(lerp( acos(lowHorizonCos1), acos(shc1), weight1 ));
-
-                // thickness heuristic - see "4.3 Implementation details, Height-field assumption considerations"
-#if 0   // (disabled, not used) this should match the paper
-                lpfloat newhorizonCos0 = max( horizonCos0, shc0 );
-                lpfloat newhorizonCos1 = max( horizonCos1, shc1 );
-                horizonCos0 = (horizonCos0 > shc0)?( lerp( newhorizonCos0, shc0, thinOccluderCompensation ) ):( newhorizonCos0 );
-                horizonCos1 = (horizonCos1 > shc1)?( lerp( newhorizonCos1, shc1, thinOccluderCompensation ) ):( newhorizonCos1 );
-#elif 0 // (disabled, not used) this is slightly different from the paper but cheaper and provides very similar results
-                horizonCos0 = lerp( max( horizonCos0, shc0 ), shc0, thinOccluderCompensation );
-                horizonCos1 = lerp( max( horizonCos1, shc1 ), shc1, thinOccluderCompensation );
-#else   // this is a version where thicknessHeuristic is completely disabled
-                horizonCos0 = max( horizonCos0, shc0 );
-                horizonCos1 = max( horizonCos1, shc1 );
+#if !XE_GTAO_EXTREME_QUALITY
+                shc0 = lerp( lowHorizonCos0, shc0, weight0 );
+                shc1 = lerp( lowHorizonCos1, shc1, weight1 );
+#else // this would be more correct but too expensive
+                shc0 = cos(lerp( acos(lowHorizonCos0), acos(shc0), weight0 ));
+                shc1 = cos(lerp( acos(lowHorizonCos1), acos(shc1), weight1 ));
 #endif
+
+#if !XE_GTAO_EXTREME_QUALITY
+                ignoreThinObjectHeuristic = true;
+#endif
+                // thickness heuristic - see "4.3 Implementation details, Height-field assumption considerations"
+                if (!ignoreThinObjectHeuristic)
+                {
+#if 1   // (disabled, not used) this should match the paper
+                    lpfloat newhorizonCos0 = max( horizonCos0, shc0 );
+                    lpfloat newhorizonCos1 = max( horizonCos1, shc1 );
+                    horizonCos0 = (horizonCos0 > shc0) ? lerp( newhorizonCos0, shc0, thinOccluderCompensation ) : newhorizonCos0;
+                    horizonCos1 = (horizonCos1 > shc1) ? lerp( newhorizonCos1, shc1, thinOccluderCompensation ) : newhorizonCos1;
+#else // (disabled, not used) this is slightly different from the paper but cheaper and provides very similar results
+                    horizonCos0 = lerp( max( horizonCos0, shc0 ), shc0, thinOccluderCompensation );
+                    horizonCos1 = lerp( max( horizonCos1, shc1 ), shc1, thinOccluderCompensation );
+#endif
+                }
+                // this is a version where thinOccluderCompensation (thickness Heuristic) is completely disabled
+                else
+                {
+                    horizonCos0 = max( horizonCos0, shc0 );
+                    horizonCos1 = max( horizonCos1, shc1 );
+                }
             }
 
 #if 1       // I can't figure out the slight overdarkening on high slopes, so I'm adding this fudge - in the training set, 0.05 is close (PSNR 21.34) to disabled (PSNR 21.45)
@@ -588,7 +622,7 @@ float4 XeGTAO_MainPass( float2 pixCoord, lpfloat sliceCount, lpfloat stepsPerSli
             // line ~27, unrolled
             lpfloat h0 = -XeGTAO_FastACos((lpfloat)horizonCos1);
             lpfloat h1 = XeGTAO_FastACos((lpfloat)horizonCos0);
-#if 0       // we can skip clamping for a tiny little bit more performance
+#if XE_GTAO_EXTREME_QUALITY       // we can skip clamping for a tiny little bit more performance
             h0 = n + clamp( h0-n, (lpfloat)-XE_GTAO_PI_HALF, (lpfloat)XE_GTAO_PI_HALF );
             h1 = n + clamp( h1-n, (lpfloat)-XE_GTAO_PI_HALF, (lpfloat)XE_GTAO_PI_HALF );
 #endif

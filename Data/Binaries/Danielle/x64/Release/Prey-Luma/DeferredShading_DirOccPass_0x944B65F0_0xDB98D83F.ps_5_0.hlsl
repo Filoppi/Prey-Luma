@@ -138,13 +138,13 @@ float4 GTAO(float4 WPos, float4 inBaseTC, out float edges)
 	consts.NoiseIndex = (denoisePasses>0) ? (frameCounter % 64) : 0; // DLSS (DLAA) as a baseline has a cycle of 8 jitters (in 8 frames), but that's not enough for GTAO, though setting it to 8 could make it a bit more stable, it'd be of lower quality
 	consts.FinalValuePower = 0.4125 / (stepsPerSlice ? sqrt(stepsPerSlice / 3.0) : 1); // The most important value. Higher values make AO darker. We modulate by "stepsPerSlice" to keep the intensity consistent.
 	consts.DepthMIPSamplingOffset = XE_GTAO_DEFAULT_DEPTH_MIP_SAMPLING_OFFSET;
-	consts.ThinOccluderCompensation = XE_GTAO_DEFAULT_THIN_OCCLUDER_COMPENSATION; // XeGTAO default is zero (none). We found that to be fine for Prey too.
+	consts.ThinOccluderCompensation = XE_GTAO_DEFAULT_THIN_OCCLUDER_COMPENSATION; // XeGTAO default is zero (none). Should be between 0 and 1 apparently. We found that to be fine for Prey too (there's not many small objects in Prey, everything is pretty big, even if indoor), enabling this causes more visual mistakes than not, with occlusions only starting to appear after it'd be expected to. Enable "XE_GTAO_EXTREME_QUALITY" if this is > 0, and possibly increase "FinalValuePower".
 	consts.SampleDistributionPower = XE_GTAO_DEFAULT_SAMPLE_DISTRIBUTION_POWER;
-	consts.EffectFalloffRange = XE_GTAO_DEFAULT_FALLOFF_RANGE;
+	consts.EffectFalloffRange = XE_GTAO_DEFAULT_FALLOFF_RANGE; // This is not related to the current depth value. The higher the value, the larger the falloff radius will be. Expected range is 0-1 (disabled at 0). The default value looks ok, but we could go either a bit higher or lower too.
 	// The second most important value.
 #if 0
-	consts.RadiusMultiplier = XE_GTAO_DEFAULT_RADIUS_MULTIPLIER;
-	consts.EffectRadius = 0.5f; // The 0.5 default from GTAO code is too small for Prey, ambient occlusion from larger objects is completely gone
+	consts.RadiusMultiplier = XE_GTAO_DEFAULT_RADIUS_MULTIPLIER; // This goes to multiply the radius directly, so it's basically like changing the radius directly here
+	consts.EffectRadius = 0.5f; // The 0.5 default from GTAO code is too small for Prey, ambient occlusion from larger objects is completely gone. This is probably in radians.
 #else // We found that using the game's native radius also looks good (and in line with SSDO), there's a chance it's dynamically changed by scene so it might be good to follow it
 	// Retrieve back the original radius given it was pre-multiplied by these factors ("r_ssdoRadius" cvar, defaulted to 1.2).
 	// Note that SSDO also multiplied the radius by 0.15 for some bands.
@@ -160,6 +160,9 @@ float4 GTAO(float4 WPos, float4 inBaseTC, out float edges)
 #endif // SSAO_RADIUS >= 2
 #endif // SSAO_RADIUS <= 0
 #endif
+    consts.RadiusScalingMinDepth = 8.0; // In meters (or something close)
+    consts.RadiusScalingMaxDepth = 1000.0;
+    consts.RadiusScalingMultiplier = 55.0; // Heuristically found to match vanilla SSDO behaviour in the distance (SSDO can still be a lot stronger far, but also uglier and more random)
 	consts.MinVisibility = 0.0; //TODOFT: restore it to 0.03 as GTAO had? test it, but it seems fine as 0
 	
 #if 1 // Identical but faster option (if we calculated "projectionMatrix" for any other reason), possibly more reliable
@@ -441,7 +444,7 @@ void main(float4 WPos : SV_Position0, float4 inBaseTC : TEXCOORD0, out float4 ou
 
 		// Accumulate AO and bent normal as SH basis
 		sh2.w += dot( fObscurance, 1.0 );
-		sh2.xyz += fObscurance.x * vSample[0] + fObscurance.y * vSample[1] + fObscurance.z * vSample[2] + fObscurance.w * vSample[3];
+		sh2.xyz += fObscurance.x * vSample[0] + fObscurance.y * vSample[1] + fObscurance.z * vSample[2] + fObscurance.w * vSample[3]; // See "PREMULTIPLY_BENT_NORMALS"
 	}
 	
 	// LUMA FT: fixed hardcoded division by ~8 samples and moved this before view matrix multiplication (the order doesn't matter).
@@ -463,7 +466,7 @@ void main(float4 WPos : SV_Position0, float4 inBaseTC : TEXCOORD0, out float4 ou
 #endif
 
 	// LUMA FT: SSDO bent normals ("sh2.xyz") aren't "normalized" as they are pre-multiplied by the occlusion (see "PREMULTIPLY_BENT_NORMALS")
-#if 0 // LUMA FT: disabled as this isn't necessary, Luma updates the RT to FP16, and the next filtering pass could still retain the extra information
+#if 0 // LUMA FT: disabled as this isn't necessary, Luma updates the RT to FP16, and the next filtering pass could still retain the extra information for blending before clipping it after
 	sh2.w = saturate(sh2.w); // Saturate as visibility beyond 0-1 makes no sense
 #endif
 #if !PREMULTIPLY_BENT_NORMALS
