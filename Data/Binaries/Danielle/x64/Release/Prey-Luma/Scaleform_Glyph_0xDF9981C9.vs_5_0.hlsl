@@ -33,7 +33,7 @@ void main(
     o0.xyz /= o0.w; // From clip to NDC space
     o0.w = 1; // no need to convert it back to clip space, the GPU would do it again anyway
     o0.y = -o0.y; // Adapt to normal NDC coordinates
-    o0.xy = PerfectPerspectiveLensDistortion_Inverse(o0.xy, 1.0 / CV_ProjRatio.z, CV_ScreenSize.xy, true);
+    o0.xy = PerfectPerspectiveLensDistortion_Inverse(o0.xy, 1.0 / CV_ProjRatio.z, CV_ScreenSize.xy, true); //TODOFT4: this is bad when pressing Z and seeing UI ring on screen
     o0.y = -o0.y;
   }
 #endif

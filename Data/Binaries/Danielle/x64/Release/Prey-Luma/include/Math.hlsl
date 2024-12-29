@@ -40,6 +40,14 @@ float3 safeDivision(float3 quotient, float3 dividend, int fallbackMode = 0)
     return float3(safeDivision(quotient.x, dividend.x, fallbackMode), safeDivision(quotient.y, dividend.y, fallbackMode), safeDivision(quotient.z, dividend.z, fallbackMode));
 }
 
+float inverseLerp(float a, float b, float value) {
+  // Avoid division by zero
+  if (a == b) {
+    return 0.0;
+  }
+  return (value - a) / (b - a);
+}
+
 float safePow(float base, float exponent)
 {
     return pow(abs(base), exponent) * sign(base);

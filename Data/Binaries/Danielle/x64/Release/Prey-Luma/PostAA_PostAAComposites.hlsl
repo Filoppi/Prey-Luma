@@ -251,6 +251,7 @@ void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
   sharpenAmount = min(sharpenAmount, 1.0);
 #endif // !ENABLE_SHARPENING
 
+//TODOFT: replace other sharpening implementations with RCAS? They aren't really used much
 #if ENABLE_SHARPENING && POST_TAA_SHARPENING_TYPE >= 2 // LUMA FT: added RCAS instead of basic sharpening
 
   float normalizationRange = 1.0;
@@ -259,15 +260,17 @@ void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
 #endif
 
   sharpenAmount -= 1.0; // Scale to the expected range
-  //TODOFT: expose extra post TAA/DLSS sharpening multiplier (and hide the newly exposed sharpening setting?, replace other sharpening implementations with RCAS?)
-  if (LumaSettings.DLSS) // Heuristically found scale to match the native game's TAA sharpness with DLAA
+  if (LumaSettings.DLSS) // Heuristically found scale to match the native game's TAA sharpness with DLAA (maybe we go a bit stronger)
   {
-    sharpenAmount *= 2.0;
+    sharpenAmount *= 2.5;
   }
   if (LumaSettings.LensDistortion) // Heuristically found (it makes little difference but helps a bit)
   {
-    sharpenAmount *= 2.25;
+    sharpenAmount *= 1.5;
   }
+#if POST_TAA_SHARPENING_TYPE >= 3
+  sharpenAmount *= 2.0;
+#endif
   //TODO LUMA: pass in motion vectors to either increase or reduce sharpening on moving pixels (increase if it they were blurry, decreate it if they had sharpening artifacts)
   // This is probably fine, this code path is never used for "blurring", it's always exclusively for sharpening.
   // This should work independently of "POST_PROCESS_SPACE_TYPE".
@@ -275,6 +278,7 @@ void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
 
 #else // POST_TAA_SHARPENING_TYPE <= 1
 
+  // We can't make "sharpenAmount" any higher or it will create ringing artifacts and look awful in general
   if (LumaSettings.LensDistortion) // Heuristically found
   {
     sharpenAmount *= 1.25;
@@ -309,7 +313,7 @@ void PostAAComposites_PS(float4 WPos, float4 baseTC, out float4 outColor)
   // Apply lens composite
   // LUMA FT: with DLSS, lens optics are also rendered at full resolution (we distort their UV too!)
   // We had not distorted them in the previous pass because their distortion quality doesn't really matter and can be approximate.
-  // Ideally maybe we shouldn't distort these, but to do that we'd need to change their vertices etc, which we don't have easy access to (if we don't distort them, they won't match the scene!)
+  // Ideally maybe we shouldn't distort these through UV sampling distortion as they emulate camera and eyes effects, but to do that we'd need to change their vertices etc, which we can't bother to do (if we don't distort them, they won't match the scene, so we have to do that somewhere!).
   ApplyLensOptics(outColor, distortedScaledTC.xy, invRenderingRes, fExposure);
 
 // LUMA FT: moved vignette and film grain after lens optics, as especially with "ENABLE_LENS_OPTICS_HDR", they now render in "HDR"

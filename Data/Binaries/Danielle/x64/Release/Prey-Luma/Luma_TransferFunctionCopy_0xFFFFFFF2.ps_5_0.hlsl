@@ -69,6 +69,13 @@ float4 main(float4 pos : SV_Position0) : SV_Target0
     }
 #endif
 
+#if 0 // TEST: zoom into the image to analyze it
+	float targetWidth;
+	float targetHeight;
+	sourceTexture.GetDimensions(targetWidth, targetHeight);
+	pos.xy = pos.xy / 2.0 + float2(targetWidth, targetHeight) / 4.0;
+#endif
+
 	float4 color = sourceTexture.Load((int3)pos.xyz);
 
 	// SDR: In this case, paper white (game and UI) would have been 80 nits (neutral for SDR, thus having a value of 1)

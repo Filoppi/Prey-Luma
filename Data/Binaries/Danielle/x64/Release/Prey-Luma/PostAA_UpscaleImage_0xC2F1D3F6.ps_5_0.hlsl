@@ -8,9 +8,7 @@ cbuffer PER_BATCH : register(b0)
 	float4 vParams : packoffset(c0);
 }
 
-#if ENABLE_DITHERING && DELAY_DITHERING
 #include "include/CBuffer_PerViewGlobal.hlsl"
-#endif
 
 SamplerState _tex0_s : register(s0); // Bilinear
 Texture2D<float4> _tex0 : register(t0);
@@ -38,18 +36,19 @@ void main(
 
 	if (!LumaSettings.DLSS) // LUMA FT: DLSS already uspcaled the image, don't upscale it again
 	{
-		float2 texCoords = inBaseTC.xy * vParams.xy + 0.5;
+		float2 texCoords = (inBaseTC.xy * vParams.xy) + 0.5;
 		float2 intPart = floor(texCoords);
 		float2 f = texCoords - intPart;
 		
 		// Apply smoothstep function to get a mixture between nearest neighbor and linear filtering
-		f = f*f * (3 - 2*f);
+		f = f*f * (3.0 - 2.0*f);
 
 		texCoords = intPart + f;
 		texCoords = (texCoords - 0.5) / vParams.xy;
 		texCoords = saturate(texCoords * vParams.zw);
 	
-		outColor = _tex0.Sample(_tex0_s, texCoords);
+		float2 UVClamp = CV_HPosScale.xy - CV_ScreenSize.zw; // LUMA FT: fix sampling going beyond the limit, still, it seems like the texture might be shifted by half or one texel? It doesn't really matter as DLSS fixed all of this anyway
+		outColor = _tex0.Sample(_tex0_s, min(texCoords, UVClamp));
 	}
 	else
 	{

@@ -195,7 +195,7 @@ public:
 
 		pCD3D9Renderer = reinterpret_cast<RE::CD3D9Renderer*>(GetAddress(CD3D9Renderer));
 		if (gameVersion == Offsets::GameVersion::PreySteam) {
-			cvar_r_AntialiasingMode = reinterpret_cast<uint32_t*>(baseAddress + 0x2B1C750); // TODO: expose this to ImGUI so we can tell the user if DLSS can engage correctly or not?
+			cvar_r_AntialiasingMode = reinterpret_cast<uint32_t*>(baseAddress + 0x2B1C750); // TODO: expose this to ImGUI so we can tell the user if DLSS can engage correctly or not? Nah, we can already tell through other ways
 		}
 
 		return true;

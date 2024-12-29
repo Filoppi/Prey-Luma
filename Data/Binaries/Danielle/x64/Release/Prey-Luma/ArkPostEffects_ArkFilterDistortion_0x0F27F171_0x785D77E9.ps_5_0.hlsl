@@ -28,7 +28,7 @@ Texture2D<float4> screenTex : register(t0);
 // ArkFilterDistortionPS
 // Screen space distortion effect. This is mostly already corrected by the aspect ratio and supports ultrawide fine:
 // in UW, the distortion is focused around the 16:9 part of the image and it plays out closely there. 
-// This runs after AA and upscaling.
+// This runs after AA and upscaling, which is not great, as film grain and vignette would be stretched, but usually there aren't any when this is in use.
 // Note that 3D world to 2D screen mapped icons are distorted with the same code as here, so further changing this distortion will shift their placement, breaking their alignment (which actually already is?),
 // Luma could fix this by intercepting the triangles the UI tries to draw that are projected to the screen from world space, but it's not worth it.
 void main(
@@ -98,6 +98,8 @@ void main(
 	// Bulging / Shrinkage
 #if _RT_SAMPLE1 || _RT_SAMPLE2
 	{
+		// LUMA FT: Note that at higher aspect ratios, this distortion completely stops at a visible point, so it looks weird when moving the camera without the vignette or reticle effect that it draws on screen.
+
 		float2 vCurrentForBulging = float2(vCurrentOffset.x * fBulgeLensAspect, vCurrentOffset.y);
 
 		float r2 = dot(vCurrentForBulging, vCurrentForBulging);

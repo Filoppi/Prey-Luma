@@ -191,7 +191,7 @@
 //TODOFT0: disable all dev/debug settings below, even for dev mode
 //TODOFT: add test setting to disable all exposure, and see if the game looks more "HDR" (though tonemapping would break...?)
 //TODOFT0: fix formatting/spacing of all shaders
-//TODOFT: test reflections mips flickering or disappearing?
+//TODOFT: test reflections mips flickering or disappearing? And glass flickering?
 //TODOFT4: review "D3D11 ERROR: ID3D11DeviceContext::Dispatch: The resource return type for component 0 declared in the shader code (FLOAT) is not compatible with the resource type bound to Unordered Access View slot 0 of the Compute Shader unit (UNORM). This mismatch is invalid if the shader actually uses the view (e.g. it is not skipped due to shader code branching). [ EXECUTION ERROR #2097372: DEVICE_UNORDEREDACCESSVIEW_RETURN_TYPE_MISMATCH]"
 
 /////////////////////////////////////////

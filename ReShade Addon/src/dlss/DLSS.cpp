@@ -30,7 +30,7 @@
 
 namespace NGX
 {
-	const char* projectID = "d8238c51-1f2f-438d-a309-38c16e33c716"; // This needs to be a GUID. We generated a unique one. This isn't registered by NV.
+	const char* projectID = "d8238c51-1f2f-438d-a309-38c16e33c716"; // This needs to be a GUID. We generated a unique one. This isn't registered by NV. This was was generated for Prey.
 	const char* engineVersion = "1.0";
 
 	// DLSS "instance" per output resolution (and other settings)

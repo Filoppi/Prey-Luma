@@ -17,7 +17,7 @@ void main(
 
   r0.x = texMapV.Sample(texMapV_s, v1.xy).w;
   r0.x -= 128.f / 255.f;
-  //TODOFT4: revert this? (talk to lilium again) (we put "TEST_UI" around these to know what they are drawing, we could check if they were going out of range to tell the color space)
+  //TODOFT3: revert this? (talk to lilium again) (we put "TEST_UI" around these to know what they are drawing, we could check if they were going out of range to tell the color space)
   //Also specify that these are limited range.
   // LUMA FT: fixed wrong Y'Cb'Cr->RGB decode, decoding from/to BT.601 instead of BT.709 (supposedly the source was encoded to YCbCr with BT.709 correctly)
   r0.xy = float2(1.7927410602569580078125,0.532909333705902099609375) * r0.xx;

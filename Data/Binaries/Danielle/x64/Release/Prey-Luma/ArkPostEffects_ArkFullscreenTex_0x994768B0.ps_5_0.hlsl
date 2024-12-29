@@ -17,7 +17,7 @@ void main(
   float4 inBaseTC : TEXCOORD0,
   out float4 outColor : SV_Target0)
 {
-#if !ENABLE_POST_PROCESS
+#if !ENABLE_POST_PROCESS || !ENABLE_ARK_CUSTOM_POST_PROCESS
 	outColor = 0;
 	return;
 #endif

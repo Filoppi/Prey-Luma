@@ -135,6 +135,8 @@ float3 ReconstructWorldPos(uint2 WPos, float linearDepth, bool bRelativeToCamera
 
 float2 CalcPreviousTC(float2 _baseTC, float _depth)
 {
+	// LUMA FT: note that the character FP weapons use a different FOV and projection matrix (called "nearest" in code), so theoretically they should use a different reprojection matrix, but we don't have a mask for their texels,
+	// it doesn't seem to be a problem because they already have their values written in the dynamic objects velocity buffer.
 #if FORCE_MOTION_VECTORS_JITTERED
 	// LUMA FT: in this case, always used the jittered reprojection matrix, because we'll be removing jitters later.
 	// This isn't really necessary for the MVs generation from the depth buffer, but it unifies the jitter removal code path to work under dynamic motions MVs and depth buffer generated MVs.

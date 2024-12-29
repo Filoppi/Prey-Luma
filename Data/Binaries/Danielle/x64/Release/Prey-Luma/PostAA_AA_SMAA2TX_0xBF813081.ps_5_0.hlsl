@@ -27,7 +27,7 @@ void main(
 		uint3 pixelCoord = int3(inWPos.xy, 0);
 		const float depth = PostAA_DeviceDepthTex.Load(pixelCoord).r;
 		const float2 currTC = inBaseTC.xy;
-#if 0 // LUMA FT: this is possibly more accurate but we haven't tested it enough (the reprojection matrxi already includes jitters anyway)
+#if 0 // LUMA FT: an alternative version of the reprojection code that acknowledges the jitters within the UV, test shows that it looks identical, so it's disabled given it's unconventional and that the reprojection matrix already contains jitters
 		float2 jitters = LumaData.CameraJitters.xy * float2(0.5, -0.5);
 		float2 prevTC = CalcPreviousTC(currTC + jitters, depth) - jitters;
 #else
@@ -107,8 +107,11 @@ void main(
 #endif
 
 	const float2 currTC = inBaseTC.xy; // Non (de)jittered, used for reprojection with the previous frame, given that theoretically it should have the jitters normalized out of it
-	// LUMA FT: "CalcPreviousTC()" internally does not acknowledge the camera jitters difference between the current and previous frame, jitters were not included in any of the two matrices used to calculate "cbPostAA.matReprojection"
-#if 1 // LUMA FT: this is probably more accurate
+
+	// LUMA FT: "CalcPreviousTC()" internally does not acknowledge the camera jitters difference between the current and previous frame, in fact, jitters were not included in any of the two matrices used to calculate "cbPostAA.matReprojection".
+	// Though "FORCE_MOTION_VECTORS_JITTERED" is on, we use our own reprojection matrix which acknowledges jitters, as it seems to give better results all around, even if theoretically
+	// the previous TAA texture (that we are blending with) is a blend of previous frames so it can already be considered dejittered (history averaged out the jitters).
+#if !FORCE_MOTION_VECTORS_JITTERED // LUMA FT: this is probably more accurate for this case as it uses "cbPostAA.matReprojection". This won't jitter the previous TC, it simply acknowledges the jitters in the reprojection intermediary calculations! Testing shows that this makes no difference at all.
 	float2 prevTC = CalcPreviousTC(jitteredCurrTC, depth) - jitters;
 #else
 	float2 prevTC = CalcPreviousTC(currTC, depth);

@@ -771,7 +771,7 @@ float3 SampleLUTWithExtrapolation(LUT_TEXTURE_TYPE lut, SamplerState samplerStat
 			const float extrapolationRatio = safeDivision(distanceFromUnclampedToClampedUV_PQ, distanceFromClampedToCenteredUV_PQ, 0);
 			extrapolatedSample = PQ_to_Linear2(lerp(centeredSample_PQ, clampedSample_PQ, 1.0 + extrapolationRatio), GCT_MIRROR) * PQNormalizationFactor;
 
-#if DEVELOPMENT && 1
+#if DEVELOPMENT && 0
     bool oklab = LumaSettings.DevSetting06 >= 0.5;
 #else
     bool oklab = false;
@@ -832,7 +832,7 @@ float3 SampleLUTWithExtrapolation(LUT_TEXTURE_TYPE lut, SamplerState samplerStat
         derivedLUTCenteredColor = oklab_to_oklch(derivedLUTCenteredColor);
         extrapolatedDerivedLUTColor = oklab_to_oklch(extrapolatedDerivedLUTColor);
 
-#if DEVELOPMENT
+#if DEVELOPMENT && 0
         // Avoid flipping ab direction, if we reached white, stay on white.
         // We only do it on colors that have some chroma and brightness.
         if (LumaSettings.DevSetting05 >= 0.5)
@@ -1059,7 +1059,7 @@ float3 SampleLUTWithExtrapolation(LUT_TEXTURE_TYPE lut, SamplerState samplerStat
 
 			extrapolatedSample = PQ_to_Linear2(clampedSample_PQ + extrapolatedOffset, GCT_MIRROR) * PQNormalizationFactor;
       
-#if DEVELOPMENT && 1
+#if DEVELOPMENT && 0
     bool oklab = LumaSettings.DevSetting06 >= 0.5;
 #else
     bool oklab = false;
@@ -1094,7 +1094,7 @@ float3 SampleLUTWithExtrapolation(LUT_TEXTURE_TYPE lut, SamplerState samplerStat
 #endif
 
         extrapolationRatio = abs(extrapolationRatio); // This one is worse (more broken gradients), I can't explain why (what about with the last changes!???)
-#if DEVELOPMENT
+#if DEVELOPMENT && 0
         if (LumaSettings.DevSetting05 > 0.5) // Seems to look better even if it makes little sense
         {
           //float3 unclampedUV_PQ = Linear_to_PQ2(neutralLUTColorLinear / PQNormalizationFactor, GCT_MIRROR);

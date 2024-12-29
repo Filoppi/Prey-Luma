@@ -41,8 +41,13 @@ void main(float4 WPos : SV_Position0, float4 inBaseTC : TEXCOORD0, out float4 ou
     outColor = sourceTexture.Load(WPos.xyz);
 	borderAlpha = 0;
 #endif
-//TODOFT: could this benefit from running FSR 1 for upscaling/sharpening after? Probably not, seems fine!
-//TODOFT: why does this look awful if DLSS is off with DRS?
+
+	//TODO LUMA: could this benefit from running FSR 1 for upscaling/sharpening after? Not particularly, it seems fine with the settings we use, but in case... here's some open source implementations:
+	// https://github.com/GPUOpen-Effects/FidelityFX-FSR/blob/master/ffx-fsr/ffx_fsr1.h
+	// https://github.com/cdozdil/OptiScaler/blob/master/OptiScaler/shaders/fsr1/ffx_fsr1.h
+	// https://github.com/TreyM/SHADERDECK/blob/main/shaders/SHADERDECK/FSR1_2X.fx
+	// https://github.com/40163650/FSRForReShade
+	// https://github.com/Blinue/Magpie/blob/dev/src/Effects/FSR/FSR_EASU.hlsl
 
    	outColor.rgb = lerp(outColor.rgb, 0, borderAlpha); // Blend towards black as the border is black (we could ignore this if "CroppingFactor" was 1 but it doesn't matter)
 	outColor.a = 1.0 - borderAlpha; // Take advantage of the alpha texture to store whether this is a black texel (outside of the new lens distortion edges) (doesn't support R11G11B10F)
