@@ -1,5 +1,11 @@
 #pragma once
 
+// Needs to be defined before anybody else includes "cmath"
+#ifndef _USE_MATH_DEFINES
+#define _USE_MATH_DEFINES
+#endif
+
+#include <cmath>
 #include <array>
 
 std::array<unsigned int, 2> FindClosestIntegerResolutionForAspectRatio(double width, double height, double aspectRatio)

@@ -24,6 +24,8 @@
 
 #pragma comment(lib, "dxguid.lib")
 
+#define _USE_MATH_DEFINES
+
 #include <d3d11.h>
 #include <dxgi.h>
 #include <dxgi1_6.h>
@@ -95,12 +97,23 @@ extern "C" __declspec(dllexport) const char* WEBSITE = "https://www.nexusmods.co
 
 // NOLINTEND(readability-identifier-naming)
 
+#if defined(NDEBUG) && DEVELOPMENT
+#undef assert
+#define assert(expression) ((void)(                                                       \
+            (!!(expression)) ||                                                               \
+            (MessageBoxA(NULL, #expression, NAME, MB_SETFOREGROUND | MB_OKCANCEL))) \
+        )
+#endif
+
 #if DEVELOPMENT || _DEBUG || TEST
 #define ASSERT_ONCE(x) { static bool asserted_once = false; \
 if (!asserted_once && !(x)) { assert(x); asserted_once = true; } }
 #else
 #define ASSERT_ONCE(x)
 #endif
+
+// Make sure we can use com_ptr as c arrays of pointers
+static_assert(sizeof(com_ptr<ID3D11Resource>) == sizeof(void*));
 
 namespace
 {
@@ -171,7 +184,7 @@ namespace
       reshade::api::pipeline pipeline;
       // Cached device (makes it easier to access, even if there's only a global one in Prey)
       reshade::api::device* device;
-      reshade::api::pipeline_layout layout;
+      reshade::api::pipeline_layout layout; // DX12 stuff
       // Cloned subojects from the orignal pipeline
       reshade::api::pipeline_subobject* subobjects_cache;
       uint32_t subobject_count;
@@ -428,7 +441,7 @@ namespace
    std::shared_mutex s_mutex_shader_objects;
    // Mutex for shader defines ("shader_defines_data", "code_shaders_defines", "shader_defines_data_index")
    std::shared_mutex s_mutex_shader_defines;
-   // Mutex to deal with data shader with ReShade, like ini/config saving and loading
+   // Mutex to deal with data shader with ReShade, like ini/config saving and loading (including "cb_luma_frame_settings" and "cb_luma_frame_settings_dirty")
    std::shared_mutex s_mutex_reshade;
    // For "custom_sampler_by_original_sampler" and "texture_mip_lod_bias_offset"
    std::shared_mutex s_mutex_samplers;
@@ -460,11 +473,8 @@ namespace
    constexpr bool prevent_shader_cache_loading = false;
    bool prevent_shader_cache_saving = false;
    constexpr bool force_motion_vectors_jittered = true;
-   //TODOFT3: clean up the following vars
-   int fix_prev_matrix_mode = 1; // NOTE: referenced in shader's code
-   int matrix_calculation_mode = 0;
-   int matrix_calculation_mode_2 = 1;
 #if DEVELOPMENT
+   //TODOFT3: clean up the following vars
    int samplers_upgrade_mode = 5;
    int samplers_upgrade_mode_2 = 0;
    bool custom_texture_mip_lod_bias_offset = false; // Live edit
@@ -473,16 +483,17 @@ namespace
    bool disable_taa_jitters = false;
    int force_taa_jitter_phases = 0; // Ignored if 0 (automatic mode), set to 1 to basically disable jitters
    int frame_sleep_ms = 0;
+   int frame_sleep_interval = 1;
    RE::ETEX_Format LDR_textures_upgrade_confirmed_format = ENABLE_NATIVE_PLUGIN ? RE::ETEX_Format::eTF_R16G16B16A16F : RE::ETEX_Format::eTF_R8G8B8A8; // Native hooks and vanilla game start with these
-   RE::ETEX_Format HDR_textures_upgrade_confirmed_format = ENABLE_NATIVE_PLUGIN ? RE::ETEX_Format::eTF_R16G16B16A16F : RE::ETEX_Format::eTF_R11G11B10F; // Native hooks and vanilla game start with these
    RE::ETEX_Format LDR_textures_upgrade_requested_format = RE::ETEX_Format::eTF_R16G16B16A16F;
-   RE::ETEX_Format HDR_textures_upgrade_requested_format = RE::ETEX_Format::eTF_R16G16B16A16F;
 #endif
+   RE::ETEX_Format HDR_textures_upgrade_confirmed_format = ENABLE_NATIVE_PLUGIN ? RE::ETEX_Format::eTF_R16G16B16A16F : RE::ETEX_Format::eTF_R11G11B10F; // Native hooks and vanilla game start with these
+   RE::ETEX_Format HDR_textures_upgrade_requested_format = RE::ETEX_Format::eTF_R16G16B16A16F;
 
    // Game specific constants:
    constexpr uint32_t luma_settings_cbuffer_index = 2; // 2 is unused by Prey
-   constexpr uint32_t luma_data_cbuffer_index = 8; // 2 is unused by Prey
-   constexpr uint32_t luma_ui_cbuffer_index = 7;
+   constexpr uint32_t luma_data_cbuffer_index = 8; // 8 is unused by Prey
+   constexpr uint32_t luma_ui_cbuffer_index = 7; // 7 is almost 100% unused by Prey
    ShaderHashesList shader_hashes_TiledShadingTiledDeferredShading;
    uint32_t shader_hash_DeferredShadingSSRRaytrace;
    uint32_t shader_hash_DeferredShadingSSReflectionComp;
@@ -493,6 +504,7 @@ namespace
    ShaderHashesList shader_hashes_HDRPostProcessHDRFinalScene_Sunshafts;
    ShaderHashesList shader_hashes_SMAA_EdgeDetection;
    ShaderHashesList shader_hashes_PostAA;
+   ShaderHashesList shader_hashes_PostAA_TAA;
    ShaderHashesList shader_hashes_PostAAComposites;
    uint32_t shader_hash_PostAAUpscaleImage;
    ShaderHashesList shader_hashes_LensOptics;
@@ -506,7 +518,7 @@ namespace
 
    struct __declspec(uuid("cfebf6d4-d184-4e1a-ac14-09d088e560ca")) DeviceData
    {
-      // Only for "swapchains", "back_buffers", "settings_pipeline_layout", "shared_data_pipeline_layout", "ui_pipeline_layout"
+      // Only for "swapchains", "back_buffers"
       std::shared_mutex mutex;
 
       std::thread thread_auto_loading;
@@ -534,10 +546,6 @@ namespace
          ASSERT_ONCE(SUCCEEDED(hr));
          return native_swapchain3;
       }
-
-      reshade::api::pipeline_layout settings_pipeline_layout;
-      reshade::api::pipeline_layout shared_data_pipeline_layout;
-      reshade::api::pipeline_layout ui_pipeline_layout;
 
       // Pipelines by handle. Multiple pipelines can target the same shader, and even have multiple shaders within themselved.
       // This only contains pipelines that we are replacing any shaders of.
@@ -584,8 +592,9 @@ namespace
 
       // Exposure
       com_ptr<ID3D11Buffer> exposure_buffer_gpu; // DLSS (doesn't need "ENABLE_NGX)
-      com_ptr<ID3D11Buffer> exposure_buffer_cpu; // DLSS (doesn't need "ENABLE_NGX)
+      com_ptr<ID3D11Buffer> exposure_buffers_cpu[2]; // DLSS (doesn't need "ENABLE_NGX)
       com_ptr<ID3D11RenderTargetView> exposure_buffer_rtv; // DLSS (doesn't need "ENABLE_NGX)
+      size_t exposure_buffers_cpu_index = 0;
 
       // GTAO
       com_ptr<ID3D11Texture2D> gtao_edges_texture;
@@ -629,7 +638,9 @@ namespace
       com_ptr<ID3D11ShaderResourceView> lens_distortion_srv;
       com_ptr<ID3D11Resource> lens_distortion_rtvs_resources[2];
       com_ptr<ID3D11RenderTargetView> lens_distortion_rtvs[2];
+      com_ptr<ID3D11ShaderResourceView> lens_distortion_srvs[2];
       size_t lens_distortion_rtv_index = -1;
+      bool lens_distortion_rtv_found = false;
       UINT lens_distortion_texture_width = 0;
       UINT lens_distortion_texture_height = 0;
       DXGI_FORMAT lens_distortion_texture_format = DXGI_FORMAT_UNKNOWN;
@@ -643,17 +654,31 @@ namespace
          lens_distortion_rtvs_resources[1] = nullptr;
          lens_distortion_rtvs[0] = nullptr;
          lens_distortion_rtvs[1] = nullptr;
+         lens_distortion_srvs[0] = nullptr;
+         lens_distortion_srvs[1] = nullptr;
          lens_distortion_rtv_index = -1;
+         lens_distortion_rtv_found = false;
          lens_distortion_texture_width = 0;
          lens_distortion_texture_height = 0;
          lens_distortion_texture_format = DXGI_FORMAT_UNKNOWN;
       }
+
+      // CBuffers
+      com_ptr<ID3D11Buffer> luma_frame_settings;
+      com_ptr<ID3D11Buffer> luma_frame_data;
+      com_ptr<ID3D11Buffer> luma_ui_data;
+      LumaFrameData cb_luma_frame_data = {};
+      LumaUIData cb_luma_ui_data = {};
+      bool cb_luma_frame_settings_dirty = true;
 
       // Misc
       com_ptr<ID3D11BlendState> default_blend_state;
 
       // Pointer to the current DX buffer for the "global per view" cbuffer.
       com_ptr<ID3D11Buffer> cb_per_view_global_buffer;
+#if DEVELOPMENT
+      std::set<ID3D11Buffer*> cb_per_view_global_buffers;
+#endif
       void* cb_per_view_global_buffer_map_data = nullptr;
 #if DEVELOPMENT
       com_ptr<ID3D11Texture2D> debug_draw_texture;
@@ -794,7 +819,7 @@ namespace
 
    // Directly from cbuffer (so these are transposed)
    Matrix44A projection_matrix;
-   Matrix44A nearest_projection_matrix;
+   Matrix44A nearest_projection_matrix; // For first person weapons (view model)
    Matrix44A previous_projection_matrix;
    Matrix44A previous_nearest_projection_matrix;
    Matrix44A reprojection_matrix;
@@ -803,7 +828,7 @@ namespace
    uint32_t frame_index = 0; // No need for this to be by device
    CBPerViewGlobal cb_per_view_global = { };
    CBPerViewGlobal cb_per_view_global_previous = cb_per_view_global;
-   LumaFrameSettings cb_luma_frame_settings = { };
+   LumaFrameSettings cb_luma_frame_settings = { }; // Not in device data as this stores some users settings too // Set "cb_luma_frame_settings_dirty" when changing within a frame (so it's uploaded again)
 
    bool has_init = false;
    bool asi_loaded = true; // Whether we've been loaded from an ASI loader or ReShade Addons system
@@ -813,7 +838,7 @@ namespace
    std::atomic<bool> thread_auto_compiling_running = false;
    bool last_pressed_unload = false;
    bool needs_unload_shaders = false;
-   bool needs_load_shaders = false; // Load/compile or reload/recompile shaders
+   bool needs_load_shaders = false; // Load/compile or reload/recompile shaders, no need to default it to true, we have "auto_load" for that
    bool needs_live_reload_update = live_reload;
 
    // There's only one swapchain and one device in Prey, but the game chances its configuration from different threads.
@@ -1206,7 +1231,7 @@ namespace
       
 #if DEVELOPMENT && ALLOW_LOADING_DEV_SHADERS
       auto dev_directory = directory;
-      dev_directory /= "unused"; // WIP and test and unused shaders
+      dev_directory /= "unused";
       for (const auto& entry : std::filesystem::recursive_directory_iterator(directory))
 #else
       for (const auto& entry : std::filesystem::directory_iterator(directory))
@@ -1305,7 +1330,7 @@ namespace
    }
 
    // Compiles all the "custom" shaders we have in our shaders folder
-   void CompileCustomShaders(DeviceData* optional_device_data = nullptr, const std::unordered_set<uint64_t>& pipelines_filter = std::unordered_set<uint64_t>())
+   void CompileCustomShaders(DeviceData* optional_device_data = nullptr, bool warn_about_duplicates = false, const std::unordered_set<uint64_t>& pipelines_filter = std::unordered_set<uint64_t>())
    {
       std::vector<std::string> shader_defines;
       // Cache them for consistency and to avoid threads from halting
@@ -1482,7 +1507,7 @@ namespace
 
 #if DEVELOPMENT && ALLOW_LOADING_DEV_SHADERS
       auto dev_directory = directory;
-      dev_directory /= "unused"; // WIP and test and unused shaders
+      dev_directory /= "unused"; // WIP and test and unused shaders (they expect ".../" in front of their include dirs, given the nested path)
       for (const auto& entry : std::filesystem::recursive_directory_iterator(directory))
 #else
       for (const auto& entry : std::filesystem::directory_iterator(directory))
@@ -1490,7 +1515,6 @@ namespace
       {
          const auto& entry_path = entry.path();
 #if DEVELOPMENT && ALLOW_LOADING_DEV_SHADERS
-         //TODOFT: this currently needs a junction to the "include" folder, or another copy of them... maybe simply put ".../" in the include dirs?
          bool is_in_dev_directory = entry_path.parent_path() == dev_directory;
          if (entry_path.parent_path() != directory && !is_in_dev_directory)
          {
@@ -1604,7 +1628,7 @@ namespace
 
             const std::unique_lock lock(s_mutex_loading); // Don't lock until now as we didn't access any shared data
             auto& custom_shader = custom_shaders_cache[shader_hash]; // Add default initialized shader
-            const bool has_custom_shader = (custom_shaders_cache.find(shader_hash) != custom_shaders_cache.end()) && (custom_shader != nullptr);
+            const bool has_custom_shader = (custom_shaders_cache.find(shader_hash) != custom_shaders_cache.end()) && (custom_shader != nullptr); // Weird code...
             std::wstring original_file_path_cso; // Only valid for hlsl files
             std::wstring trimmed_file_path_cso; // Only valid for hlsl files
 
@@ -1663,6 +1687,14 @@ namespace
                      // Theoretically at this point, the shader pre-processor below should skip re-compiling this shader unless the hash changed
                   }
                }
+            }
+            else if (warn_about_duplicates)
+            {
+               warn_about_duplicates = false;
+#if !DEVELOPMENT
+               const std::string warn_message = "It seems like you have duplicate shaders in your \"" + std::string(NAME) + "\" folder, please delete it and re-apply the files from the latest version of the mod.";
+               MessageBoxA(game_window, warn_message.c_str(), NAME, MB_SETFOREGROUND);
+#endif
             }
 
             CComPtr<ID3DBlob> uncompiled_code_blob;
@@ -1877,7 +1909,7 @@ namespace
 
       if (recompile_shaders)
       {
-         CompileCustomShaders(&device_data, pipelines_filter);
+         CompileCustomShaders(&device_data, false, pipelines_filter);
       }
 
       // We can, and should, only lock this after compiling new shaders (above)
@@ -2214,20 +2246,30 @@ namespace
          global_devices_data.push_back(&device_data);
       }
 
-      {
-         const std::shared_lock lock(device_data.mutex); // Not much need to lock this on its own creation, but let's do it anyway...
-         reshade::api::pipeline_layout_param pipeline_layout_param = reshade::api::pipeline_layout_param();
-         pipeline_layout_param.type = reshade::api::pipeline_layout_param_type::push_constants; // We could be using "reshade::api::pipeline_layout_param_type::push_descriptors" in cbuffer mode too but this is simpler
-         pipeline_layout_param.push_constants.count = 1;
-         pipeline_layout_param.push_constants.visibility = reshade::api::shader_stage::vertex | reshade::api::shader_stage::pixel | reshade::api::shader_stage::compute; // For now we don't need geometry shaders
+      HRESULT hr;
 
-         pipeline_layout_param.push_constants.dx_register_index = luma_settings_cbuffer_index;
-         auto result = device->create_pipeline_layout(1, &pipeline_layout_param, &device_data.settings_pipeline_layout);
-         pipeline_layout_param.push_constants.dx_register_index = luma_data_cbuffer_index;
-         result = device->create_pipeline_layout(1, &pipeline_layout_param, &device_data.shared_data_pipeline_layout);
-         pipeline_layout_param.push_constants.dx_register_index = luma_ui_cbuffer_index;
-         result = device->create_pipeline_layout(1, &pipeline_layout_param, &device_data.ui_pipeline_layout);
+      D3D11_BUFFER_DESC buffer_desc = {};
+      // From MS docs: you must set the ByteWidth value of D3D11_BUFFER_DESC in multiples of 16, and less than or equal to D3D11_REQ_CONSTANT_BUFFER_ELEMENT_COUNT.
+      buffer_desc.ByteWidth = sizeof(LumaFrameSettings);
+      buffer_desc.Usage = D3D11_USAGE_DYNAMIC;
+      buffer_desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+      buffer_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+      D3D11_SUBRESOURCE_DATA data = {};
+      {
+         const std::unique_lock lock_reshade(s_mutex_reshade);
+         data.pSysMem = &cb_luma_frame_settings;
+         hr = native_device->CreateBuffer(&buffer_desc, &data, &device_data.luma_frame_settings);
+         device_data.cb_luma_frame_settings_dirty = false;
       }
+      assert(SUCCEEDED(hr));
+      buffer_desc.ByteWidth = sizeof(LumaFrameData);
+      data.pSysMem = &device_data.cb_luma_frame_data;
+      hr = native_device->CreateBuffer(&buffer_desc, &data, &device_data.luma_frame_data);
+      assert(SUCCEEDED(hr));
+      buffer_desc.ByteWidth = sizeof(LumaUIData);
+      data.pSysMem = &device_data.cb_luma_ui_data;
+      hr = native_device->CreateBuffer(&buffer_desc, &data, &device_data.luma_ui_data);
+      assert(SUCCEEDED(hr));
 
       D3D11_BLEND_DESC blend_desc = {};
       blend_desc.AlphaToCoverageEnable = FALSE;
@@ -2241,7 +2283,7 @@ namespace
       blend_desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
       blend_desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
       blend_desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-      HRESULT hr = native_device->CreateBlendState(&blend_desc, &device_data.default_blend_state);
+      hr = native_device->CreateBlendState(&blend_desc, &device_data.default_blend_state);
       assert(SUCCEEDED(hr));
       
       D3D11_SAMPLER_DESC sampler_desc = {};
@@ -2321,21 +2363,13 @@ namespace
 
       ASSERT_ONCE(device_data.swapchains.empty()); // Hopefully this is forcefully garbage collected when the device is destroyed (it is!)
 
-      {
-         const std::shared_lock lock(device_data.mutex);
-         device->destroy_pipeline_layout(device_data.ui_pipeline_layout);
-         device->destroy_pipeline_layout(device_data.shared_data_pipeline_layout);
-         device->destroy_pipeline_layout(device_data.settings_pipeline_layout);
-      }
-
       if (device_data.thread_auto_loading.joinable())
       {
          device_data.thread_auto_loading.join();
          device_data.thread_auto_loading_running = false;
       }
 
-      assert(device_data.cb_per_view_global_buffer_map_data == nullptr);
-      device_data.cb_per_view_global_buffer = nullptr;
+      assert(device_data.cb_per_view_global_buffer_map_data == nullptr); // It's fine (but not great) if we map wasn't unmapped before destruction (not our fault anyway)
 
       {
          const std::unique_lock lock_samplers(s_mutex_samplers);
@@ -2369,7 +2403,7 @@ namespace
 #if DEVELOPMENT
    bool OnCreateSwapchain(reshade::api::swapchain_desc& desc, void* hwnd)
    {
-      // There's only one swapchain so it's fine if this is global
+      // There's only one swapchain so it's fine if this is global ("OnInitSwapchain()" will always be called later anyway)
       HDR_textures_upgrade_confirmed_format = HDR_textures_upgrade_requested_format;
       if (LDR_textures_upgrade_requested_format != LDR_textures_upgrade_confirmed_format)
       {
@@ -2460,6 +2494,7 @@ namespace
          {
             cb_luma_frame_settings.ScenePeakWhite = device_data.default_user_peak_white;
          }
+         device_data.cb_luma_frame_settings_dirty = true;
 
 #if DEVELOPMENT
          if (LDR_textures_upgrade_requested_format != LDR_textures_upgrade_confirmed_format)
@@ -2483,7 +2518,6 @@ namespace
             // Assume this will succeed. If the swapchain was re-created, we are guaranteed that all game render targets are recreated too.
             LDR_textures_upgrade_confirmed_format = LDR_textures_upgrade_requested_format;
          }
-         HDR_textures_upgrade_confirmed_format = HDR_textures_upgrade_requested_format;
          // Enforce this independently of "LDR_textures_upgrade_requested_format"
          {
             DXGI_COLOR_SPACE_TYPE colorSpace;
@@ -2503,6 +2537,7 @@ namespace
             ASSERT_ONCE(SUCCEEDED(hr));
          }
 #endif // DEVELOPMENT
+         HDR_textures_upgrade_confirmed_format = HDR_textures_upgrade_requested_format;
 
          // We release the resource because the swapchain lifespan is, and should be, controlled by the game.
          // We already have "OnDestroySwapchain()" to handle its destruction.
@@ -2731,9 +2766,10 @@ namespace
       if (auto_load && !last_pressed_unload && found_custom_shader_file)
       {
          const std::unique_lock lock_loading(s_mutex_loading);
-         // Immediately cloning and replacing the pipeline might be unsafe, we need to delay it to the next frame.
+         // Immediately cloning and replacing the pipeline might be unsafe, we might need to delay it to the next frame.
+         // NOTE: this is totally fine to be done immediately (inline) in DX11, it's only unsafe in DX12.
          device_data.pipelines_to_reload.emplace(pipeline.handle);
-         if (precompile_custom_shaders)
+         if (precompile_custom_shaders) // Re-use this value to symbolize that we don't want to wait until shaders async compilation is done to use the new shaders
          {
             LoadCustomShaders(device_data, device_data.pipelines_to_reload, !precompile_custom_shaders);
             device_data.pipelines_to_reload.clear();
@@ -2881,59 +2917,94 @@ namespace
 #endif // DEVELOPMENT
    }
 
-   enum LumaConstantBufferType
+   enum class LumaConstantBufferType
    {
       LumaSettings,
       LumaData,
-      LumaLumaUIData
+      LumaUIData
    };
 
-   void SetPreyLumaConstantBuffers(reshade::api::command_list* cmd_list, reshade::api::shader_stage stages, reshade::api::pipeline_layout layout, LumaConstantBufferType type, uint32_t custom_data = 0)
+   void SetLumaConstantBuffers(ID3D11DeviceContext* native_device_context, DeviceData& device_data, reshade::api::shader_stage stages, LumaConstantBufferType type, uint32_t custom_data = 0)
    {
-      auto& device_data = cmd_list->get_device()->get_private_data<DeviceData>();
+      // CryEngine doesn't ever use these buffers, so it's fine to update them once per frame if they didn't change
       switch (type)
       {
       case LumaConstantBufferType::LumaSettings:
       {
-         const std::shared_lock lock_reshade(s_mutex_reshade);
-         cmd_list->push_constants(
-            stages,
-            layout,
-            0,
-            0,
-            sizeof(LumaFrameSettings) / sizeof(uint32_t),
-            &cb_luma_frame_settings);
+         {
+            const std::shared_lock lock_reshade(s_mutex_reshade);
+            if (device_data.cb_luma_frame_settings_dirty)
+            {
+               device_data.cb_luma_frame_settings_dirty = false;
+               // My understanding is that "Map" doesn't immediately copy the memory to the GPU, but simply stores it on the side (in the command list),
+               // and then copies it to the GPU when the command list is executed, so the resource is updated with deterministic order.
+               // From our point of view, we don't really know what command list is currently running and what it is doing,
+               // so we could still end up first updating the resource in a command list that will be executed with a delay,
+               // and then updating the resource again in a command list that executes first, leaving the GPU buffer with whatever latest data it got (which might not be based on our latest version).
+               // Fortunately we don't use our cbuffers in any of the non main CryEngine command lists, so we can consider it all single threaded and deterministic.
+               if (D3D11_MAPPED_SUBRESOURCE mapped_buffer;
+                  SUCCEEDED(native_device_context->Map(device_data.luma_frame_settings.get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_buffer)))
+               {
+                  std::memcpy(mapped_buffer.pData, &cb_luma_frame_settings, sizeof(cb_luma_frame_settings));
+                  native_device_context->Unmap(device_data.luma_frame_settings.get(), 0);
+               }
+            }
+         }
+
+         ID3D11Buffer* const buffer = device_data.luma_frame_settings.get();
+         if ((stages & reshade::api::shader_stage::vertex) == reshade::api::shader_stage::vertex)
+            native_device_context->VSSetConstantBuffers(luma_settings_cbuffer_index, 1, &buffer);
+         if ((stages & reshade::api::shader_stage::geometry) == reshade::api::shader_stage::geometry)
+            native_device_context->GSSetConstantBuffers(luma_settings_cbuffer_index, 1, &buffer);
+         if ((stages & reshade::api::shader_stage::pixel) == reshade::api::shader_stage::pixel)
+            native_device_context->PSSetConstantBuffers(luma_settings_cbuffer_index, 1, &buffer);
+         if ((stages & reshade::api::shader_stage::compute) == reshade::api::shader_stage::compute)
+            native_device_context->CSSetConstantBuffers(luma_settings_cbuffer_index, 1, &buffer);
          break;
       }
       case LumaConstantBufferType::LumaData:
       {
-         LumaFrameData frame_data;
-         frame_data.PostEarlyUpscaling = device_data.has_drawn_dlss_sr && !device_data.has_drawn_upscaling; // TODO: delete? it's unused and kinda useless as we update the resolution scale anyway
-         frame_data.CustomData = custom_data;
-         frame_data.Padding = 0;
-         frame_data.FrameIndex = frame_index;
-         frame_data.CameraJitters = projection_jitters; // TODO: pre-multiply these by float2(0.5, -0.5) (NDC to UV space) given that they are always used in UV space by shaders
-         frame_data.PreviousCameraJitters = previous_projection_jitters;
-         frame_data.RenderResolutionScale.x = device_data.render_resolution.x / device_data.output_resolution.x;
-         frame_data.RenderResolutionScale.y = device_data.render_resolution.y / device_data.output_resolution.y;
+         LumaFrameData cb_luma_frame_data;
+         cb_luma_frame_data.PostEarlyUpscaling = device_data.has_drawn_dlss_sr && !device_data.has_drawn_upscaling; // TODO: delete? it's unused and kinda useless as we update the resolution scale anyway
+         cb_luma_frame_data.CustomData = custom_data;
+         cb_luma_frame_data.Padding = 0;
+         cb_luma_frame_data.FrameIndex = frame_index;
+         cb_luma_frame_data.CameraJitters = projection_jitters; // TODO: pre-multiply these by float2(0.5, -0.5) (NDC to UV space) given that they are always used in UV space by shaders. It doesn't really matter as they end up as "mad" single instructions
+         cb_luma_frame_data.PreviousCameraJitters = previous_projection_jitters;
+         cb_luma_frame_data.RenderResolutionScale.x = device_data.render_resolution.x / device_data.output_resolution.x;
+         cb_luma_frame_data.RenderResolutionScale.y = device_data.render_resolution.y / device_data.output_resolution.y;
          // Always do this relative to the current output resolution
-         frame_data.PreviousRenderResolutionScale.x = device_data.previous_render_resolution.x / device_data.output_resolution.x;
-         frame_data.PreviousRenderResolutionScale.y = device_data.previous_render_resolution.y / device_data.output_resolution.y;
+         cb_luma_frame_data.PreviousRenderResolutionScale.x = device_data.previous_render_resolution.x / device_data.output_resolution.x;
+         cb_luma_frame_data.PreviousRenderResolutionScale.y = device_data.previous_render_resolution.y / device_data.output_resolution.y;
 #if 0
-         frame_data.ViewProjectionMatrix = cb_per_view_global.CV_ViewProjMatr; // Note that this is not 100% thread safe as "CV_ViewProjMatr" is written from another thread
-         frame_data.PreviousViewProjectionMatrix = cb_per_view_global_previous.CV_ViewProjMatr;
+         cb_luma_frame_data.ViewProjectionMatrix = cb_per_view_global.CV_ViewProjMatr; // Note that this is not 100% thread safe as "CV_ViewProjMatr" is written from another thread
+         cb_luma_frame_data.PreviousViewProjectionMatrix = cb_per_view_global_previous.CV_ViewProjMatr;
 #endif
-         frame_data.ReprojectionMatrix = reprojection_matrix;
-         cmd_list->push_constants(
-            stages,
-            layout,
-            0,
-            0,
-            sizeof(LumaFrameData) / sizeof(uint32_t),
-            &frame_data);
+         cb_luma_frame_data.ReprojectionMatrix = reprojection_matrix;
+
+         if (memcmp(&device_data.cb_luma_frame_data, &cb_luma_frame_data, sizeof(cb_luma_frame_data)) != 0)
+         {
+            device_data.cb_luma_frame_data = cb_luma_frame_data;
+            if (D3D11_MAPPED_SUBRESOURCE mapped_buffer;
+               SUCCEEDED(native_device_context->Map(device_data.luma_frame_data.get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_buffer)))
+            {
+               std::memcpy(mapped_buffer.pData, &device_data.cb_luma_frame_data, sizeof(device_data.cb_luma_frame_data));
+               native_device_context->Unmap(device_data.luma_frame_data.get(), 0);
+            }
+         }
+
+         ID3D11Buffer* const buffer = device_data.luma_frame_data.get();
+         if ((stages & reshade::api::shader_stage::vertex) == reshade::api::shader_stage::vertex)
+            native_device_context->VSSetConstantBuffers(luma_data_cbuffer_index, 1, &buffer);
+         if ((stages & reshade::api::shader_stage::geometry) == reshade::api::shader_stage::geometry)
+            native_device_context->GSSetConstantBuffers(luma_data_cbuffer_index, 1, &buffer);
+         if ((stages & reshade::api::shader_stage::pixel) == reshade::api::shader_stage::pixel)
+            native_device_context->PSSetConstantBuffers(luma_data_cbuffer_index, 1, &buffer);
+         if ((stages & reshade::api::shader_stage::compute) == reshade::api::shader_stage::compute)
+            native_device_context->CSSetConstantBuffers(luma_data_cbuffer_index, 1, &buffer);
          break;
       }
-      case LumaConstantBufferType::LumaLumaUIData:
+      case LumaConstantBufferType::LumaUIData:
       {
          ASSERT_ONCE(false); // Not implemented (yet?)
          break;
@@ -2950,12 +3021,7 @@ namespace
       // Note: we don't seem to need to call (and cache+restore) IASetVertexBuffers().
       // That's either because Prey always has vertices buffers set in there already, or because DX is tolerant enough (we are not seeing any etc errors in the DX log).
       device_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY::D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-      D3D11_RECT scissor_rect;
-      scissor_rect.left = 0;
-      scissor_rect.top = 0;
-      scissor_rect.right = width;
-      scissor_rect.bottom = height;
-      device_context->RSSetScissorRects(1, &scissor_rect);
+      device_context->RSSetScissorRects(0, nullptr); // Scissors are not needed
       D3D11_VIEWPORT viewport;
       viewport.TopLeftX = 0;
       viewport.TopLeftY = 0;
@@ -2963,7 +3029,7 @@ namespace
       viewport.Height = height;
       viewport.MinDepth = 0;
       viewport.MaxDepth = 1;
-      device_context->RSSetViewports(1, &viewport);
+      device_context->RSSetViewports(1, &viewport); // Viewport is always needed
       device_context->PSSetShaderResources(0, 1, &source_resource_texture_view);
       device_context->OMSetRenderTargets(1, &target_resource_texture_view, nullptr);
       device_context->VSSetShader(vs, nullptr, 0);
@@ -3049,7 +3115,7 @@ namespace
       auto& device_data = queue->get_device()->get_private_data<DeviceData>();
 
 #if DEVELOPMENT // Allow to tank performance to test auto rendering resolution scaling
-      if (frame_sleep_ms > 0)
+      if (frame_sleep_ms > 0 && frame_index % frame_sleep_interval == 0)
          Sleep(frame_sleep_ms);
 #endif
 
@@ -3176,20 +3242,18 @@ namespace
                const std::shared_lock lock(device_data.mutex);
                const auto cb_luma_frame_settings_copy = cb_luma_frame_settings;
                // Force a custom display mode in case we have no game custom shaders loaded, so the custom linearization shader can linearize anyway, independently of "POST_PROCESS_SPACE_TYPE"
-               bool force_linearize = device_data.cloned_pipeline_count == 0;
+               bool force_linearize = device_data.cloned_pipeline_count == 0; // We ignore "s_mutex_generic", it doesn't matter
                if (force_linearize)
                {
-                  // No need for "s_mutex_reshade" here, given that they are generally only also changed by the user manually changing the settings in ImGUI, which runs at the very end of the frame
+                  // No need for "s_mutex_reshade" here or above, given that they are generally only also changed by the user manually changing the settings in ImGUI, which runs at the very end of the frame
                   cb_luma_frame_settings.DisplayMode = -1;
+                  device_data.cb_luma_frame_settings_dirty = true;
                }
-               SetPreyLumaConstantBuffers(queue->get_immediate_command_list(), reshade::api::shader_stage::pixel, device_data.settings_pipeline_layout, LumaConstantBufferType::LumaSettings);
-               if (force_linearize)
+               SetLumaConstantBuffers(native_device_context, device_data, reshade::api::shader_stage::pixel, LumaConstantBufferType::LumaSettings);
+               if (force_linearize || device_data.cb_luma_frame_data.CustomData != custom_const_buffer_data)
                {
                   cb_luma_frame_settings.DisplayMode = cb_luma_frame_settings_copy.DisplayMode;
-               }
-               if (device_data.cloned_pipeline_count == 0 || custom_const_buffer_data != 0)
-               {
-                  SetPreyLumaConstantBuffers(queue->get_immediate_command_list(), reshade::api::shader_stage::pixel, device_data.shared_data_pipeline_layout, LumaConstantBufferType::LumaData, custom_const_buffer_data);
+                  SetLumaConstantBuffers(native_device_context, device_data, reshade::api::shader_stage::pixel, LumaConstantBufferType::LumaData, custom_const_buffer_data);
                }
             }
 
@@ -3200,7 +3264,12 @@ namespace
          }
          else
          {
+#if DEVELOPMENT
             ASSERT_ONCE(false); // The custom shaders failed to be found (they have either been unloaded or failed to compile, or simply missing in the files)
+#else
+            const std::string warn_message = "Some of the shader files are missing from the \"" + std::string(NAME) + "\" folder, or failed to compile for some unknown reason, please re-install the mod.";
+            MessageBoxA(game_window, warn_message.c_str(), NAME, MB_SETFOREGROUND);
+#endif
          }
       }
       else
@@ -3208,6 +3277,9 @@ namespace
          device_data.transfer_function_copy_texture = nullptr;
          device_data.transfer_function_copy_shader_resource_view = nullptr;
       }
+
+      // We should have never gotten here with this state! Maybe it could happen if we loaded/unloaded a weird combinations of shaders (e.g. in case they failed to compile or something)
+      ASSERT_ONCE(!device_data.lens_distortion_rtv_found);
 
       // Clean resources that are probably not needed anymore (e.g. if users disabled SSR and SSAO, we wouldn't get another chance to clean these up ever).
       // If users unloaded all shaders, these would automatically be cleared ir their rendering pass.
@@ -3224,6 +3296,10 @@ namespace
             device_data.CleanGTAOResource();
          }
          if (!device_data.has_drawn_main_post_processing && (device_data.lens_distortion_texture.get() || device_data.lens_distortion_rtvs[0].get() || device_data.lens_distortion_rtvs[1].get())) // This seemengly can't happen
+         {
+            device_data.CleanLensDistortionResource();
+         }
+         if (device_data.lens_distortion_rtv_found) // Just for super extra safety
          {
             device_data.CleanLensDistortionResource();
          }
@@ -3244,7 +3320,11 @@ namespace
          device_data.prey_taa_detected = false;
          // Theoretically we turn this flag off one frame late (or well, at the end of the frame),
          // but then again, if no scene rendered, this flag wouldn't have been used for anything.
-         cb_luma_frame_settings.DLSS = 0; // No need for "s_mutex_reshade" here, given that they are generally only also changed by the user manually changing the settings in ImGUI, which runs at the very end of the frame
+         if (cb_luma_frame_settings.DLSS)
+         {
+            cb_luma_frame_settings.DLSS = 0; // No need for "s_mutex_reshade" here, given that they are generally only also changed by the user manually changing the settings in ImGUI, which runs at the very end of the frame
+            device_data.cb_luma_frame_settings_dirty = true;
+         }
          device_data.dlss_sr_suppressed = false;
          // Reset DRS related values if there's a scene cut or loading screen or a menu, we have no way of telling if it's actually still enabled in the user settings.
          // Note that this could cause a micro stutter the next frame we use DLSS as it's gonna have to recreate its internal textures, but we have no way to tell if DRS is still active from the user, so we have to reset the DLSS mode at some point to allow DLAA to run again.
@@ -3278,6 +3358,7 @@ namespace
       previous_nearest_projection_matrix = nearest_projection_matrix;
       previous_projection_jitters = projection_jitters;
       cb_per_view_global_previous = cb_per_view_global;
+      reprojection_matrix.SetIdentity();
 #if DEVELOPMENT
       cb_per_view_globals_last_drawn_shader.clear();
       cb_per_view_globals_previous = cb_per_view_globals;
@@ -3327,11 +3408,9 @@ namespace
             device_data.dlss_scene_exposure = 1.f;
             device_data.dlss_scene_pre_exposure = 1.f;
             device_data.exposure_buffer_gpu = nullptr;
-            if (device_data.exposure_buffer_cpu.get())
-            {
-               native_device_context->Unmap(device_data.exposure_buffer_cpu.get(), 0);
-               device_data.exposure_buffer_cpu = nullptr;
-            }
+            device_data.exposure_buffers_cpu[0] = nullptr;
+            device_data.exposure_buffers_cpu[1] = nullptr;
+            device_data.exposure_buffers_cpu_index = 0;
             device_data.exposure_buffer_rtv = nullptr;
 #if 0 // This would actually unload the DLSS DLL and all, making the game hitch, so it's better to just keep it in memory
             NGX::DLSS::Deinit(device_data.dlss_sr_handle);
@@ -3365,11 +3444,13 @@ namespace
 #endif // ENABLE_NATIVE_PLUGIN
 #endif // ENABLE_NGX
 
+#if 0 // We do this only when ImGUI is on screen now, restore this if ever needed
+      device_data.cb_luma_frame_settings_dirty = true; // Force re-upload the frame settings buffer at least once per frame, just to make sure to catch any user (or dev) settings changes, it should be fast enough
+#endif
+
       frame_index++;
    }
 
-   //TODOFT0: "_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR" as define at the top?
-   //TODOFT5: Add "UpdateSubresource" to check whether they map buffers with that (it's not optimized so probably it's unused by CryEngine)? Also make sure that our CopyTexture() func works!
    //TODOFT3: merge all the shader permutations that use the same code (and then move shader binaries to bin folder?)
    //TODOFT0: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project?
    //TODOFT3: add asserts for when we meet the shaders we are looking for
@@ -3444,16 +3525,9 @@ namespace
 
       std::unordered_set<uint64_t> back_buffers;
 
-      reshade::api::pipeline_layout settings_pipeline_layout(0);
-      reshade::api::pipeline_layout shared_data_pipeline_layout(0);
-      reshade::api::pipeline_layout ui_pipeline_layout(0);
-
       // Lock for the shortest amount possible
       {
          const std::shared_lock lock(device_data.mutex);
-         settings_pipeline_layout = device_data.settings_pipeline_layout;
-         shared_data_pipeline_layout = device_data.shared_data_pipeline_layout;
-         ui_pipeline_layout = device_data.ui_pipeline_layout;
          back_buffers = device_data.back_buffers;
       }
 
@@ -3516,12 +3590,16 @@ namespace
 
       if (!original_shader_hashes.Empty())
       {
-         //TODOFT5: optimize these shader searches by simply marking "CachedPipeline" with a tag on what they are (and whether they have a particular role) (also we can restrict the search to pixel shaders) upfront. And move these into their own functions.
+         //TODOFT3: optimize these shader searches by simply marking "CachedPipeline" with a tag on what they are (and whether they have a particular role) (also we can restrict the search to pixel shaders) upfront. And move these into their own functions. Update: we optimized this enough.
+         
+         // GBuffers composition
          if (!device_data.has_drawn_composed_gbuffers && original_shader_hashes.Contains(shader_hashes_TiledShadingTiledDeferredShading))
          {
             device_data.has_drawn_composed_gbuffers = true;
          }
-         if (!device_data.has_drawn_ssr && original_shader_hashes.Contains(shader_hash_DeferredShadingSSRRaytrace, reshade::api::shader_stage::pixel))
+
+         // SSR
+         if (!device_data.has_drawn_composed_gbuffers && !device_data.has_drawn_ssr && original_shader_hashes.Contains(shader_hash_DeferredShadingSSRRaytrace, reshade::api::shader_stage::pixel))
          {
             device_data.has_drawn_ssr = true;
             // There's no need to ever skip this added render target, the performance cost is tiny
@@ -3529,7 +3607,7 @@ namespace
             {
                uint2 ssr_diffuse_target_resolution = { (UINT)device_data.output_resolution.x, (UINT)device_data.output_resolution.y };
 
-               ID3D11RenderTargetView* rtvs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
+               com_ptr<ID3D11RenderTargetView> rtvs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
                com_ptr<ID3D11DepthStencilView> dsv;
                native_device_context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &rtvs[0], &dsv);
 
@@ -3611,28 +3689,20 @@ namespace
 
                // Add a second render target to store how "diffuse" reflections need to be, based on the ray travel distance from the relfection point (and the specularity etc).
                // We need to cache and restore all the RTs as the game uses a push and pop mechanism that tracks them closely, so any changes in state can break them.
-               ID3D11RenderTargetView* rtv1 = rtvs[1];
+               com_ptr<ID3D11RenderTargetView> rtv1 = rtvs[1];
                rtvs[1] = device_data.ssr_diffuse_rtv.get();
-               native_device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &rtvs[0], dsv.get());
+               ID3D11RenderTargetView* const* rtvs_const = (ID3D11RenderTargetView**)std::addressof(rtvs[0]); // We can't use "com_ptr"'s "T **operator&()" as it asserts if the object isn't null, even if the reference would be const
+               native_device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, rtvs_const, dsv.get());
 
 #if DEVELOPMENT // Currently we'd only ever need these in development modes to make tweaks, or for in development code paths that are still disabled
-               SetPreyLumaConstantBuffers(cmd_list, stages, settings_pipeline_layout, LumaConstantBufferType::LumaSettings);
-               SetPreyLumaConstantBuffers(cmd_list, stages, shared_data_pipeline_layout, LumaConstantBufferType::LumaData);
+               SetLumaConstantBuffers(native_device_context, device_data, stages, LumaConstantBufferType::LumaSettings);
+               SetLumaConstantBuffers(native_device_context, device_data, stages, LumaConstantBufferType::LumaData);
 #endif
 
                native_device_context->Draw(3, 0);
 
                rtvs[1] = rtv1;
-               rtv1 = nullptr;
-               native_device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &rtvs[0], dsv.get());
-               for (UINT i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; i++)
-               {
-                  if (rtvs[i] != nullptr)
-                  {
-                     rtvs[i]->Release();
-                     rtvs[i] = nullptr;
-                  }
-               }
+               native_device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, rtvs_const, dsv.get());
 
                ASSERT_ONCE(device_data.ssr_command_list == nullptr);
                device_data.ssr_command_list = native_device_context; // To make sure we only fix mip map draw calls from the same command list (more can run at the same time in different threads)
@@ -3647,7 +3717,7 @@ namespace
          if (device_data.has_drawn_ssr && !device_data.has_drawn_ssr_blend && native_device_context == device_data.ssr_command_list && is_custom_pass && (original_shader_hashes.Contains(shader_hash_PostEffectsGaussBlurBilinear, reshade::api::shader_stage::pixel) || original_shader_hashes.Contains(shader_hash_PostEffectsTextureToTextureResampled, reshade::api::shader_stage::pixel)))
          {
             uint32_t custom_data = 1; // This value will make the SSR mip map generation and blurring shaders take choices specifically designed for SSR
-            SetPreyLumaConstantBuffers(cmd_list, stages, shared_data_pipeline_layout, LumaConstantBufferType::LumaData, custom_data);
+            SetLumaConstantBuffers(native_device_context, device_data, stages, LumaConstantBufferType::LumaData, custom_data);
             return false;
          }
          if (device_data.has_drawn_ssr && !device_data.has_drawn_ssr_blend && original_shader_hashes.Contains(shader_hash_DeferredShadingSSReflectionComp, reshade::api::shader_stage::pixel))
@@ -3657,11 +3727,13 @@ namespace
             if (device_data.ssr_srv.get() || device_data.ssr_diffuse_srv.get())
             {
                ID3D11ShaderResourceView* const shader_resource_views_const[2] = { device_data.ssr_srv.get(), device_data.ssr_diffuse_srv.get() };
-               native_device_context->PSSetShaderResources(5, 2, &shader_resource_views_const[0]); //TODOFT: unbind these later?
+               native_device_context->PSSetShaderResources(5, 2, &shader_resource_views_const[0]); //TODOFT: unbind these later? Not particularly needed
             }
             return false; // Return as we don't need any of Luma's cbuffers
          }
-         if (!device_data.has_drawn_tonemapping && original_shader_hashes.Contains(shader_hashes_HDRPostProcessHDRFinalScene))
+         
+         // Pre AA primary post process (HDR to SDR/HDR tonemapping, color grading, sun shafts etc)
+         if (device_data.has_drawn_composed_gbuffers && !device_data.has_drawn_tonemapping && original_shader_hashes.Contains(shader_hashes_HDRPostProcessHDRFinalScene))
          {
             device_data.has_drawn_tonemapping = true;
 
@@ -3672,11 +3744,12 @@ namespace
             // while with pre-exposure it works as expected (except it kinda lags behind a bit, because it doesn't store a pre-exposure value attached to every frame, and simply uses the last provided one).
             if (device_data.dlss_sr && !device_data.dlss_sr_suppressed && device_data.prey_taa_detected && device_data.cloned_pipeline_count != 0 && device_data.draw_exposure_pixel_shader)
             {
-               static D3D11_MAPPED_SUBRESOURCE mapped_exposure;
-
+               bool texture_recreated = false;
                // Create pre-exposure buffers once
                if (!device_data.exposure_buffer_gpu.get())
                {
+                  texture_recreated = true;
+
                   D3D11_BUFFER_DESC exposure_buffer_desc;
                   exposure_buffer_desc.ByteWidth = 4; // 1x float32
                   exposure_buffer_desc.Usage = D3D11_USAGE_DEFAULT;
@@ -3686,7 +3759,7 @@ namespace
                   exposure_buffer_desc.StructureByteStride = sizeof(float);
 
                   D3D11_SUBRESOURCE_DATA exposure_buffer_data;
-                  exposure_buffer_data.pSysMem = &device_data.dlss_scene_pre_exposure; // This needs to be "static" data in case the texture initialization was somehow delayed and read the data after the stack destroyed it
+                  exposure_buffer_data.pSysMem = &device_data.dlss_scene_pre_exposure; // This needs to be "static" data in case the texture initialization was somehow delayed and read the data after the stack destroyed it (I think?)
                   exposure_buffer_data.SysMemPitch = 0;
                   exposure_buffer_data.SysMemSlicePitch = 0;
 
@@ -3698,21 +3771,15 @@ namespace
                   exposure_buffer_desc.BindFlags = 0;
                   exposure_buffer_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
 
-                  if (device_data.exposure_buffer_cpu.get())
-                  {
-                     native_device_context->Unmap(device_data.exposure_buffer_cpu.get(), 0);
-                     device_data.exposure_buffer_cpu = nullptr;
-                  }
-                  hr = native_device->CreateBuffer(&exposure_buffer_desc, &exposure_buffer_data, &device_data.exposure_buffer_cpu);
+                  // Create a "ring" buffer so we avoid avoid butchering the frame rate to map this texture immediately after a copy resource from the dynamic resource (shader memory writes will directly go into our mapped data, with a delay)
+                  device_data.exposure_buffers_cpu[0] = nullptr;
+                  hr = native_device->CreateBuffer(&exposure_buffer_desc, &exposure_buffer_data, &device_data.exposure_buffers_cpu[0]);
                   ASSERT_ONCE(SUCCEEDED(hr));
-
-                  // Keep this mapped permanently to avoid butchering the frame rate (shader memory writes will directly go into our mapped data)
-                  mapped_exposure.pData = nullptr;
-                  hr = native_device_context->Map(device_data.exposure_buffer_cpu.get(), 0, D3D11_MAP_READ, 0, &mapped_exposure);
-                  ASSERT_ONCE(SUCCEEDED(hr));
+                  device_data.exposure_buffers_cpu[1] = nullptr;
+                  hr = native_device->CreateBuffer(&exposure_buffer_desc, &exposure_buffer_data, &device_data.exposure_buffers_cpu[1]);
 
                   D3D11_RENDER_TARGET_VIEW_DESC exposure_buffer_rtv_desc;
-                  exposure_buffer_rtv_desc.Format = DXGI_FORMAT::DXGI_FORMAT_R32_FLOAT;
+                  exposure_buffer_rtv_desc.Format = DXGI_FORMAT::DXGI_FORMAT_R32_FLOAT; // NOTE: this would probably be fine as FP16 too
                   exposure_buffer_rtv_desc.ViewDimension = D3D11_RTV_DIMENSION::D3D11_RTV_DIMENSION_BUFFER;
                   exposure_buffer_rtv_desc.Buffer.FirstElement = 0;
                   exposure_buffer_rtv_desc.Buffer.NumElements = 1;
@@ -3751,7 +3818,7 @@ namespace
                native_device_context->PSGetShader(&ps, nullptr, 0);
 
                bool has_sunshafts = original_shader_hashes.Contains(shader_hashes_HDRPostProcessHDRFinalScene_Sunshafts); // These shaders use a different cbuffer layout
-               SetPreyLumaConstantBuffers(cmd_list, stages, shared_data_pipeline_layout, LumaConstantBufferType::LumaData, has_sunshafts);
+               SetLumaConstantBuffers(native_device_context, device_data, stages, LumaConstantBufferType::LumaData, has_sunshafts);
 
                // Draw the exposure
                native_device_context->PSSetShader(device_data.draw_exposure_pixel_shader.get(), nullptr, 0);
@@ -3760,10 +3827,19 @@ namespace
                native_device_context->Draw(3, 0);
 
                // Copy it back as CPU buffer and read+store it
-               native_device_context->CopyResource(device_data.exposure_buffer_cpu.get(), device_data.exposure_buffer_gpu.get());
-               float scene_exposure = 1.f;
+               native_device_context->CopyResource(device_data.exposure_buffers_cpu[device_data.exposure_buffers_cpu_index].get(), device_data.exposure_buffer_gpu.get());
+
+               device_data.exposure_buffers_cpu_index = (device_data.exposure_buffers_cpu_index + 1) % 2; // Ping Point between 0 and 1
+
+               float scene_exposure = device_data.dlss_scene_pre_exposure; // 1 by default
+               // Read back from the previous frame "ring buffer" (it's fine!). In the first frame this would have a value of 1.
                // Note: this is possibly some frames behind, but has no performance hit and it's fine as it is for the use we make of it
-               if (mapped_exposure.pData != nullptr)
+               D3D11_MAPPED_SUBRESOURCE mapped_exposure;
+               // We use the "D3D11_MAP_FLAG_DO_NOT_WAIT" flag just for extra safety, the exposure being wrong if preferable to a frame rate dip. It'd throw an error anyway
+               HRESULT hr = texture_recreated ? -1 : native_device_context->Map(device_data.exposure_buffers_cpu[device_data.exposure_buffers_cpu_index].get(), 0, D3D11_MAP_READ, D3D11_MAP_FLAG_DO_NOT_WAIT, &mapped_exposure);
+               // TODO: in case this assert failed often enough, make ~4 buffers and read the more recent one that isn't write locked
+               ASSERT_ONCE(texture_recreated || SUCCEEDED(hr)); // It seems like this rarely happens with a ring buffer as we always wait one whole frame, though if necessary, we could increase the ring buffer and read the oldest texture that is available
+               if (SUCCEEDED(hr))
                {
                   // Depending on "DLSS_RELATIVE_PRE_EXPOSURE" this is either the relative exposure (compared to the average expected exposure value) or raw final exposure
                   scene_exposure = *((float*)mapped_exposure.pData);
@@ -3771,7 +3847,17 @@ namespace
                   {
                      scene_exposure = 1.f;
                   }
+                  native_device_context->Unmap(device_data.exposure_buffers_cpu[device_data.exposure_buffers_cpu_index].get(), 0);
+                  mapped_exposure = {}; // Null just for clarity
                }
+
+               // Force an exposure of 1 if we are resetting DLSS, as the value from the previous frame might not be correct anymore
+               bool reset_dlss = device_data.force_reset_dlss_sr || !device_data.has_drawn_main_post_processing_previous || (device_data.has_drawn_motion_blur_previous && !device_data.has_drawn_motion_blur);
+               if (reset_dlss)
+               {
+                  scene_exposure = 1.f;
+               }
+
                device_data.dlss_scene_pre_exposure = scene_exposure;
 #if DEVELOPMENT || TEST
                bool dlss_relative_pre_exposure = GetShaderDefineCompiledNumericalValue(DLSS_RELATIVE_PRE_EXPOSURE_HASH) >= 1;
@@ -3791,6 +3877,7 @@ namespace
                {
                   // With this design, we set the DLSS pre-exposure and exposure to the same value, so, given that the exposure was already multiplied in despite it shouldn't have it been so,
                   // DLSS will divide out the exposure through the pre-exposure parameter and then re-acknowledge it through the exposure texture, basically making DLSS act as if it was done before exposure/tonemapping.
+                  // This might not work that well if our exposure here is some frames late, as it wouldn't match the one already baked in the texture.
                   device_data.dlss_scene_exposure = scene_exposure;
                }
 
@@ -3800,19 +3887,23 @@ namespace
                native_device_context->OMSetRenderTargets(1, &render_target_view_const, nullptr);
             }
          }
+         
+         // Motion Blur
          // Note: this doesn't always run, it's based on a user setting!
-         if (!device_data.has_drawn_motion_blur && original_shader_hashes.Contains(shader_hashes_MotionBlur))
+         if (device_data.has_drawn_composed_gbuffers && !device_data.has_drawn_motion_blur && original_shader_hashes.Contains(shader_hashes_MotionBlur))
          {
             device_data.has_drawn_motion_blur = true;
          }
-         if (!device_data.has_drawn_ssao && original_shader_hashes.Contains(shader_hashes_DirOccPass))
+         
+         // SSAO
+         if (!device_data.has_drawn_composed_gbuffers && !device_data.has_drawn_ssao && original_shader_hashes.Contains(shader_hashes_DirOccPass))
          {
             device_data.has_drawn_ssao = true;
             if (is_custom_pass && GetShaderDefineCompiledNumericalValue(SSAO_TYPE_HASH) >= 1) // If using GTAO
             {
                uint2 gtao_edges_target_resolution = { (UINT)device_data.output_resolution.x, (UINT)device_data.output_resolution.y }; // Note that the swapchain resolution can end up being changed with a delay? Or are we somehow missing resize events?
 
-               ID3D11RenderTargetView* rtvs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
+               com_ptr<ID3D11RenderTargetView> rtvs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
                com_ptr<ID3D11DepthStencilView> dsv;
                native_device_context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &rtvs[0], &dsv);
 
@@ -3885,26 +3976,19 @@ namespace
 
                // Add a second render target (the depth edges) as it's needed by GTAO.
                // We need to cache and restore all the RTs as the game uses a push and pop mechanism that tracks them closely, so any changes in state can break them.
-               ID3D11RenderTargetView* rtv1 = rtvs[1];
+               com_ptr<ID3D11RenderTargetView> rtv1 = rtvs[1];
                rtvs[1] = device_data.gtao_edges_rtv.get();
-               native_device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &rtvs[0], dsv.get());
+               ID3D11RenderTargetView* const* rtvs_const = (ID3D11RenderTargetView**)std::addressof(rtvs[0]);
+               native_device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, rtvs_const, dsv.get());
 
-               SetPreyLumaConstantBuffers(cmd_list, stages, settings_pipeline_layout, LumaConstantBufferType::LumaSettings);
-               SetPreyLumaConstantBuffers(cmd_list, stages, shared_data_pipeline_layout, LumaConstantBufferType::LumaData);
+               SetLumaConstantBuffers(native_device_context, device_data, stages, LumaConstantBufferType::LumaSettings);
+               SetLumaConstantBuffers(native_device_context, device_data, stages, LumaConstantBufferType::LumaData);
 
                native_device_context->Draw(3, 0);
 
                rtvs[1] = rtv1;
-               rtv1 = nullptr;
-               native_device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &rtvs[0], dsv.get());
-               for (UINT i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; i++)
-               {
-                  if (rtvs[i] != nullptr)
-                  {
-                     rtvs[i]->Release();
-                     rtvs[i] = nullptr;
-                  }
-               }
+               native_device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, rtvs_const, dsv.get());
+
                return true;
             }
             else if (device_data.gtao_edges_texture.get())
@@ -3918,15 +4002,19 @@ namespace
             if (device_data.gtao_edges_srv.get())
             {
                ID3D11ShaderResourceView* const shader_resource_view_const = device_data.gtao_edges_srv.get();
-               native_device_context->PSSetShaderResources(3, 1, &shader_resource_view_const); //TODOFT: unbind these later?
+               native_device_context->PSSetShaderResources(3, 1, &shader_resource_view_const); //TODOFT: unbind these later? Not particularly needed
             }
          }
-         if (!device_data.has_drawn_main_post_processing && original_shader_hashes.Contains(shader_hashes_PostAAComposites))
+         
+         // Post AA secondary post process (film grain, vignette, lens optics etc)
+         if (device_data.has_drawn_composed_gbuffers && !device_data.has_drawn_main_post_processing && original_shader_hashes.Contains(shader_hashes_PostAAComposites))
          {
+            uint32_t custom_data = 0;
+
             // Do lens distortion just before the post AA composition, which draws film grain and other screen space effects
-            if (is_custom_pass && cb_luma_frame_settings.LensDistortion)
+            if (is_custom_pass && cb_luma_frame_settings.LensDistortion && device_data.lens_distortion_pixel_shader.get())
             {
-               ID3D11RenderTargetView* rtvs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
+               com_ptr<ID3D11RenderTargetView> rtvs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
                com_ptr<ID3D11DepthStencilView> dsv;
                native_device_context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &rtvs[0], &dsv);
 
@@ -4035,55 +4123,74 @@ namespace
                   assert(SUCCEEDED(hr));
                }
 
-               size_t prev_lens_distortion_rtv_index = device_data.lens_distortion_rtv_index;
-               device_data.lens_distortion_rtv_index = -1;
+               // Clear the SRV and RTV so the copy resource functions below work as expected (this doesn't seem to be necessary)
+               ID3D11ShaderResourceView* const emptry_srv = nullptr;
+               native_device_context->PSSetShaderResources(0, 1, &emptry_srv); // This crashes if fed nullptr directly
+               native_device_context->OMSetRenderTargets(0, nullptr, nullptr);
 
-               if (device_data.lens_distortion_rtvs_resources[0].get() == ps_srv_resource.get())
+               if (!device_data.lens_distortion_rtv_found)
                {
-                  device_data.lens_distortion_rtv_index = 0;
-               }
-               else if (device_data.lens_distortion_rtvs_resources[1].get() == ps_srv_resource.get())
-               {
-                  device_data.lens_distortion_rtv_index = 1;
+                  size_t prev_lens_distortion_rtv_index = device_data.lens_distortion_rtv_index;
+                  device_data.lens_distortion_rtv_index = -1;
+
+                  // We can't properly and safely detect the original AA SRVs anymore at this point
+                  device_data.lens_distortion_srvs[0] = nullptr;
+                  device_data.lens_distortion_srvs[1] = nullptr;
+
+                  if (device_data.lens_distortion_rtvs_resources[0].get() == ps_srv_resource.get())
+                  {
+                     device_data.lens_distortion_rtv_index = 0;
+                  }
+                  else if (device_data.lens_distortion_rtvs_resources[1].get() == ps_srv_resource.get())
+                  {
+                     device_data.lens_distortion_rtv_index = 1;
+                  }
+                  else
+                  {
+                     // Use index 0 if it's available (empty) or if they are both taken (we already replace the oldest if we can)
+                     device_data.lens_distortion_rtv_index = device_data.lens_distortion_rtvs_resources[0].get() == nullptr ? 0 : (device_data.lens_distortion_rtvs_resources[1].get() == nullptr ? 1 : 0);
+
+                     // We could re-use the RTV created by the game for the previous pass, but it's hard to track so create a new one.
+                     // Unless "FORCE_DLSS_SMAA_SLIMMED_DOWN_HISTORY" is true, TAA will ping pong between two textures.
+                     // We keep a reference to textures that the game might have unreferenced here but it shouldn't matter.
+                     device_data.lens_distortion_rtvs_resources[device_data.lens_distortion_rtv_index] = ps_srv_resource;
+
+                     D3D11_RENDER_TARGET_VIEW_DESC rtv_desc;
+                     rtv_desc.Format = lens_distortion_format;
+                     rtv_desc.ViewDimension = D3D11_RTV_DIMENSION::D3D11_RTV_DIMENSION_TEXTURE2D;
+                     rtv_desc.Texture2D.MipSlice = 0;
+
+                     device_data.lens_distortion_rtvs[device_data.lens_distortion_rtv_index] = nullptr;
+                     HRESULT hr = native_device->CreateRenderTargetView(device_data.lens_distortion_rtvs_resources[device_data.lens_distortion_rtv_index].get(), &rtv_desc, &device_data.lens_distortion_rtvs[device_data.lens_distortion_rtv_index]);
+                     assert(SUCCEEDED(hr));
+                  }
+
+                  // If the index didn't change for over two frames, the user probably disabled TAA (or the SMAA versions that holds a history texture),
+                  // so we clean up the other one to avoid it persisting in memory.
+                  if (device_data.lens_distortion_rtv_index == prev_lens_distortion_rtv_index)
+                  {
+                     device_data.lens_distortion_rtvs[device_data.lens_distortion_rtv_index == 0 ? 1 : 0] = nullptr;
+                     device_data.lens_distortion_srvs[device_data.lens_distortion_rtv_index == 0 ? 1 : 0] = nullptr;
+                  }
                }
                else
                {
-                  // Use index 0 if it's available (empty) or if they are both taken (we already replace the oldest if we can)
-                  device_data.lens_distortion_rtv_index = device_data.lens_distortion_rtvs_resources[0].get() == nullptr ? 0 : (device_data.lens_distortion_rtvs_resources[1].get() == nullptr ? 1 : 0);
-
-                  // We could re-use the RTV created by the game for the previous pass, but it's hard to track so create a new one.
-                  // Unless "FORCE_DLSS_SMAA_SLIMMED_DOWN_HISTORY" is true, TAA will ping pong between two textures.
-                  // We keep a reference to textures that the game might have unreferenced here but it shouldn't matter.
-                  device_data.lens_distortion_rtvs_resources[device_data.lens_distortion_rtv_index] = ps_srv_resource;
-
-                  D3D11_RENDER_TARGET_VIEW_DESC rtv_desc;
-                  rtv_desc.Format = lens_distortion_format;
-                  rtv_desc.ViewDimension = D3D11_RTV_DIMENSION::D3D11_RTV_DIMENSION_TEXTURE2D;
-                  rtv_desc.Texture2D.MipSlice = 0;
-
-                  device_data.lens_distortion_rtvs[device_data.lens_distortion_rtv_index] = nullptr;
-                  HRESULT hr = native_device->CreateRenderTargetView(device_data.lens_distortion_rtvs_resources[device_data.lens_distortion_rtv_index].get(), &rtv_desc, &device_data.lens_distortion_rtvs[device_data.lens_distortion_rtv_index]);
-                  assert(SUCCEEDED(hr));
+                  ASSERT_ONCE(device_data.lens_distortion_rtvs_resources[device_data.lens_distortion_rtv_index].get() == ps_srv_resource.get()); // Something went wrong, this shouldn't happen
                }
 
-               // If the index didn't change for over two frames, the user probably disabled TAA (or the SMAA versions that holds a history texture),
-               // so we clean up the other one to avoid it persisting in memory.
-               if (device_data.lens_distortion_rtv_index == prev_lens_distortion_rtv_index)
-               {
-                  device_data.lens_distortion_rtvs[device_data.lens_distortion_rtv_index == 0 ? 1 : 0] = nullptr;
-                  device_data.lens_distortion_rtvs_resources[device_data.lens_distortion_rtv_index == 0 ? 1 : 0] = nullptr;
-               }
+               // This shouldn't last for more than a frame, as the users settings or rendering state could change
+               device_data.lens_distortion_rtv_found = false;
 
                // We make a copy of the current "PostAAComposite" source texture (with mip maps), and set that as render target (we draw the lens distortion into it),
-               // and replace the shader resource view it came from with the cloned mip mapped texture, then we restore the previous state and run PostAAComposite on the distorted texture as if nothing happened.
+               // and replace the shader resource view it came from with the cloned mip mapped texture, then we restore the previous state and run "PostAAComposite" on the distorted texture as if nothing happened.
                // Theoretically we could do the distortion in-line in the "PostAAComposite" shader, but it doesn't work that great given that there's sharpening in there too (so we need the finalized texture to sample it from multiple places that already have distortion applied).
                if (lens_distortion_max_mip_levels > 1)
                {
-                  native_device_context->CopySubresourceRegion(device_data.lens_distortion_texture.get(), 0, 0, 0, 0, ps_srv_resource.get(), 0, nullptr);
+                  native_device_context->CopySubresourceRegion(device_data.lens_distortion_texture.get(), 0, 0, 0, 0, device_data.lens_distortion_rtvs_resources[device_data.lens_distortion_rtv_index].get(), 0, nullptr);
                }
                else
                {
-                  native_device_context->CopyResource(device_data.lens_distortion_texture.get(), ps_srv_resource.get());
+                  native_device_context->CopyResource(device_data.lens_distortion_texture.get(), device_data.lens_distortion_rtvs_resources[device_data.lens_distortion_rtv_index].get());
                }
 
                // If we are using high quality lens distortion, generate mips so we can distort with better quality at the edges of the screen, as bilinear sampling wouldn't be enough anymore (the distorted sampling UVs might cover an area greater than 4 source texels, so bilinear isn't enough anymore).
@@ -4097,9 +4204,20 @@ namespace
                ID3D11ShaderResourceView* const lens_distortion_srv = device_data.lens_distortion_srv.get();
                native_device_context->PSSetShaderResources(0, 1, &lens_distortion_srv);
 
-               ID3D11RenderTargetView* rtv0 = rtvs[0];
-               rtvs[0] = device_data.lens_distortion_rtvs[device_data.lens_distortion_rtv_index].get();
-               native_device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &rtvs[0], dsv.get());
+               // Swap the RTV and SRV if we can, because if we wrote on the same RT that TAA just wrote to, we'd pollute the next frame's AA, given it'd be blending with that resource (which would now have lens distortion).
+               // By flip flopping the index, we always use the one that was the history of the current frame, and that won't have any usage in the next frame (it only uses 1 frame of history).
+               // If we can't flip it, we are either in the first TAA frame, or we are not using TAA.
+               // If we previous used TAA and then change to no AA or FXAA (flipflopless), we can still use the other index for this temporary write, as it'd simply be unused, but still exist in memory (and if not, we'll be keeping it alive for an extra while).
+               // Note that when toggling lens distortion, gathering the data might be late by 1 frame so we might end up polluting our own TAA history with lens distortion (for a few frames, until it stops trailing behind).
+               size_t flipped_index = device_data.lens_distortion_rtv_index == 0 ? 1 : 0;
+               bool can_flip = device_data.lens_distortion_rtvs[flipped_index].get() && device_data.lens_distortion_srvs[flipped_index].get();
+               size_t target_index = can_flip ? flipped_index : device_data.lens_distortion_rtv_index;
+               ID3D11ShaderResourceView* const ps_srv_const = can_flip ? device_data.lens_distortion_srvs[device_data.lens_distortion_rtv_index].get() : ps_srv.get();
+
+               com_ptr<ID3D11RenderTargetView> rtv0 = rtvs[0];
+               rtvs[0] = device_data.lens_distortion_rtvs[target_index].get();
+               ID3D11RenderTargetView* const* rtvs_const = (ID3D11RenderTargetView**)std::addressof(rtvs[0]);
+               native_device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, rtvs_const, dsv.get());
 
                native_device_context->PSSetShader(device_data.lens_distortion_pixel_shader.get(), nullptr, 0);
 
@@ -4108,11 +4226,11 @@ namespace
                native_device_context->PSSetSamplers(10, 1, &lens_distortion_sampler_state);
 
                // We don't need to set send our cbuffers again as they'd already have the latest values, but... let's do it anyway
-               SetPreyLumaConstantBuffers(cmd_list, stages, settings_pipeline_layout, LumaConstantBufferType::LumaSettings);
-               SetPreyLumaConstantBuffers(cmd_list, stages, shared_data_pipeline_layout, LumaConstantBufferType::LumaData);
+               SetLumaConstantBuffers(native_device_context, device_data, stages, LumaConstantBufferType::LumaSettings);
+               SetLumaConstantBuffers(native_device_context, device_data, stages, LumaConstantBufferType::LumaData, custom_data);
                updated_cbuffers = true;
 
-               // In case DLSS upscaled earlier
+               // In case DLSS upscaled earlier (it does)
                if (device_data.has_drawn_dlss_sr && device_data.prey_drs_active)
                {
                   SetViewportFullscreen(native_device_context, lens_distortion_resolution);
@@ -4124,18 +4242,8 @@ namespace
                native_device_context->PSSetShader(ps.get(), nullptr, 0);
 
                rtvs[0] = rtv0;
-               rtv0 = nullptr;
-               native_device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &rtvs[0], dsv.get());
-               for (UINT i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; i++)
-               {
-                  if (rtvs[i] != nullptr)
-                  {
-                     rtvs[i]->Release();
-                     rtvs[i] = nullptr;
-                  }
-               }
+               native_device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, rtvs_const, dsv.get());
 
-               ID3D11ShaderResourceView* const ps_srv_const = ps_srv.get();
                native_device_context->PSSetShaderResources(0, 1, &ps_srv_const);
 
                // Don't return, let the native "PostAAComposite" draw happen anyway!
@@ -4143,6 +4251,13 @@ namespace
             else if (device_data.lens_distortion_texture.get() || device_data.lens_distortion_rtvs[0].get() || device_data.lens_distortion_rtvs[1].get())
             {
                device_data.CleanLensDistortionResource();
+            }
+
+            if (is_custom_pass && !updated_cbuffers)
+            {
+               SetLumaConstantBuffers(native_device_context, device_data, stages, LumaConstantBufferType::LumaSettings);
+               SetLumaConstantBuffers(native_device_context, device_data, stages, LumaConstantBufferType::LumaData, custom_data);
+               updated_cbuffers = true;
             }
 
             // This is the last known pass that is guaranteed to run before UI draws in
@@ -4154,14 +4269,18 @@ namespace
                device_data.has_drawn_upscaling = true;
             }
          }
+         
+         // SMAA
          // If DLSS is guaranteed to be running instead of SMAA 2TX, we can skip the edge detection passes of SMAA 2TX (these also run other SMAA modes but then DLSS wouldn't run with these).
          // This check might engage one frame late after DLSS engages but it doesn't matter.
          // This is particularly useful because on every boot the game rejects the TAA user config setting (seemengly due to "r_AntialiasingMode" being clamped to 3 (SMAA 2TX)), so we'd waste performance if we didn't skip the passes (we still do).
-         if (!device_data.has_drawn_main_post_processing && original_shader_hashes.Contains(shader_hashes_SMAA_EdgeDetection) && device_data.dlss_sr && !device_data.dlss_sr_suppressed && device_data.prey_taa_detected && device_data.cloned_pipeline_count != 0)
+         if (device_data.has_drawn_composed_gbuffers && !device_data.has_drawn_main_post_processing && original_shader_hashes.Contains(shader_hashes_SMAA_EdgeDetection) && device_data.dlss_sr && !device_data.dlss_sr_suppressed && device_data.prey_taa_detected && device_data.cloned_pipeline_count != 0)
          {
             return true;
          }
-         if (!had_drawn_upscaling)
+         
+         // Vanilla upscaling
+         if (device_data.has_drawn_composed_gbuffers && !had_drawn_upscaling)
          {
             // Viewport is already fullscreen for this pass
             if (original_shader_hashes.Contains(shader_hash_PostAAUpscaleImage, reshade::api::shader_stage::pixel))
@@ -4177,327 +4296,378 @@ namespace
             }
          }
 
+         // Native TAA
+         // This pass always runs before our lens distortion, so mark the lens distortion RTV as found here to avoid having to find it again later
+         if (device_data.has_drawn_composed_gbuffers && cb_luma_frame_settings.LensDistortion && original_shader_hashes.Contains(shader_hashes_PostAA) && device_data.cloned_pipeline_count != 0 && device_data.lens_distortion_pixel_shader.get())
+         {
+            com_ptr<ID3D11RenderTargetView> rtv;
+            native_device_context->OMGetRenderTargets(1, &rtv, nullptr);
+
+            ASSERT_ONCE(rtv.get());
+            if (rtv.get())
+            {
+               com_ptr<ID3D11ShaderResourceView> ps_srv;
+               native_device_context->PSGetShaderResources(1, 1, &ps_srv); // "PostAA_PreviousSceneTex" (not present in all AA methods)
+               com_ptr<ID3D11Resource> ps_srv_resource;
+               if (ps_srv)
+               {
+                  ps_srv->GetResource(&ps_srv_resource);
+               }
+               com_ptr<ID3D11Resource> rtv_resource;
+               rtv->GetResource(&rtv_resource);
+
+               bool reset = ps_srv_resource.get() == nullptr || (device_data.lens_distortion_rtvs_resources[0].get() != ps_srv_resource.get() && device_data.lens_distortion_rtvs_resources[1].get() != ps_srv_resource.get());
+               // SMAA 1TX and 2TX ping pong two textures on read write. FXAA and no AA only use one (they only need one, but might still flip flop). LUMA DLSS also only uses one.
+               // 
+               // If there's no TAA element ongoing, always use index 0.
+               // If index 0 and 1 are taken by different RTs, and neither these RT resources match the current TAA shader resource, overwrite index 0 and 1 (reset) as the AA method could have changed.
+               // If we previously (2 frames ago) used index 0 and now we find a matching resource as RT, use index 0 again.
+               // If index 0 is taken by a different RT, and that RT resource matches the current TAA shader resource (implying RTs ping pong is stlll happening), use index 1.
+               // In any other case, leave everything as it was, it's probably fine.
+               if (reset)
+               {
+                  device_data.lens_distortion_rtv_index = 0;
+                  device_data.lens_distortion_rtvs[0] = rtv.get();
+                  device_data.lens_distortion_rtvs[1] = nullptr;
+                  device_data.lens_distortion_srvs[0] = ps_srv.get(); // This SRV possibly belongs to a different resource than the RTV
+                  device_data.lens_distortion_srvs[1] = nullptr;
+                  device_data.lens_distortion_rtvs_resources[0] = rtv_resource.get();
+                  device_data.lens_distortion_rtvs_resources[1] = nullptr;
+                  device_data.lens_distortion_rtv_found = true; // Highlight that we have already found it before the actual lens distortion pass
+               }
+               else if (device_data.lens_distortion_rtvs_resources[0].get() == nullptr || device_data.lens_distortion_rtvs_resources[0].get() == rtv_resource.get())
+               {
+                  device_data.lens_distortion_rtv_index = 0;
+                  device_data.lens_distortion_rtvs[device_data.lens_distortion_rtv_index] = rtv.get();
+                  device_data.lens_distortion_srvs[device_data.lens_distortion_rtv_index] = ps_srv.get();
+                  device_data.lens_distortion_rtvs_resources[device_data.lens_distortion_rtv_index] = rtv_resource.get();
+                  device_data.lens_distortion_rtv_found = true;
+               }
+               else if (device_data.lens_distortion_rtvs_resources[1].get() == nullptr || device_data.lens_distortion_rtvs_resources[1].get() == rtv_resource.get())
+               {
+                  device_data.lens_distortion_rtv_index = 1;
+                  device_data.lens_distortion_rtvs[device_data.lens_distortion_rtv_index] = rtv.get();
+                  device_data.lens_distortion_srvs[device_data.lens_distortion_rtv_index] = ps_srv.get();
+                  device_data.lens_distortion_rtvs_resources[device_data.lens_distortion_rtv_index] = rtv_resource.get();
+                  device_data.lens_distortion_rtv_found = true;
+               }
+            }
+         }
+
 #if ENABLE_NGX
+         // DLSS upscaling/TAA
+         // We do DLSS after some post processing (e.g. exposure, tonemap, color grading, bloom, blur, objects highlight, sun shafts, other possible AA forms, etc) because running it before post processing
+         // would be harder (we'd need to collect more textures manually and manually skip all later AA steps), most importantly, that wouldn't work with the native dynamic resolution the game supports (without changing every single
+         // texture sample coordinates in post processing). Even if it's after pp, it should still have enough quality.
+         // We replace the "TAA"/"SMAA 2TX" pass (whichever of the ones in our supported passes list is run), ignoring whatever it would have done (the secondary texture it allocated is kept alive, even if we don't use it, we couldn't really destroy it from ReShade),
+         // after there's a "composition" pass (film grain, sharpening, ...) and then an optional upscale pass, both of these are too late for DLSS to run.
+         // 
          // Don't even try to run DLSS if we have no custom shaders loaded, we need them for DLSS to work properly (it might somewhat work even without them, but it's untested and unneeded)
-         if (is_custom_pass && device_data.dlss_sr && !device_data.dlss_sr_suppressed && device_data.cloned_pipeline_count != 0)
+         if (device_data.has_drawn_composed_gbuffers && is_custom_pass && device_data.dlss_sr && !device_data.dlss_sr_suppressed && original_shader_hashes.Contains(shader_hashes_PostAA_TAA))
          {
             // TODO: add DLSS transparency mask (e.g. glass, decals, emissive) by caching the g-buffers before and after transparent stuff draws near the end?
-            // TODO: add DLSS bias mask (to ignore animated textures) by marking up some shaders(materials)/textures hashes with it?
-            // TODO: move DLSS before tonemapping, depth of field, bloom and blur. It wouldn't be easy because exposure is calculated after blur in CryEngine,
+            // TODO: add DLSS bias mask (to ignore animated textures) by marking up some shaders(materials)/textures hashes with it? DLSS is smart enough to not really need that
+            //TODOFT4: move DLSS before tonemapping, depth of field, bloom and blur. It wouldn't be easy because exposure is calculated after blur in CryEngine,
             // but we could simply fall back on using DLSS Auto Exposure (even if that wouldn't match the actual value used by post processing...).
             // To achieve that, we need to add both DRS+DLSS scaling support to all shaders that run after DLSS, as DLSS would upscale the image before the final upscale pass (and native TAA would be skipped).
             // Sun shafts and lens optics effects would (actually, could) draw in native resolution after upscaling then.
             // Overall that solution has no downsides other than the difficulty of running multiple passes at a different resolution (which really isn't hard as we already have a set up for it).
             // DLSS currently clips all BT.2020 colors (there's no proper way around it).
+            // Blur is kinda fine to be done before DLSS as blurry pixels have no detail anyway... (the only problem is that they'd ruin the recomposition after blur stops, but whatever).
+            // Bloom is ok before and after (especially if we dejitter it if done b4).
             // TODO: (idea) increase the number of Halton sequence phases when there's no camera rotation happening, in movement it can benefit from being lower, but when steady (or rotating the camera only, which conserves most of the TAA history),
             // a higher phase count can drastically improve the quality.
 
-            // We do DLSS after some post processing (e.g. exposure, tonemap, color grading, bloom, blur, objects highlight, sun shafts, other possible AA forms, etc) because running it before post processing
-            // would be harder (we'd need to collect more textures manually and manually skip all later AA steps), most importantly, that wouldn't work with the native dynamic resolution the game supports (without changing every single
-            // texture sample coordinates in post processing). Even if it's after pp, it should still have enough quality.
-            // We replace the "TAA"/"SMAA 2TX" pass (whichever of the ones in our supported passes list is run), ignoring whatever it would have done (the secondary texture it allocated is kept alive, even if we don't use it, we couldn't really destroy it from ReShade),
-            // after there's a "composition" pass (film grain, sharpening, ...) and then an optional upscale pass, both of these are too late for DLSS to run.
-            if (original_shader_hashes.Contains(shader_hashes_PostAA))
+            ASSERT_ONCE(device_data.prey_taa_detected); // Why did we get here without TAA enabled?
+            com_ptr<ID3D11ShaderResourceView> ps_shader_resources[17];
+            // 0 current color source
+            // 1 previous color source (post TAA)
+            // 2 depth (0-1 being camera origin - far)
+            // 3 motion vectors (dynamic objects movement only, no camera movement (if not baked in the dynamic objects))
+            // 16 device depth (inverted depth, used by stencil)
+            native_device_context->PSGetShaderResources(0, ARRAYSIZE(ps_shader_resources), reinterpret_cast<ID3D11ShaderResourceView**>(ps_shader_resources));
+
+            com_ptr<ID3D11RenderTargetView> render_target_views[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
+            com_ptr<ID3D11DepthStencilView> depth_stencil_view;
+            native_device_context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &render_target_views[0], &depth_stencil_view);
+
+            const bool dlss_inputs_valid = ps_shader_resources[0].get() != nullptr && ps_shader_resources[16].get() != nullptr && ps_shader_resources[3].get() != nullptr && render_target_views[0] != nullptr;
+            ASSERT_ONCE(dlss_inputs_valid);
+            if (dlss_inputs_valid)
             {
-               ASSERT_ONCE(device_data.prey_taa_detected); // Why did we get here without TAA enabled?
-               com_ptr<ID3D11ShaderResourceView> ps_shader_resources[17];
-               static_assert(sizeof(com_ptr<ID3D11ShaderResourceView>) == sizeof(ID3D11ShaderResourceView*));
-               // 0 current color source
-               // 1 previous color source (post TAA)
-               // 2 depth (0-1 being camera origin - far)
-               // 3 motion vectors (dynamic objects movement only, no camera movement (if not baked in the dynamic objects))
-               // 16 device depth (inverted depth, used by stencil)
-               native_device_context->PSGetShaderResources(0, ARRAYSIZE(ps_shader_resources), reinterpret_cast<ID3D11ShaderResourceView**>(ps_shader_resources));
+               com_ptr<ID3D11Resource> output_colorTemp;
+               render_target_views[0]->GetResource(&output_colorTemp);
+               com_ptr<ID3D11Texture2D> output_color;
+               HRESULT hr = output_colorTemp->QueryInterface(&output_color);
+               ASSERT_ONCE(SUCCEEDED(hr));
 
-               ID3D11RenderTargetView* render_target_views[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
-               com_ptr<ID3D11DepthStencilView> depth_stencil_view;
-               native_device_context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &render_target_views[0], &depth_stencil_view);
-
-               const bool dlss_inputs_valid = ps_shader_resources[0].get() != nullptr && ps_shader_resources[16].get() != nullptr && ps_shader_resources[3].get() != nullptr && render_target_views[0] != nullptr;
-               ASSERT_ONCE(dlss_inputs_valid);
-               if (dlss_inputs_valid)
-               {
-                  com_ptr<ID3D11Resource> output_colorTemp;
-                  render_target_views[0]->GetResource(&output_colorTemp);
-                  com_ptr<ID3D11Texture2D> output_color;
-                  HRESULT hr = output_colorTemp->QueryInterface(&output_color);
-                  ASSERT_ONCE(SUCCEEDED(hr));
-
-                  D3D11_TEXTURE2D_DESC output_texture_desc;
-                  output_color->GetDesc(&output_texture_desc);
+               D3D11_TEXTURE2D_DESC output_texture_desc;
+               output_color->GetDesc(&output_texture_desc);
 
 #if FORCE_SMAA_MIPS // Define from the native plugin (not ever defined here!)
-                  ASSERT_ONCE(output_texture_desc.MipLevels > 1); // To improve "Perfect Perspective" lens distortion
+               ASSERT_ONCE(output_texture_desc.MipLevels > 1); // To improve "Perfect Perspective" lens distortion
 #endif
 
-                  ASSERT_ONCE(std::lrintf(device_data.output_resolution.x) == output_texture_desc.Width && std::lrintf(device_data.output_resolution.y) == output_texture_desc.Height);
-                  std::array<uint32_t, 2> dlss_render_resolution = FindClosestIntegerResolutionForAspectRatio((double)output_texture_desc.Width * (double)device_data.dlss_render_resolution_scale, (double)output_texture_desc.Height * (double)device_data.dlss_render_resolution_scale, (double)output_texture_desc.Width / (double)output_texture_desc.Height);
-                  // The "HDR" flag in DLSS SR actually means whether the color is in linear space or "sRGB gamma" (apparently not 2.2) (SDR) space, colors beyond 0-1 don't seem to be clipped either way
-                  bool dlss_hdr = GetShaderDefineCompiledNumericalValue(POST_PROCESS_SPACE_TYPE_HASH) >= 1; // we are assuming the value was always a number and not empty
+               ASSERT_ONCE(std::lrintf(device_data.output_resolution.x) == output_texture_desc.Width && std::lrintf(device_data.output_resolution.y) == output_texture_desc.Height);
+               std::array<uint32_t, 2> dlss_render_resolution = FindClosestIntegerResolutionForAspectRatio((double)output_texture_desc.Width * (double)device_data.dlss_render_resolution_scale, (double)output_texture_desc.Height * (double)device_data.dlss_render_resolution_scale, (double)output_texture_desc.Width / (double)output_texture_desc.Height);
+               // The "HDR" flag in DLSS SR actually means whether the color is in linear space or "sRGB gamma" (apparently not 2.2) (SDR) space, colors beyond 0-1 don't seem to be clipped either way
+               bool dlss_hdr = GetShaderDefineCompiledNumericalValue(POST_PROCESS_SPACE_TYPE_HASH) >= 1; // we are assuming the value was always a number and not empty
 
 #if TEST_DLSS
-                  com_ptr<ID3D11VertexShader> vs;
-                  com_ptr<ID3D11PixelShader> ps;
-                  native_device_context->VSGetShader(&vs, nullptr, 0);
-                  native_device_context->PSGetShader(&ps, nullptr, 0);
+               com_ptr<ID3D11VertexShader> vs;
+               com_ptr<ID3D11PixelShader> ps;
+               native_device_context->VSGetShader(&vs, nullptr, 0);
+               native_device_context->PSGetShader(&ps, nullptr, 0);
 #endif // TEST_DLSS
 
-                  // TODO: we could do this async from the beginning of rendering (when we can detect res changes), to here, with a mutex, to avoid potential stutters when DRS first engages (same with creating DLSS textures?) or changes resolution? (we could allow for creating more than one DLSS feature???)
-                  // 
-                  // Our DLSS implementation picks a quality mode based on a fixed rendering resolution, but we scale it back in case we detected the game is running DRS, otherwise we run DLAA.
-                  // At lower quality modes (non DLAA), DLSS actually seems to allow for a wider input resolution range that it actually claims when queried for it, but if we declare a resolution scale below 50% here, we can get an assert,
-                  // still, DLSS will keep working at any input resolution (or at least with a pretty big tolerance range).
-                  // This function doesn't alter the pipeline state (e.g. shaders, cbuffers, RTs, ...), if not, we need to move it to the "Present()" function
-                  NGX::DLSS::UpdateSettings(device_data.dlss_sr_handle, native_device_context, output_texture_desc.Width, output_texture_desc.Height, dlss_render_resolution[0], dlss_render_resolution[1], dlss_hdr, device_data.prey_drs_detected);
+               // TODO: we could do this async from the beginning of rendering (when we can detect res changes), to here, with a mutex, to avoid potential stutters when DRS first engages (same with creating DLSS textures?) or changes resolution? (we could allow for creating more than one DLSS feature???)
+               // 
+               // Our DLSS implementation picks a quality mode based on a fixed rendering resolution, but we scale it back in case we detected the game is running DRS, otherwise we run DLAA.
+               // At lower quality modes (non DLAA), DLSS actually seems to allow for a wider input resolution range that it actually claims when queried for it, but if we declare a resolution scale below 50% here, we can get an hitch,
+               // still, DLSS will keep working at any input resolution (or at least with a pretty big tolerance range).
+               // This function doesn't alter the pipeline state (e.g. shaders, cbuffers, RTs, ...), if not, we need to move it to the "Present()" function
+               NGX::DLSS::UpdateSettings(device_data.dlss_sr_handle, native_device_context, output_texture_desc.Width, output_texture_desc.Height, dlss_render_resolution[0], dlss_render_resolution[1], dlss_hdr, device_data.prey_drs_detected);
 
 #if TEST_DLSS // Verify that DLSS never alters the pipeline state (it doesn't, not in the "DLSS::UpdateSettings()"
-                  com_ptr<ID3D11ShaderResourceView> ps_shader_resources_post[ARRAYSIZE(ps_shader_resources)];
-                  native_device_context->PSGetShaderResources(0, ARRAYSIZE(ps_shader_resources_post), reinterpret_cast<ID3D11ShaderResourceView**>(ps_shader_resources_post));
-                  for (uint32_t i = 0; i < ARRAYSIZE(ps_shader_resources); i++)
-                  {
-                     ASSERT_ONCE(ps_shader_resources[i] == ps_shader_resources_post[i]);
-                  }
+               com_ptr<ID3D11ShaderResourceView> ps_shader_resources_post[ARRAYSIZE(ps_shader_resources)];
+               native_device_context->PSGetShaderResources(0, ARRAYSIZE(ps_shader_resources_post), reinterpret_cast<ID3D11ShaderResourceView**>(ps_shader_resources_post));
+               for (uint32_t i = 0; i < ARRAYSIZE(ps_shader_resources); i++)
+               {
+                  ASSERT_ONCE(ps_shader_resources[i] == ps_shader_resources_post[i]);
+               }
 
-                  com_ptr<ID3D11RenderTargetView> render_target_view_post;
-                  com_ptr<ID3D11DepthStencilView> depth_stencil_view_post;
-                  native_device_context->OMGetRenderTargets(1, &render_target_view_post, &depth_stencil_view_post);
-                  ASSERT_ONCE(render_target_views[0] == render_target_view_post && depth_stencil_view == depth_stencil_view_post);
+               com_ptr<ID3D11RenderTargetView> render_target_view_post;
+               com_ptr<ID3D11DepthStencilView> depth_stencil_view_post;
+               native_device_context->OMGetRenderTargets(1, &render_target_view_post, &depth_stencil_view_post);
+               ASSERT_ONCE(render_target_views[0] == render_target_view_post && depth_stencil_view == depth_stencil_view_post);
 
-                  com_ptr<ID3D11VertexShader> vs_post;
-                  com_ptr<ID3D11PixelShader> ps_post;
-                  native_device_context->VSGetShader(&vs_post, nullptr, 0);
-                  native_device_context->PSGetShader(&ps_post, nullptr, 0);
-                  ASSERT_ONCE(vs == vs_post && ps == ps_post);
-                  vs = nullptr;
-                  ps = nullptr;
-                  vs_post = nullptr;
-                  ps_post = nullptr;
+               com_ptr<ID3D11VertexShader> vs_post;
+               com_ptr<ID3D11PixelShader> ps_post;
+               native_device_context->VSGetShader(&vs_post, nullptr, 0);
+               native_device_context->PSGetShader(&ps_post, nullptr, 0);
+               ASSERT_ONCE(vs == vs_post && ps == ps_post);
+               vs = nullptr;
+               ps = nullptr;
+               vs_post = nullptr;
+               ps_post = nullptr;
 #endif // TEST_DLSS
 
-                  bool skip_dlss = output_texture_desc.Width < 32 || output_texture_desc.Height < 32; // DLSS doesn't support output below 32x32
-                  bool dlss_output_changed = false;
-                  constexpr bool dlss_use_native_uav = true;
-                  bool dlss_output_supports_uav = dlss_use_native_uav && (output_texture_desc.BindFlags & D3D11_BIND_UNORDERED_ACCESS) != 0;
-                  if (!dlss_output_supports_uav)
-                  {
+               bool skip_dlss = output_texture_desc.Width < 32 || output_texture_desc.Height < 32; // DLSS doesn't support output below 32x32
+               bool dlss_output_changed = false;
+               constexpr bool dlss_use_native_uav = true;
+               bool dlss_output_supports_uav = dlss_use_native_uav && (output_texture_desc.BindFlags & D3D11_BIND_UNORDERED_ACCESS) != 0;
+               if (!dlss_output_supports_uav)
+               {
 #if ENABLE_NATIVE_PLUGIN
-                     ASSERT_ONCE(false); // Should never happen anymore ("SUPPORT_MSAA" is true)
+                  ASSERT_ONCE(!dlss_use_native_uav); // Should never happen anymore ("FORCE_DLSS_SMAA_UAV" is true)
 #endif
 
-                     output_texture_desc.BindFlags |= D3D11_BIND_UNORDERED_ACCESS;
+                  output_texture_desc.BindFlags |= D3D11_BIND_UNORDERED_ACCESS;
 
-                     if (device_data.dlss_output_color.get())
-                     {
-                        D3D11_TEXTURE2D_DESC dlss_output_texture_desc;
-                        device_data.dlss_output_color->GetDesc(&dlss_output_texture_desc);
-                        dlss_output_changed = dlss_output_texture_desc.Width != output_texture_desc.Width || dlss_output_texture_desc.Height != output_texture_desc.Height || dlss_output_texture_desc.Format != output_texture_desc.Format;
-                     }
-                     if (!device_data.dlss_output_color.get() || dlss_output_changed)
-                     {
-                        device_data.dlss_output_color = nullptr; // Make sure we discard the previous one
-                        hr = native_device->CreateTexture2D(&output_texture_desc, nullptr, &device_data.dlss_output_color);
-                        ASSERT_ONCE(SUCCEEDED(hr));
-                     }
-                     if (!device_data.dlss_output_color.get())
-                     {
-                        skip_dlss = true;
-                     }
+                  if (device_data.dlss_output_color.get())
+                  {
+                     D3D11_TEXTURE2D_DESC dlss_output_texture_desc;
+                     device_data.dlss_output_color->GetDesc(&dlss_output_texture_desc);
+                     dlss_output_changed = dlss_output_texture_desc.Width != output_texture_desc.Width || dlss_output_texture_desc.Height != output_texture_desc.Height || dlss_output_texture_desc.Format != output_texture_desc.Format;
                   }
+                  if (!device_data.dlss_output_color.get() || dlss_output_changed)
+                  {
+                     device_data.dlss_output_color = nullptr; // Make sure we discard the previous one
+                     hr = native_device->CreateTexture2D(&output_texture_desc, nullptr, &device_data.dlss_output_color);
+                     ASSERT_ONCE(SUCCEEDED(hr));
+                  }
+                  if (!device_data.dlss_output_color.get())
+                  {
+                     skip_dlss = true;
+                  }
+               }
+               else
+               {
+                  device_data.dlss_output_color = output_color;
+               }
+
+               if (!skip_dlss)
+               {
+                  com_ptr<ID3D11Resource> source_color;
+                  ps_shader_resources[0]->GetResource(&source_color);
+                  com_ptr<ID3D11Resource> depth_buffer;
+                  ps_shader_resources[16]->GetResource(&depth_buffer);
+                  com_ptr<ID3D11Resource> object_velocity_buffer_temp;
+                  ps_shader_resources[3]->GetResource(&object_velocity_buffer_temp);
+                  com_ptr<ID3D11Texture2D> object_velocity_buffer;
+                  hr = object_velocity_buffer_temp->QueryInterface(&object_velocity_buffer);
+                  ASSERT_ONCE(SUCCEEDED(hr));
+
+                  // Generate "fake" exposure texture
+                  bool exposure_changed = false;
+                  float dlss_scene_exposure = device_data.dlss_scene_exposure;
+#if DEVELOPMENT
+                  if (dlss_custom_exposure > 0.f)
+                  {
+                     dlss_scene_exposure = dlss_custom_exposure;
+                  }
+#endif // DEVELOPMENT
+                  exposure_changed = dlss_scene_exposure != device_data.dlss_exposure_texture_value;
+                  device_data.dlss_exposure_texture_value = dlss_scene_exposure;
+                  // TODO: optimize this for the "DLSS_RELATIVE_PRE_EXPOSURE" false case! Avoid re-creating the texture every frame the exposure changes and instead make it dynamic and re-write it from the CPU? Or simply make our exposure calculation shader write to a texture directly
+                  // (though in that case it wouldn't have the same delay as the CPU side pre-exposure buffer readback)
+                  if (!device_data.dlss_exposure.get() || exposure_changed)
+                  {
+                     D3D11_TEXTURE2D_DESC exposure_texture_desc; // DLSS fails if we pass in a 1D texture so we have to make a 2D one
+                     exposure_texture_desc.Width = 1;
+                     exposure_texture_desc.Height = 1;
+                     exposure_texture_desc.MipLevels = 1;
+                     exposure_texture_desc.ArraySize = 1;
+                     exposure_texture_desc.Format = DXGI_FORMAT::DXGI_FORMAT_R32_FLOAT; // FP32 just so it's easier to initialize data for it
+                     exposure_texture_desc.SampleDesc.Count = 1;
+                     exposure_texture_desc.SampleDesc.Quality = 0;
+                     exposure_texture_desc.Usage = D3D11_USAGE_IMMUTABLE;
+                     exposure_texture_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+                     exposure_texture_desc.CPUAccessFlags = 0;
+                     exposure_texture_desc.MiscFlags = 0;
+
+                     // It's best to force an exposure of 1 given that DLSS runs after the auto exposure is applied (in tonemapping).
+                     // Theoretically knowing the average exposure of the frame would still be beneficial to it (somehow) so maybe we could simply let the auto exposure in,
+                     D3D11_SUBRESOURCE_DATA exposure_texture_data;
+                     exposure_texture_data.pSysMem = &dlss_scene_exposure; // This needs to be "static" data in case the texture initialization was somehow delayed and read the data after the stack destroyed it
+                     exposure_texture_data.SysMemPitch = 32;
+                     exposure_texture_data.SysMemSlicePitch = 32;
+
+                     device_data.dlss_exposure = nullptr; // Make sure we discard the previous one
+                     hr = native_device->CreateTexture2D(&exposure_texture_desc, &exposure_texture_data, &device_data.dlss_exposure);
+                     assert(SUCCEEDED(hr));
+                  }
+
+                  // Generate motion vectors from the objects velocity buffer and the camera movement.
+                  // For the most past, these look great, especially with rotational camera movement. When there's location camera movement, thin lines do break a bit,
+                  // and that might be a precision issue with high resolution and jittered matrices not having high enough precision.
+                  // We take advantage of the state the game had set DX to, and simply swap the render target.
+                  {
+                     D3D11_TEXTURE2D_DESC object_velocity_texture_desc;
+                     object_velocity_buffer->GetDesc(&object_velocity_texture_desc);
+                     ASSERT_ONCE((object_velocity_texture_desc.BindFlags & D3D11_BIND_RENDER_TARGET) == D3D11_BIND_RENDER_TARGET);
+#if 1 // Use the higher quality for MVs, the game's one were R16G16F. This has a ~1% cost on performance but helps with reducing shimmering on fine lines (stright lines looking segmented, like Bart's hair or Shark's teeth) when the camera is moving in a linear fashion. Generating MVs from the depth is still a limited technique so it can't be perfect.
+                     object_velocity_texture_desc.Format = DXGI_FORMAT_R32G32_FLOAT;
+#else
+                     object_velocity_texture_desc.Format = DXGI_FORMAT_R16G16_FLOAT;
+#endif
+
+                     // Update the "dlss_output_changed" flag if we hadn't already (we wouldn't have had a previous copy to compare against above)
+                     bool dlss_motion_vectors_changed = dlss_output_changed;
+                     if (dlss_output_supports_uav)
+                     {
+                        if (device_data.dlss_motion_vectors.get())
+                        {
+                           D3D11_TEXTURE2D_DESC dlss_motion_vectors_desc;
+                           device_data.dlss_motion_vectors->GetDesc(&dlss_motion_vectors_desc);
+                           dlss_output_changed = dlss_motion_vectors_desc.Width != output_texture_desc.Width || dlss_motion_vectors_desc.Height != output_texture_desc.Height;
+                           dlss_motion_vectors_changed = dlss_output_changed;
+                        }
+                     }
+                     // We assume the conditions of this texture (and its render target view) changing are the same as "dlss_output_changed"
+                     if (!device_data.dlss_motion_vectors.get() || dlss_motion_vectors_changed)
+                     {
+                        device_data.dlss_motion_vectors = nullptr; // Make sure we discard the previous one
+                        hr = native_device->CreateTexture2D(&object_velocity_texture_desc, nullptr, &device_data.dlss_motion_vectors);
+                        ASSERT_ONCE(SUCCEEDED(hr));
+
+                        D3D11_RENDER_TARGET_VIEW_DESC object_velocity_render_target_view_desc;
+                        render_target_views[0]->GetDesc(&object_velocity_render_target_view_desc);
+                        object_velocity_render_target_view_desc.Format = object_velocity_texture_desc.Format;
+                        object_velocity_render_target_view_desc.ViewDimension = D3D11_RTV_DIMENSION::D3D11_RTV_DIMENSION_TEXTURE2D;
+                        object_velocity_render_target_view_desc.Texture2D.MipSlice = 0;
+
+                        device_data.dlss_motion_vectors_rtv = nullptr; // Make sure we discard the previous one
+                        native_device->CreateRenderTargetView(device_data.dlss_motion_vectors.get(), &object_velocity_render_target_view_desc, &device_data.dlss_motion_vectors_rtv);
+                     }
+
+                     SetLumaConstantBuffers(native_device_context, device_data, stages, LumaConstantBufferType::LumaSettings);
+                     SetLumaConstantBuffers(native_device_context, device_data, stages, LumaConstantBufferType::LumaData);
+
+                     ID3D11RenderTargetView* const dlss_motion_vectors_rtv_const = device_data.dlss_motion_vectors_rtv.get();
+                     native_device_context->OMSetRenderTargets(1, &dlss_motion_vectors_rtv_const, depth_stencil_view.get());
+
+                     // This should be the same draw type that the shader would have used if we went through with it (SMAA 2TX/TAA).
+                     native_device_context->Draw(3, 0);
+                  }
+
+                  // Reset the render target, just to make sure there's no conflicts with the same texture being used as RWTexture UAV or Shader Resources
+                  native_device_context->OMSetRenderTargets(0, nullptr, nullptr);
+
+                  // Reset DLSS history if we did not draw motion blur (and we previously did). Based on CryEngine source code, mb is skipped on the first frame after scene cuts, so we want to re-use that information (this works even if MB was disabled).
+                  // Reset DLSS history if for one frame we had stopped tonemapping. This might include some scene cuts, but also triggers when entering full screen UI menus or videos and then leaving them (it shouldn't be a problem).
+                  // Reset DLSS history if the output resolution or format changed (just an extra safety mechanism, it might not actually be needed).
+                  bool reset_dlss = device_data.force_reset_dlss_sr || dlss_output_changed || !device_data.has_drawn_main_post_processing_previous || (device_data.has_drawn_motion_blur_previous && !device_data.has_drawn_motion_blur);
+                  device_data.force_reset_dlss_sr = false;
+
+                  uint32_t render_width_dlss = std::lrintf(device_data.render_resolution.x);
+                  uint32_t render_height_dlss = std::lrintf(device_data.render_resolution.y);
+
+                  // These configurations store the image already multiplied by paper white from the beginning of tonemapping, including at the time DLSS runs.
+                  // The other configurations run DLSS in "SDR" Gamma Space so we couldn't safely change the exposure.
+                  const bool dlss_use_paper_white_pre_exposure = GetShaderDefineCompiledNumericalValue(POST_PROCESS_SPACE_TYPE_HASH) >= 1;
+
+                  float dlss_pre_exposure = 0.f; // 0 means it's ignored
+                  if (dlss_use_paper_white_pre_exposure)
+                  {
+#if 1 // Alternative that considers a value of 1 in the DLSS color textures to match the SDR output nits range (whatever that is)
+                     dlss_pre_exposure = cb_luma_frame_settings.ScenePaperWhite / default_paper_white;
+#else // Alternative that considers a value of 1 in the DLSS color textures to match 203 nits
+                     dlss_pre_exposure = cb_luma_frame_settings.ScenePaperWhite / srgb_white_level;
+#endif
+                     dlss_pre_exposure *= device_data.dlss_scene_pre_exposure;
+                  }
+#if DEVELOPMENT
+                  if (dlss_custom_pre_exposure > 0.f)
+                     dlss_pre_exposure = dlss_custom_pre_exposure;
+#endif
+
+                  // There doesn't seem to be a need to restore the DX state to whatever we had before (e.g. render targets, cbuffers, samplers, UAVs, texture shader resources, viewport, scissor rect, ...), CryEngine always sets everything it needs again for every pass.
+                  // DLSS internally keeps its own frames history, we don't need to do that ourselves (by feeding in an output buffer that was the previous frame's output, though we do have that if needed, it should be in ps_shader_resources[1]).
+                  if (NGX::DLSS::Draw(device_data.dlss_sr_handle, native_device_context, device_data.dlss_output_color.get(), source_color.get(), device_data.dlss_motion_vectors.get(), depth_buffer.get(), device_data.dlss_exposure.get(), dlss_pre_exposure, projection_jitters.x, projection_jitters.y, reset_dlss, render_width_dlss, render_height_dlss))
+                  {
+                     device_data.has_drawn_dlss_sr = true;
+                  }
+
+                  // Fully reset the state of the RTs given that CryEngine is very delicate with it and uses some push and pop technique (simply resetting caching and resetting the first RT seemed fine for DLSS in case optimization is needed).
+                  // The fact that it could changes cbuffers or texture resources bindings or viewport seems fines.
+                  ID3D11RenderTargetView* const* rtvs_const = (ID3D11RenderTargetView**)std::addressof(render_target_views[0]);
+                  native_device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, rtvs_const, depth_stencil_view.get());
+
+                  if (device_data.has_drawn_dlss_sr)
+                  {
+                     if (!dlss_output_supports_uav)
+                     {
+                        native_device_context->CopyResource(output_color.get(), device_data.dlss_output_color.get()); // DX11 doesn't need barriers
+                     }
+
+                     return true; // "Cancel" the previously set draw call, DLSS has taken care of it
+                  }
+                  // DLSS Failed, suppress it for this frame and fall back on SMAA/TAA, hoping that anything before would have been rendered correctly for it already (otherwise it will start being correct in the next frame, given we suppress it (until manually toggled again, given that it'd likely keep failing))
                   else
                   {
-                     device_data.dlss_output_color = output_color;
+                     ASSERT_ONCE(false);
+                     cb_luma_frame_settings.DLSS = 0;
+                     device_data.cb_luma_frame_settings_dirty = true;
+                     device_data.dlss_sr_suppressed = true;
+                     device_data.force_reset_dlss_sr = true; // We missed frames so it's good to do this, it might also help prevent further errors
                   }
-
-                  if (!skip_dlss)
-                  {
-                     com_ptr<ID3D11Resource> source_color;
-                     ps_shader_resources[0]->GetResource(&source_color);
-                     com_ptr<ID3D11Resource> depth_buffer;
-                     ps_shader_resources[16]->GetResource(&depth_buffer);
-                     com_ptr<ID3D11Resource> object_velocity_buffer_temp;
-                     ps_shader_resources[3]->GetResource(&object_velocity_buffer_temp);
-                     com_ptr<ID3D11Texture2D> object_velocity_buffer;
-                     hr = object_velocity_buffer_temp->QueryInterface(&object_velocity_buffer);
-                     ASSERT_ONCE(SUCCEEDED(hr));
-
-                     // Generate "fake" exposure texture
-                     bool exposure_changed = false;
-                     float dlss_scene_exposure = device_data.dlss_scene_exposure;
-#if DEVELOPMENT
-                     if (dlss_custom_exposure > 0.f)
-                     {
-                        dlss_scene_exposure = dlss_custom_exposure;
-                     }
-#endif // DEVELOPMENT
-                     exposure_changed = dlss_scene_exposure != device_data.dlss_exposure_texture_value;
-                     device_data.dlss_exposure_texture_value = dlss_scene_exposure;
-                     // TODO: optimize this for the "DLSS_RELATIVE_PRE_EXPOSURE" false case! Avoid re-creating the texture every frame the exposure changes and instead make it dynamic and re-write it from the CPU? Or simply make our exposure calculation shader write to a texture directly
-                     // (though in that case it wouldn't have the same delay as the CPU side pre-exposure buffer readback)
-                     if (!device_data.dlss_exposure.get() || exposure_changed)
-                     {
-                        D3D11_TEXTURE2D_DESC exposure_texture_desc; // DLSS fails if we pass in a 1D texture so we have to make a 2D one
-                        exposure_texture_desc.Width = 1;
-                        exposure_texture_desc.Height = 1;
-                        exposure_texture_desc.MipLevels = 1;
-                        exposure_texture_desc.ArraySize = 1;
-                        exposure_texture_desc.Format = DXGI_FORMAT::DXGI_FORMAT_R32_FLOAT; // FP32 just so it's easier to initialize data for it
-                        exposure_texture_desc.SampleDesc.Count = 1;
-                        exposure_texture_desc.SampleDesc.Quality = 0;
-                        exposure_texture_desc.Usage = D3D11_USAGE_IMMUTABLE;
-                        exposure_texture_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-                        exposure_texture_desc.CPUAccessFlags = 0;
-                        exposure_texture_desc.MiscFlags = 0;
-
-                        // It's best to force an exposure of 1 given that DLSS runs after the auto exposure is applied (in tonemapping).
-                        // Theoretically knowing the average exposure of the frame would still be beneficial to it (somehow) so maybe we could simply let the auto exposure in,
-                        D3D11_SUBRESOURCE_DATA exposure_texture_data;
-                        exposure_texture_data.pSysMem = &dlss_scene_exposure; // This needs to be "static" data in case the texture initialization was somehow delayed and read the data after the stack destroyed it
-                        exposure_texture_data.SysMemPitch = 32;
-                        exposure_texture_data.SysMemSlicePitch = 32;
-
-                        device_data.dlss_exposure = nullptr; // Make sure we discard the previous one
-                        hr = native_device->CreateTexture2D(&exposure_texture_desc, &exposure_texture_data, &device_data.dlss_exposure);
-                        assert(SUCCEEDED(hr));
-                     }
-
-                     // Generate motion vectors from the objects velocity buffer and the camera movement.
-                     // For the most past, these look great, especially with rotational camera movement. When there's location camera movement, thin lines do break a bit,
-                     // and that might be a precision issue with high resolution and jittered matrices not having high enough precision.
-                     // We take advantage of the state the game had set DX to, and simply swap the render target.
-                     {
-                        D3D11_TEXTURE2D_DESC object_velocity_texture_desc;
-                        object_velocity_buffer->GetDesc(&object_velocity_texture_desc);
-                        ASSERT_ONCE((object_velocity_texture_desc.BindFlags & D3D11_BIND_RENDER_TARGET) == D3D11_BIND_RENDER_TARGET);
-#if 1 // Use the higher quality for MVs, the game's one were R16G16F. This has a ~1% cost on performance but helps with reducing shimmering on fine lines (stright lines looking segmented, like Bart's hair or Shark's teeth) when the camera is moving in a linear fashion. Generating MVs from the depth is still a limited technique so it can't be perfect.
-                        object_velocity_texture_desc.Format = DXGI_FORMAT_R32G32_FLOAT;
-#else
-                        object_velocity_texture_desc.Format = DXGI_FORMAT_R16G16_FLOAT;
-#endif
-
-                        // Update the "dlss_output_changed" flag if we hadn't already (we wouldn't have had a previous copy to compare against above)
-                        bool dlss_motion_vectors_changed = dlss_output_changed;
-                        if (dlss_output_supports_uav)
-                        {
-                           if (device_data.dlss_motion_vectors.get())
-                           {
-                              D3D11_TEXTURE2D_DESC dlss_motion_vectors_desc;
-                              device_data.dlss_motion_vectors->GetDesc(&dlss_motion_vectors_desc);
-                              dlss_output_changed = dlss_motion_vectors_desc.Width != output_texture_desc.Width || dlss_motion_vectors_desc.Height != output_texture_desc.Height;
-                              dlss_motion_vectors_changed = dlss_output_changed;
-                           }
-                        }
-                        // We assume the conditions of this texture (and its render target view) changing are the same as "dlss_output_changed"
-                        if (!device_data.dlss_motion_vectors.get() || dlss_motion_vectors_changed)
-                        {
-                           device_data.dlss_motion_vectors = nullptr; // Make sure we discard the previous one
-                           hr = native_device->CreateTexture2D(&object_velocity_texture_desc, nullptr, &device_data.dlss_motion_vectors);
-                           ASSERT_ONCE(SUCCEEDED(hr));
-
-                           D3D11_RENDER_TARGET_VIEW_DESC object_velocity_render_target_view_desc;
-                           render_target_views[0]->GetDesc(&object_velocity_render_target_view_desc);
-                           object_velocity_render_target_view_desc.Format = object_velocity_texture_desc.Format;
-                           object_velocity_render_target_view_desc.ViewDimension = D3D11_RTV_DIMENSION::D3D11_RTV_DIMENSION_TEXTURE2D;
-                           object_velocity_render_target_view_desc.Texture2D.MipSlice = 0;
-
-                           device_data.dlss_motion_vectors_rtv = nullptr; // Make sure we discard the previous one
-                           native_device->CreateRenderTargetView(device_data.dlss_motion_vectors.get(), &object_velocity_render_target_view_desc, &device_data.dlss_motion_vectors_rtv);
-                        }
-
-                        SetPreyLumaConstantBuffers(cmd_list, stages, settings_pipeline_layout, LumaConstantBufferType::LumaSettings);
-                        SetPreyLumaConstantBuffers(cmd_list, stages, shared_data_pipeline_layout, LumaConstantBufferType::LumaData);
-
-                        ID3D11RenderTargetView* const dlss_motion_vectors_rtv_const = device_data.dlss_motion_vectors_rtv.get();
-                        native_device_context->OMSetRenderTargets(1, &dlss_motion_vectors_rtv_const, depth_stencil_view.get());
-
-                        // This should be the same draw type that the shader would have used if we went through with it (SMAA 2TX/TAA).
-                        native_device_context->Draw(3, 0);
-                     }
-
-                     // Reset the render target, just to make sure there's no conflicts with the same texture being used as RWTexture UAV or Shader Resources
-                     ID3D11RenderTargetView* emptry_render_target_view[1] = { nullptr };
-                     native_device_context->OMSetRenderTargets(0, emptry_render_target_view, depth_stencil_view.get());
-
-                     // Reset DLSS history if we did not draw motion blur (and we previously did). Based on CryEngine source code, mb is skipped on the first frame after scene cuts, so we want to re-use that information.
-                     // Reset DLSS history if for one frame we had stopped tonemapping. This might include some scene cuts, but also triggers when entering full screen UI menus or videos and then leaving them (it shouldn't be a problem).
-                     // Reset DLSS history if the output resolution or format changed (just an extra safety mechanism, it might not actually be needed).
-                     bool reset_dlss = device_data.force_reset_dlss_sr || dlss_output_changed || !device_data.has_drawn_main_post_processing_previous || (device_data.has_drawn_motion_blur_previous && !device_data.has_drawn_motion_blur);
-                     device_data.force_reset_dlss_sr = false;
-
-                     uint32_t render_width_dlss = std::lrintf(device_data.render_resolution.x);
-                     uint32_t render_height_dlss = std::lrintf(device_data.render_resolution.y);
-
-                     // These configurations store the image already multiplied by paper white from the beginning of tonemapping, including at the time DLSS runs.
-                     // The other configurations run DLSS in "SDR" Gamma Space so we couldn't safely change the exposure.
-                     const bool dlss_use_paper_white_pre_exposure = GetShaderDefineCompiledNumericalValue(POST_PROCESS_SPACE_TYPE_HASH) >= 1;
-
-                     float dlss_pre_exposure = 0.f; // 0 means it's ignored
-                     if (dlss_use_paper_white_pre_exposure)
-                     {
-#if 1 // Alternative that considers a value of 1 in the DLSS color textures to match the SDR output nits range (whatever that is)
-                        dlss_pre_exposure = cb_luma_frame_settings.ScenePaperWhite / default_paper_white;
-#else // Alternative that considers a value of 1 in the DLSS color textures to match 203 nits
-                        dlss_pre_exposure = cb_luma_frame_settings.ScenePaperWhite / srgb_white_level;
-#endif
-                        dlss_pre_exposure *= device_data.dlss_scene_pre_exposure;
-                     }
-#if DEVELOPMENT
-                     if (dlss_custom_pre_exposure > 0.f)
-                        dlss_pre_exposure = dlss_custom_pre_exposure;
-#endif
-
-                     // There doesn't seem to be a need to restore the DX state to whatever we had before (e.g. render targets, cbuffers, samplers, UAVs, texture shader resources, viewport, scissor rect, ...), CryEngine always sets everything it needs again for every pass.
-                     // DLSS internally keeps its own frames history, we don't need to do that ourselves (by feeding in an output buffer that was the previous frame's output, though we do have that if needed, it should be in ps_shader_resources[1]).
-                     if (NGX::DLSS::Draw(device_data.dlss_sr_handle, native_device_context, device_data.dlss_output_color.get(), source_color.get(), device_data.dlss_motion_vectors.get(), depth_buffer.get(), device_data.dlss_exposure.get(), dlss_pre_exposure, projection_jitters.x, projection_jitters.y, reset_dlss, render_width_dlss, render_height_dlss))
-                     {
-                        device_data.has_drawn_dlss_sr = true;
-                     }
-
-                     // Fully reset the state of the RTs given that CryEngine is very delicate with it and uses some push and pop technique (simply resetting caching and resetting the first RT seemed fine for DLSS in case optimization is needed).
-                     // The fact that it could changes cbuffers or texture resources bindings or viewport seems fines.
-                     native_device_context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &render_target_views[0], depth_stencil_view.get());
-                     for (UINT i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; i++)
-                     {
-                        if (render_target_views[i] != nullptr)
-                        {
-                           render_target_views[i]->Release();
-                           render_target_views[i] = nullptr;
-                        }
-                     }
-
-                     if (device_data.has_drawn_dlss_sr)
-                     {
-                        if (!dlss_output_supports_uav)
-                        {
-                           native_device_context->CopyResource(output_color.get(), device_data.dlss_output_color.get()); // DX11 doesn't need barriers
-                        }
-
-                        return true; // "Cancel" the previously set draw call, DLSS has taken care of it
-                     }
-                     // DLSS Failed, suppress it for this frame and fall back on SMAA/TAA, hoping that anything before would have been rendered correctly for it already (otherwise it will start being correct in the next frame, given we suppress it (until manually toggled again, given that it'd likely keep failing))
-                     else
-                     {
-                        ASSERT_ONCE(false);
-                        cb_luma_frame_settings.DLSS = 0;
-                        device_data.dlss_sr_suppressed = true;
-                        device_data.force_reset_dlss_sr = true; // We missed frames so it's good to do this, it might also help prevent further errors
-                     }
-                  }
-                  // In this case it's not our buisness to keep alive this "external" texture
-                  if (dlss_output_supports_uav)
-                  {
-                     device_data.dlss_output_color = nullptr;
-                  }
+               }
+               // In this case it's not our buisness to keep alive this "external" texture
+               if (dlss_output_supports_uav)
+               {
+                  device_data.dlss_output_color = nullptr;
                }
             }
          }
 #endif // ENABLE_NGX
       }
 
-      //TODOFT4: avoid re-applying these if the data hasn't changed (within the same frame)? Add a flag by shader for who needs them?
+      // We have a way to track whether this data changed to avoid sending them again when not necessary, we could further optimize it by adding a flag to the shader hashes that need the cbuffers, but it really wouldn't help much
       if (is_custom_pass && !updated_cbuffers)
       {
-         SetPreyLumaConstantBuffers(cmd_list, stages, settings_pipeline_layout, LumaConstantBufferType::LumaSettings);
-         SetPreyLumaConstantBuffers(cmd_list, stages, shared_data_pipeline_layout, LumaConstantBufferType::LumaData);
+         SetLumaConstantBuffers(native_device_context, device_data, stages, LumaConstantBufferType::LumaSettings);
+         SetLumaConstantBuffers(native_device_context, device_data, stages, LumaConstantBufferType::LumaData);
          updated_cbuffers = true;
       }
 
@@ -4507,7 +4677,7 @@ namespace
       //if (!has_drawn_composed_gbuffers) return false;
 #endif // !DEVELOPMENT
 
-      LumaUIData ui_data;
+      LumaUIData ui_data = {};
 
       com_ptr<ID3D11RenderTargetView> render_target_view;
       native_device_context->OMGetRenderTargets(1, &render_target_view, nullptr);
@@ -4526,9 +4696,8 @@ namespace
                ui_data.drawing_on_swapchain = 1;
 
                // This is a "perfect" way to check if gameplay is paused (sometimes it might still be rendering, but usually there would be no world mapped UI).
-               //TODOFT: this has a one frame delay when we unpause, do we still want to do it?
                bool paused = cb_per_view_global.CV_AnimGenParams.z == cb_per_view_global_previous.CV_AnimGenParams.z;
-#if 1 // Disabled for now as the anim gen doesn't seem to update every frame at high frame rates? We should then check shaders that made that assumption
+#if 1 // Disabled it has one frame delay when we unpause, and it's seemengly not necessary anymore (also, does it actually update every frame at high frame rates? We should then check shaders that made that assumption)
                paused = false;
 #endif
                // Highlight that the game is paused or that we are in a menu with no scene rendering (e.g. allows us to fully skip lens distortion on the UI, as sometimes it'd apply in loading screen menus).
@@ -4540,16 +4709,6 @@ namespace
             render_target_resource = nullptr;
          }
          render_target_view = nullptr;
-#if 0
-         if (ui_data.drawing_on_swapchain)
-         {
-            native_device_context->OMSetRenderTargets(0, nullptr, nullptr);
-            ID3D11UnorderedAccessView* swapchain_texture_uav;
-            render_target_resource->Release();
-            native_device->CreateUnorderedAccessView(render_target_resource, nullptr, &swapchain_texture_uav);
-            native_device_context->OMSetRenderTargetsAndUnorderedAccessViews(0, nullptr, nullptr, 0, 1, &swapchain_texture_uav, nullptr);
-         }
-#endif
       }
 
       // No need to lock "s_mutex_reshade" for "cb_luma_frame_settings" here, it's not relevant
@@ -4615,13 +4774,26 @@ namespace
 
       if (is_custom_pass)
       {
-         cmd_list->push_constants(
-            stages,
-            ui_pipeline_layout,
-            0,
-            0,
-            sizeof(LumaUIData) / sizeof(uint32_t),
-            &ui_data);
+         if (memcmp(&device_data.cb_luma_ui_data, &ui_data, sizeof(ui_data)) != 0)
+         {
+            device_data.cb_luma_ui_data = ui_data;
+            if (D3D11_MAPPED_SUBRESOURCE mapped_buffer;
+               SUCCEEDED(native_device_context->Map(device_data.luma_ui_data.get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_buffer)))
+            {
+               std::memcpy(mapped_buffer.pData, &device_data.cb_luma_ui_data, sizeof(device_data.cb_luma_ui_data));
+               native_device_context->Unmap(device_data.luma_ui_data.get(), 0);
+            }
+         }
+
+         ID3D11Buffer* const buffer = device_data.luma_ui_data.get();
+         if ((stages & reshade::api::shader_stage::vertex) == reshade::api::shader_stage::vertex)
+            native_device_context->VSSetConstantBuffers(luma_ui_cbuffer_index, 1, &buffer);
+         if ((stages & reshade::api::shader_stage::geometry) == reshade::api::shader_stage::geometry)
+            native_device_context->GSSetConstantBuffers(luma_ui_cbuffer_index, 1, &buffer);
+         if ((stages & reshade::api::shader_stage::pixel) == reshade::api::shader_stage::pixel)
+            native_device_context->PSSetConstantBuffers(luma_ui_cbuffer_index, 1, &buffer);
+         if ((stages & reshade::api::shader_stage::compute) == reshade::api::shader_stage::compute)
+            native_device_context->CSSetConstantBuffers(luma_ui_cbuffer_index, 1, &buffer);
       }
 
       return false; // Return true to cancel this draw call
@@ -4937,7 +5109,7 @@ namespace
          || (desc.Filter == D3D11_FILTER_MIN_MAG_MIP_POINT && samplers_upgrade_mode_2 >= 5)
          || (desc.Filter == D3D11_FILTER_COMPARISON_MIN_MAG_MIP_POINT && samplers_upgrade_mode_2 >= 6))
       {
-         //TODOFT4: research. Force this on to see how it behaves. Doesn't work, it doesn't really help any further with (e.g.) blurry decal textures
+         //TODOFT: research. Force this on to see how it behaves. Doesn't work, it doesn't really help any further with (e.g.) blurry decal textures
          // Note: this doesn't seem to do anything really, it doesn't help with the occasional blurry texture (probably because all samplers that needed anisotropic already had it set)
          if (samplers_upgrade_mode >= 7)
          {
@@ -5200,6 +5372,13 @@ namespace
 #endif
          );
 
+
+      if (!device_data.has_drawn_main_post_processing_previous)
+      {
+         previous_projection_matrix = current_projection_matrix;
+         previous_nearest_projection_matrix = current_nearest_projection_matrix;
+      }
+
       // Fix up the "previous view projection matrices" as they had wrong data in Prey,
       // first of all, their name was "wrong", because it was meant to have the value of the previous projection matrix,
       // not the camera/view projection matrix, and second, it was actually always based on the current one,
@@ -5208,53 +5387,12 @@ namespace
       // If in the previous frame we didn't render, we don't replace the matrix with the one from the last frame that was rendered,
       // because there's no guaranteed that it would match.
       // If AA is disabled, or if the current form of AA doesn't used jittered rendering, this doesn't really make a difference (but it's still better because it creates motion vectors based on the previous view matrix).
-      if ((fix_prev_matrix_mode >= 1 && fix_prev_matrix_mode <= 5) && replace_prev_projection_matrix && !device_data.has_drawn_tonemapping && device_data.has_drawn_main_post_processing_previous)
+      if (replace_prev_projection_matrix && !device_data.has_drawn_tonemapping && device_data.has_drawn_main_post_processing_previous)
       {
          cb_per_view_global.CV_PrevViewProjMatr = previous_projection_matrix;
          cb_per_view_global.CV_PrevViewProjNearestMatr = previous_nearest_projection_matrix;
-#if DEVELOPMENT
-         if (fix_prev_matrix_mode == 5)
-         {
-            //TODOFT4: try to use current frame's jitters here? We have ghosting in DLSS when zooming in and out (changing FOV), though that's not caused here! Test by visualizing MVs
-            cb_per_view_global.CV_PrevViewProjMatr = previous_projection_matrix;
-            cb_per_view_global.CV_PrevViewProjNearestMatr = previous_nearest_projection_matrix;
-         }
-#endif
-         if (fix_prev_matrix_mode >= 2)
-         {
-            cb_per_view_global.CV_PrevViewProjMatr.m02 *= 0.5;
-            cb_per_view_global.CV_PrevViewProjMatr.m12 *= 0.5;
-            cb_per_view_global.CV_PrevViewProjNearestMatr.m02 *= 0.5;
-            cb_per_view_global.CV_PrevViewProjNearestMatr.m12 *= 0.5;
-         }
-#if DEVELOPMENT
-         // We've already fixes this in shaders (in better ways?)
-         if (fix_prev_matrix_mode == 3)
-         {
-            cb_per_view_global.CV_PrevViewProjMatr.m02 *= cb_per_view_global.CV_HPosScale.x;
-            cb_per_view_global.CV_PrevViewProjMatr.m12 *= cb_per_view_global.CV_HPosScale.y;
-            cb_per_view_global.CV_PrevViewProjNearestMatr.m02 *= cb_per_view_global.CV_HPosScale.x;
-            cb_per_view_global.CV_PrevViewProjNearestMatr.m12 *= cb_per_view_global.CV_HPosScale.y;
-         }
-         else if (fix_prev_matrix_mode == 4)
-         {
-            cb_per_view_global.CV_PrevViewProjMatr.m02 /= cb_per_view_global.CV_HPosScale.x;
-            cb_per_view_global.CV_PrevViewProjMatr.m12 /= cb_per_view_global.CV_HPosScale.y;
-            cb_per_view_global.CV_PrevViewProjNearestMatr.m02 /= cb_per_view_global.CV_HPosScale.x;
-            cb_per_view_global.CV_PrevViewProjNearestMatr.m12 /= cb_per_view_global.CV_HPosScale.y;
-         }
-#endif // DEVELOPMENT
       }
 #if DEVELOPMENT
-      else if (fix_prev_matrix_mode >= 6 && replace_prev_projection_matrix && !device_data.has_drawn_tonemapping && device_data.has_drawn_main_post_processing_previous)
-      {
-         // Use old jitters with new view matrix (this might match how they calculate MVs based on this matrix)
-         cb_per_view_global.CV_PrevViewProjMatr.m02 = previous_projection_matrix.m02;
-         cb_per_view_global.CV_PrevViewProjMatr.m12 = previous_projection_matrix.m12;
-         cb_per_view_global.CV_PrevViewProjNearestMatr.m02 = previous_nearest_projection_matrix.m02;
-         cb_per_view_global.CV_PrevViewProjNearestMatr.m12 = previous_nearest_projection_matrix.m12;
-      }
-
       // Just for test.
       if (disable_taa_jitters)
       {
@@ -5291,12 +5429,15 @@ namespace
          cb_per_view_global.CV_HPosClamp.w = cb_per_view_global.CV_HPosClamp.y;
       }
 
+      bool render_resolution_matches = AlmostEqual(device_data.render_resolution.x, cb_per_view_global.CV_ScreenSize.x, 0.5f) && AlmostEqual(device_data.render_resolution.y, cb_per_view_global.CV_ScreenSize.y, 0.5f);
+      bool is_in_post_processing = device_data.has_drawn_composed_gbuffers || device_data.has_drawn_tonemapping || device_data.has_drawn_main_post_processing;
+
       // Update our cached data with information from the cbuffer.
       // After vanilla tonemapping (as soon as AA starts),
       // camera jitters are removed from the cbuffer projection matrices, and the render resolution is also set to 100% (after the upscaling pass),
       // so we want to ignore these cases. We stop at the gbuffer compositions draw, because that's the last know cbuffer 13 to have the perfect values we are looking for (that shader is always run, so it's reliable)!
       // A lot of passes are drawn on scaled down render targets and the cbuffer values would have been updated to reflect that (e.g. "CV_ScreenSize"), so ignore these cases.
-      if (output_resolution_matches && (/*!found_per_view_globals ||*/ (!device_data.has_drawn_composed_gbuffers && !device_data.has_drawn_tonemapping && !device_data.has_drawn_main_post_processing)))
+      if (output_resolution_matches && (!device_data.found_per_view_globals ? true : (!render_resolution_matches && !is_in_post_processing)))
       {
 #if DEVELOPMENT
          static float2 local_previous_render_resolution;
@@ -5322,8 +5463,9 @@ namespace
          ASSERT_ONCE(device_data.cloned_pipeline_count == 0 || !device_data.found_per_view_globals || !previous_prey_drs_active || (previous_prey_drs_active == device_data.prey_drs_active));
 
 #if DEVELOPMENT
-         // Make sure that our rendering resolution doesn't change randomly within the pipeline (it probably will!)
-         assert(!device_data.found_per_view_globals || !device_data.prey_drs_detected || (AlmostEqual(device_data.render_resolution.x, local_previous_render_resolution.x, 0.25f) && AlmostEqual(device_data.render_resolution.y, local_previous_render_resolution.y, 0.25f)));
+         // Make sure that our rendering resolution doesn't change randomly within the pipeline (it probably will, it seems to trigger during quick save loads, maybe for the very first draw call to clear buffers)
+         const float2 previous_render_resolution = local_previous_render_resolution;
+         ASSERT_ONCE(!device_data.has_drawn_main_post_processing_previous || !device_data.found_per_view_globals || !device_data.prey_drs_detected || (AlmostEqual(device_data.render_resolution.x, previous_render_resolution.x, 0.25f) && AlmostEqual(device_data.render_resolution.y, previous_render_resolution.y, 0.25f)));
 #endif // DEVELOPMENT
 
          // Once we detect the user enabled DRS, we can't ever know it's been disabled because the game only occasionally drops to lower rendering resolutions, so we couldn't know if it was ever disabled
@@ -5398,6 +5540,7 @@ namespace
          bool drew_dlss = cb_luma_frame_settings.DLSS; // If this was true, DLSS would have been enabled and probably drew
          device_data.prey_taa_detected = device_data.prey_taa_active || device_data.previous_prey_taa_active[0]; // This one has a two frames tolerance. We let it persist even if the game stopped drawing the 3D scene.
          cb_luma_frame_settings.DLSS = (device_data.dlss_sr && !device_data.dlss_sr_suppressed && device_data.prey_taa_detected) ? 1 : 0; // No need for "s_mutex_reshade" here, given that they are generally only also changed by the user manually changing the settings in ImGUI, which runs at the very end of the frame
+         device_data.cb_luma_frame_settings_dirty |= (bool)cb_luma_frame_settings.DLSS != drew_dlss;
          if (cb_luma_frame_settings.DLSS && !drew_dlss)
          {
             // Reset DLSS history when we toggle DLSS on and off manually, or when the user in the game changes the AA mode,
@@ -5428,7 +5571,6 @@ namespace
             const auto new_texture_mip_lod_bias_offset = device_data.texture_mip_lod_bias_offset;
 
             bool texture_mip_lod_bias_offset_changed = prev_texture_mip_lod_bias_offset != new_texture_mip_lod_bias_offset;
-            //TODOFT: verify that this doesn't happen a billion times per frame with random resolutions that might be set by non primary render paths (e.g. shadow maps), if so, safely move this to compute once at the end of the frame (tested, it seems fine?)
             // Re-create all samplers immediately here instead of doing it at the end of the frame.
             // This allows us to avoid possible (but very unlikely) hitches that could happen if we re-created a new sampler for a new resolution later on when samplers descriptors are set.
             // It also allows us to use the right samplers for this frame's resolution.
@@ -5456,110 +5598,41 @@ namespace
             device_data.previous_render_resolution = device_data.render_resolution;
             previous_projection_jitters = projection_jitters;
 
-            previous_projection_matrix = projection_matrix;
-            previous_nearest_projection_matrix = nearest_projection_matrix;
-
+            // Set it to the latest value (ignoring the actual history)
             device_data.previous_prey_taa_active[0] = device_data.prey_taa_active;
             device_data.previous_prey_taa_active[1] = device_data.prey_taa_active;
-
-            // Make sure that after a scene reset our resolution matches the swapchain one.
-            // This also helps us catch edge cases where the first time the game uses this cbuffer it's not for the actual scene but for a side render,
-            // like shadow projection maps, mirrors, etc etc.
-            //ASSERT_ONCE(output_resolution_matches); // NOTE: this can't happen anymore as we wouldn't get here in that case
          }
 
-         Matrix44_tpl<double> projection_matrix_native = current_projection_matrix.GetTransposed();
+         // This only needs to be calculated once, before or after G-buffers are composed, but before late post processing (TM) starts, as it's for TAA (at the end of PP)
+         {
+            // NDC to UV space (y is flipped)
+            const Matrix44_tpl<double> mScaleBias1 = Matrix44_tpl<double>(
+               0.5, 0, 0, 0,
+               0, -0.5, 0, 0,
+               0, 0, 1, 0,
+               0.5, 0.5, 0, 1);
+            // UV to NDC space (y is flipped)
+            const Matrix44_tpl<double> mScaleBias2 = Matrix44_tpl<double>(
+               2.0, 0, 0, 0,
+               0, -2.0, 0, 0,
+               0, 0, 1, 0,
+               -1.0, 1.0, 0, 1);
 
-#if DEVELOPMENT && 0
-         // We cast to double to caclulate in higher accuracy (given we don't have access to the origin projection matrix).
-         // "(A * B).Transpose()" is equal to "B.Transpose() * A.Transpose()".
-         Matrix44_tpl<double> projection_matrix_recalculated = (Matrix44_tpl<double>(cb_per_view_global.CV_ViewProjMatr) * Matrix44_tpl<double>(cb_per_view_global.CV_InvViewMatr)).GetTransposed();
-
-         ASSERT_ONCE(mathMatrixAlmostEqual(projection_matrix_native, projection_matrix_recalculated, 0.001)); // NOTE: this happens, even if the results roughly seem identical (only 3 2 or so are different?)
-         ASSERT_ONCE(AlmostEqual(projection_matrix_native(0, 1), 0.0, 0.0001)
-            && AlmostEqual(projection_matrix_native(0, 2), 0.0, 0.0001)
-            && AlmostEqual(projection_matrix_native(0, 3), 0.0, 0.0001)
-            && AlmostEqual(projection_matrix_native(1, 0), 0.0, 0.0001)
-            && AlmostEqual(projection_matrix_native(1, 2), 0.0, 0.0001)
-            && AlmostEqual(projection_matrix_native(1, 3), 0.0, 0.0001)
-            && AlmostEqual(projection_matrix_native(3, 0), 0.0, 0.0001)
-            && AlmostEqual(projection_matrix_native(3, 1), 0.0, 0.0001)
-            && AlmostEqual(projection_matrix_native(3, 3), 0.0, 0.0001)
-         );
-
-         // Clean up imprecisions
-         projection_matrix_recalculated(0, 1) = 0;
-         projection_matrix_recalculated(0, 2) = 0;
-         projection_matrix_recalculated(0, 3) = 0;
-         projection_matrix_recalculated(1, 0) = 0;
-         projection_matrix_recalculated(1, 2) = 0;
-         projection_matrix_recalculated(1, 3) = 0;
-         projection_matrix_recalculated(3, 0) = 0;
-         projection_matrix_recalculated(3, 1) = 0;
-         projection_matrix_recalculated(3, 3) = 0;
-#endif // DEVELOPMENT
-
-         //Matrix44_tpl<double> projection_matrix_prev = (Matrix44_tpl<double>(current_projection_matrix) * Matrix44_tpl<double>(cb_per_view_global.CV_InvViewMatr)).GetTransposed();
-         //Matrix44_tpl<double> projection_matrix_prev_real = (Matrix44_tpl<double>(cb_per_view_global_actual_previous.CV_ViewProjMatr) * Matrix44_tpl<double>(cb_per_view_global_actual_previous.CV_InvViewMatr)).GetTransposed();
-         //Matrix44_tpl<double> projection_matrix_prev_real_fake = (Matrix44_tpl<double>(current_projection_matrix) * Matrix44_tpl<double>(cb_per_view_global_actual_previous.CV_InvViewMatr)).GetTransposed();
-
-#if 0 // RANDOM TEST (matrix_calculation_mode == 3 looks good)
-    // Supposedly from NDC to UV space
-         Matrix44_tpl<double> mScaleBias1 = Matrix44_tpl<double>(
-            0.5, 0, 0, 0,
-            0, (matrix_calculation_mode == 1 || matrix_calculation_mode == 2) ? 0.5 : -0.5, 0, 0,
-            0, 0, 1, 0,
-            (matrix_calculation_mode == 2 || matrix_calculation_mode == 3) ? 1.0 : 0.5, (matrix_calculation_mode == 2 || matrix_calculation_mode == 3) ? 1.0 : 0.5, 0, 1);
-         Matrix44_tpl<double> mScaleBias2 = Matrix44_tpl<double>(
-            2.0, 0, 0, 0,
-            0, (matrix_calculation_mode == 1 || matrix_calculation_mode == 2) ? 2.0 : -2.0, 0, 0,
-            0, 0, 1, 0,
-            (matrix_calculation_mode == 1 || matrix_calculation_mode == 2) ? 1.0 : -1.0, 1.0, 0, 1);
-#else
-    // NDC to UV space (y is flipped)
-         const Matrix44_tpl<double> mScaleBias1 = Matrix44_tpl<double>(
-            0.5, 0, 0, 0,
-            0, -0.5, 0, 0,
-            0, 0, 1, 0,
-            0.5, 0.5, 0, 1);
-         // UV to NDC space (y is flipped)
-         const Matrix44_tpl<double> mScaleBias2 = Matrix44_tpl<double>(
-            2.0, 0, 0, 0,
-            0, -2.0, 0, 0,
-            0, 0, 1, 0,
-            -1.0, 1.0, 0, 1);
+#if 0 // Not needed anymore, but here in case
+            const Matrix44A mViewProjPrev = Matrix44_tpl<double>(cb_per_view_global_actual_previous.CV_ViewMatr.GetTransposed()) * projection_matrix_native * Matrix44_tpl<double>(mScaleBias1);
 #endif
-
-#if DEVELOPMENT && 0 // Not needed anymore, but here in case
-         const Matrix44A mViewProjPrev = Matrix44_tpl<double>(cb_per_view_global_actual_previous.CV_ViewMatr.GetTransposed()) * projection_matrix_native * Matrix44_tpl<double>(mScaleBias1);
-#endif // DEVELOPMENT
-
-         Matrix44_tpl<double> previous_projection_matrix_native = Matrix44_tpl<double>(previous_projection_matrix.GetTransposed());
-         if (matrix_calculation_mode_2 == 1) // Flip jitters (somehow it works and fixes motion vectors generation, it's not 100% clear why)
-         {
-            projection_matrix_native.m20 = -projection_matrix_native.m20;
-            projection_matrix_native.m21 = -projection_matrix_native.m21;
-            previous_projection_matrix_native.m20 = -previous_projection_matrix_native.m20;
-            previous_projection_matrix_native.m21 = -previous_projection_matrix_native.m21;
+            // We calculate all in double for extra precision (this stuff is delicate)
+            Matrix44_tpl<double> projection_matrix_native = current_projection_matrix.GetTransposed();
+            Matrix44_tpl<double> previous_projection_matrix_native = Matrix44_tpl<double>(previous_projection_matrix.GetTransposed());
+            Matrix44_tpl<double> mViewInv;
+            mathMatrixLookAtInverse(mViewInv, Matrix44_tpl<double>(cb_per_view_global.CV_ViewMatr.GetTransposed()));
+            Matrix44_tpl<double> mProjInv;
+            mathMatrixPerspectiveFovInverse(mProjInv, projection_matrix_native);
+            Matrix44_tpl<double> mReprojection64 = mProjInv * mViewInv * Matrix44_tpl<double>(cb_per_view_global_actual_previous.CV_ViewMatr.GetTransposed()) * previous_projection_matrix_native;
+            // These work (NDC adjustments) (anything else doesn't work, I've tried).
+            mReprojection64 = mScaleBias2 * mReprojection64 * mScaleBias1;
+            reprojection_matrix = mReprojection64.GetTransposed(); // Transpose it here so it's easier to read on the GPU (and consistent with the other matrices)
          }
-         else if (matrix_calculation_mode_2 == 2)
-         {
-            projection_matrix_native.m20 = -projection_matrix_native.m20;
-            previous_projection_matrix_native.m20 = -previous_projection_matrix_native.m20;
-         }
-         else if (matrix_calculation_mode_2 == 3)
-         {
-            projection_matrix_native.m21 = -projection_matrix_native.m21;
-            previous_projection_matrix_native.m21 = -previous_projection_matrix_native.m21;
-         }
-         Matrix44_tpl<double> mViewInv;
-         mathMatrixLookAtInverse(mViewInv, Matrix44_tpl<double>(cb_per_view_global.CV_ViewMatr.GetTransposed()));
-         Matrix44_tpl<double> mProjInv;
-         mathMatrixPerspectiveFovInverse(mProjInv, previous_projection_matrix_native);
-         Matrix44_tpl<double> mReprojection64 = mProjInv * mViewInv * Matrix44_tpl<double>(cb_per_view_global_actual_previous.CV_ViewMatr.GetTransposed()) * projection_matrix_native;
-         // Not sure exactly what these do (NDC space?, depth buffer scaling?) but they work (anything else doesn't work, I've tried).
-         mReprojection64 = mScaleBias2 * mReprojection64 * mScaleBias1;
-         reprojection_matrix = mReprojection64.GetTransposed(); // Transpose it here so it's easier to read on the GPU (and consistent with the other matrices)
 
          device_data.found_per_view_globals = true;
       }
@@ -5713,6 +5786,7 @@ namespace
       ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
       ID3D11Buffer* buffer = reinterpret_cast<ID3D11Buffer*>(resource.handle);
       auto& device_data = device->get_private_data<DeviceData>();
+      // We assume this buffer is always unmapped before destruction.
       bool is_global_cbuffer = device_data.cb_per_view_global_buffer != nullptr && device_data.cb_per_view_global_buffer == buffer;
       ASSERT_ONCE(!device_data.cb_per_view_global_buffer_map_data || is_global_cbuffer);
       if (is_global_cbuffer && device_data.cb_per_view_global_buffer_map_data != nullptr)
@@ -5725,11 +5799,45 @@ namespace
          {
             // Write back the cbuffer data after we have fixed it up (we always do!)
             std::memcpy(device_data.cb_per_view_global_buffer_map_data, &cb_per_view_global, sizeof(CBPerViewGlobal));
+#if DEVELOPMENT
+            device_data.cb_per_view_global_buffers.emplace(buffer);
+#endif // DEVELOPMENT
          }
          device_data.cb_per_view_global_buffer_map_data = nullptr;
          device_data.cb_per_view_global_buffer = nullptr; // No need to keep this cached
       }
    }
+
+#if DEVELOPMENT
+   bool OnUpdateBufferRegion(reshade::api::device* device, const void* data, reshade::api::resource resource, uint64_t offset, uint64_t size)
+   {
+      ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
+      ID3D11Buffer* buffer = reinterpret_cast<ID3D11Buffer*>(resource.handle);
+      auto& device_data = device->get_private_data<DeviceData>();
+      // Verify that we didn't miss any changes to the global g-buffer
+      ASSERT_ONCE(!device_data.has_drawn_main_post_processing_previous || !device_data.cb_per_view_global_buffers.contains(buffer));
+      return false;
+   }
+
+   bool OnUpdateTextureRegion(reshade::api::device* device, const reshade::api::subresource_data& data, reshade::api::resource resource, uint32_t subresource, const reshade::api::subresource_box* box)
+   {
+      ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
+      ID3D11Resource* native_resource = reinterpret_cast<ID3D11Buffer*>(resource.handle);
+      com_ptr<ID3D11Texture2D> resource_texture;
+      HRESULT hr = native_resource->QueryInterface(&resource_texture);
+      if (SUCCEEDED(hr))
+      {
+         D3D11_TEXTURE2D_DESC texture_2d_desc;
+         resource_texture->GetDesc(&texture_2d_desc);
+         if ((texture_2d_desc.BindFlags & D3D11_BIND_RENDER_TARGET) != 0)
+         {
+            // Probably not supported, at least if it's an RT and we upgraded the format
+            ASSERT_ONCE(texture_2d_desc.Format != DXGI_FORMAT_R16G16B16A16_TYPELESS && texture_2d_desc.Format != DXGI_FORMAT_R16G16B16A16_FLOAT);
+         }
+      }
+      return false;
+   }
+#endif // DEVELOPMENT
 
    bool OnCopyResource(reshade::api::command_list* cmd_list, reshade::api::resource source, reshade::api::resource dest)
    {
@@ -5793,7 +5901,7 @@ namespace
             // If we detected incompatible formats that were likely caused by Luma upgrading texture formats (of render targets only...),
             // do the copy in shader
             // TODO: add gamma to linear support (e.g. sRGB views)?
-            //TODOFT: this doesn't fully work
+            //TODOFT3: this doesn't fully work, this triggers once when a level loads? So we should make sure it works.
             if (((isUnorm8(target_desc.Format) || isFloat11(target_desc.Format)) && isFloat16(source_desc.Format))
                || ((isUnorm8(source_desc.Format) || isFloat11(source_desc.Format)) && isFloat16(target_desc.Format)))
             {
@@ -5850,7 +5958,7 @@ namespace
                   // Create the persisting texture copy if necessary (if anything changed from the last copy).
                   // Theoretically all these textures have the same resolution as the screen so having one persisten texture should be ok.
                   // TODO: create more than one texture (one per format and one per resolution?) if ever needed
-                  //TODOFT3: verify the above assumption, testing whether this texture is actually constantly re-created
+                  //TODOFT3: verify the above assumption, testing whether this texture is actually constantly re-created (it'd depend on the case)
                   D3D11_TEXTURE2D_DESC proxy_target_desc;
                   if (device_data.copy_texture.get() != nullptr)
                   {
@@ -6248,7 +6356,9 @@ namespace
          device_data->pipelines_to_reload.clear();
       }
       if (pipelines_to_reload_copy.size() > 0)
+      {
          LoadCustomShaders(*device_data, pipelines_to_reload_copy, !precompile_custom_shaders);
+      }
       device_data->thread_auto_loading_running = false;
    }
 
@@ -6257,6 +6367,10 @@ namespace
    void OnRegisterOverlay(reshade::api::effect_runtime* runtime)
    {
       auto& device_data = runtime->get_device()->get_private_data<DeviceData>();
+
+      // Always do this in case a user changed the settings through ImGUI
+      device_data.cb_luma_frame_settings_dirty = true;
+
 #if DEVELOPMENT
       const bool refresh_cloned_pipelines = device_data.cloned_pipelines_changed.exchange(false);
 
@@ -6719,6 +6833,7 @@ namespace
                                        debug_draw_pipeline_instance = 0;
                                        debug_draw_pipeline_target_instance = -1;
                                        debug_draw_mode = pipeline_pair->second->HasPixelShader() ? DebugDrawMode::RenderTarget : (pipeline_pair->second->HasComputeShader() ? DebugDrawMode::UnorderedAccessView : DebugDrawMode::ShaderResource);
+                                       debug_draw_view_index = 0;
 #endif
                                     }
                                  }
@@ -6821,7 +6936,8 @@ namespace
             const std::unique_lock lock_reshade(s_mutex_reshade); // Lock the entire scope for extra safety, though we are mainly only interested in keeping "cb_luma_frame_settings" safe
 
             ImGui::BeginDisabled(!device_data.dlss_sr_supported);
-            if (ImGui::Checkbox("DLSS Super Resolution", &dlss_sr))
+            bool optiscaler_detected = GetModuleHandle(TEXT("amd_fidelityfx_dx12.dll")) != NULL; // Make a guess on the presence of FSR DLL, just to inform the user it might be working
+            if (ImGui::Checkbox(optiscaler_detected ? "DLSS/FSR Super Resolution" : "DLSS Super Resolution", &dlss_sr))
             {
                device_data.dlss_sr = dlss_sr;
                if (device_data.dlss_sr) device_data.dlss_sr_suppressed = false;
@@ -6829,7 +6945,7 @@ namespace
             }
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             {
-               ImGui::SetTooltip("This replaces the game's native AA and dynamic resolution scaling implementations.\nSelect \"SMAA 2TX\" or \"TAA\" in the game's AA settings for DLSS/DLAA to engage.\nA tick will appear here when it's engaged and a warning will appear if it failed.\n\nRequires compatible Nvidia GPUs.");
+               ImGui::SetTooltip("This replaces the game's native AA and dynamic resolution scaling implementations.\nSelect \"SMAA 2TX\" or \"TAA\" in the game's AA settings for DLSS/DLAA to engage.\nA tick will appear here when it's engaged and a warning will appear if it failed.\n\nRequires compatible Nvidia GPUs (or OptiScaler for FSR).");
             }
             ImGui::SameLine();
             if (dlss_sr != true && device_data.dlss_sr_supported)
@@ -7164,7 +7280,8 @@ namespace
             }
 
             ImGui::NewLine();
-            ImGui::SliderInt("Tank Performance (Per Frame Sleep MS)", &frame_sleep_ms, 0, 100);
+            ImGui::SliderInt("Tank Performance (Frame Sleep MS)", &frame_sleep_ms, 0, 100);
+            ImGui::SliderInt("Tank Performance (Frame Sleep Interval)", &frame_sleep_interval, 1, 30);
 
             ImGui::NewLine();
             ImGuiInputTextFlags text_flags = ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_AlwaysOverwrite | ImGuiInputTextFlags_NoUndoRedo;
@@ -7341,17 +7458,28 @@ namespace
             }
 
             ImGui::NewLine();
-            //TODOFT4: test formats and expose to user
+#endif // DEVELOPMENT
+
             const char* ldr_formats[4] = {
                 "R8G8B8A8",
                 "R10G10B10A2",
                 "R11G11B10F",
                 "R16G16B16A16F",
             };
+#if DEVELOPMENT
             const char* hdr_formats[2] = {
                 "R11G11B10F",
                 "R16G16B16A16F",
             };
+#else // !DEVELOPMENT
+            const char* hdr_formats[2] = {
+                "Medium (Vanilla)",
+                "High (Luma)",
+            };
+#endif // DEVELOPMENT
+            bool textures_upgrade_format_changed = false;
+            bool textures_upgrade_format_pending_change = false;
+#if DEVELOPMENT // NOTE: Changing the "LDR" textures is seemengly a dead end as it changes too many things and anyway it's not really necessary (Luma's post processing pipeline assumes HDR until the very end)
             int LDR_textures_upgrade_requested_format_int = 3;
             if (LDR_textures_upgrade_requested_format == RE::ETEX_Format::eTF_R8G8B8A8)
             {
@@ -7365,9 +7493,8 @@ namespace
             {
                LDR_textures_upgrade_requested_format_int = 2;
             }
-            bool textures_upgrade_format_changed = false;
             // These expect the game to resize the swapchain to apply (we'd need to cache the requested and applied format to do it properly)
-            if (ImGui::SliderInt("LDR Post Process Texture Upgrades Format", &LDR_textures_upgrade_requested_format_int, 0, 3, ldr_formats[(uint32_t)LDR_textures_upgrade_requested_format_int], ImGuiSliderFlags_NoInput))
+            if (ImGui::SliderInt("LDR Post Process Textures Upgrades Format", &LDR_textures_upgrade_requested_format_int, 0, 3, ldr_formats[(uint32_t)LDR_textures_upgrade_requested_format_int], ImGuiSliderFlags_NoInput))
             {
                if (LDR_textures_upgrade_requested_format_int == 0)
                {
@@ -7387,11 +7514,19 @@ namespace
                }
                textures_upgrade_format_changed = true;
             }
+            textures_upgrade_format_pending_change |= LDR_textures_upgrade_requested_format != LDR_textures_upgrade_confirmed_format;
+#endif // DEVELOPMENT
             int HDR_textures_upgrade_requested_format_int = (HDR_textures_upgrade_requested_format == RE::ETEX_Format::eTF_R11G11B10F) ? 0 : 1;
-            if (ImGui::SliderInt("HDR Post Process Texture Upgrades Format", &HDR_textures_upgrade_requested_format_int, 0, 1, hdr_formats[(uint32_t)HDR_textures_upgrade_requested_format_int], ImGuiSliderFlags_NoInput))
+            if (ImGui::SliderInt("HDR Post Process Quality", &HDR_textures_upgrade_requested_format_int, 0, 1, hdr_formats[(uint32_t)HDR_textures_upgrade_requested_format_int], ImGuiSliderFlags_NoInput))
             {
                HDR_textures_upgrade_requested_format = HDR_textures_upgrade_requested_format_int == 0 ? RE::ETEX_Format::eTF_R11G11B10F : RE::ETEX_Format::eTF_R16G16B16A16F;
                textures_upgrade_format_changed = true;
+               reshade::set_config_value(runtime, NAME, "HDRPostProcessQuality", HDR_textures_upgrade_requested_format_int);
+            }
+            textures_upgrade_format_pending_change |= HDR_textures_upgrade_requested_format != HDR_textures_upgrade_confirmed_format;
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            {
+               ImGui::SetTooltip("This controls the quality of Bloom, Motion Blur, Lens Optics (e.g. lens flare, sun glare, ...) textures (bit depth).\nLower it for better performance, at a nearly imperceptible quality cost.\nThis requires the game's resolution to be changed at least once to apply (or a reboot).");
             }
             if (textures_upgrade_format_changed)
             {
@@ -7399,7 +7534,8 @@ namespace
                NativePlugin::SetTexturesFormat(LDR_textures_upgrade_requested_format, HDR_textures_upgrade_requested_format);
 #endif // ENABLE_NATIVE_PLUGIN
             }
-            if (LDR_textures_upgrade_requested_format != LDR_textures_upgrade_confirmed_format || HDR_textures_upgrade_requested_format != HDR_textures_upgrade_confirmed_format)
+            ImGui::SameLine();
+            if (textures_upgrade_format_pending_change)
             {
                ImGui::PushID("Texture Formats Change Warning");
                ImGui::BeginDisabled();
@@ -7409,7 +7545,7 @@ namespace
 
                if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
                {
-                  ImGui::SetTooltip("A manual graphics settings change is required for the texture quality change to apply.\nSimply toggle the game's resolution or reset the basic graphics settings.");
+                  ImGui::SetTooltip("A manual graphics settings change is required for the textures quality change to apply.\nSimply toggle the game's resolution in the graphics settings menu."); // Resetting the game base graphics settings also recreates textures sometimes but we can't be sure
                }
             }
             else
@@ -7421,15 +7557,13 @@ namespace
                ImGui::InvisibleButton("", ImVec2(size.x, size.y));
             }
 
+#if DEVELOPMENT
             ImGui::NewLine();
             ImGui::SliderFloat("DLSS Custom Exposure", &dlss_custom_exposure, 0.0, 10.0);
             ImGui::SliderFloat("DLSS Custom Pre-Exposure", &dlss_custom_pre_exposure, 0.0, 10.0);
             ImGui::SliderInt("DLSS Halton Jitter Phases", &force_taa_jitter_phases, 0, 64);
 
             ImGui::NewLine();
-            ImGui::SliderInt("Fix Motion Vectors Generation Projection Matrix", &fix_prev_matrix_mode, 0, 6);
-            //ImGui::SliderInt("matrix_calculation_mode", &matrix_calculation_mode, 0, 3); // Disabled
-            ImGui::SliderInt("matrix_calculation_mode_2", &matrix_calculation_mode_2, 0, 4);
             if (ImGui::Checkbox("Disable Camera Jitters", &disable_taa_jitters))
             {
                if (!disable_taa_jitters && force_taa_jitter_phases == 1)
@@ -7741,6 +7875,24 @@ namespace
             text = std::to_string(device_data.texture_mip_lod_bias_offset);
             ImGui::Text(text.c_str(), "");
 
+            ImGui::NewLine();
+            ImGui::Text("Camera: ", "");
+            //TODOFT3: figure out if this is meters or what
+            text = "Scene Near: " + std::to_string(cb_per_view_global.CV_NearFarClipDist.x) + " Scene Far: " + std::to_string(cb_per_view_global.CV_NearFarClipDist.y);
+            ImGui::Text(text.c_str(), "");
+            float tanHalfFOVX = 1.f / projection_matrix.m00;
+            float tanHalfFOVY = 1.f / projection_matrix.m11;
+            float FOVX = atan(tanHalfFOVX) * 2.0 * 180 / M_PI;
+            float FOVY = atan(tanHalfFOVY) * 2.0 * 180 / M_PI;
+            text = "Scene: Hor FOV: " + std::to_string(FOVX) + " Vert FOV: " + std::to_string(FOVY);
+            ImGui::Text(text.c_str(), "");
+            tanHalfFOVX = 1.f / nearest_projection_matrix.m00;
+            tanHalfFOVY = 1.f / nearest_projection_matrix.m11;
+            FOVX = atan(tanHalfFOVX) * 2.0 * 180 / M_PI;
+            FOVY = atan(tanHalfFOVY) * 2.0 * 180 / M_PI;
+            text = "Weapon: Hor FOV: " + std::to_string(FOVX) + " Vert FOV: " + std::to_string(FOVY);
+            ImGui::Text(text.c_str(), "");
+
             ImGui::EndTabItem(); // Info
          }
 #endif // DEVELOPMENT || TEST
@@ -7924,13 +8076,12 @@ void Init(bool async)
    // Same as "shader_hashes_HDRPostProcessHDRFinalScene" but it includes ones with sunshafts only
    shader_hashes_HDRPostProcessHDRFinalScene_Sunshafts.pixel_shaders = { std::stoul("81CE942F", nullptr, 16), std::stoul("37ACE8EF", nullptr, 16), std::stoul("66FD11D0", nullptr, 16) };
    // PostAA PostAA
- // These passes don't have any projection jitters (unless maybe "SMAA 1TX" could have them if we forced them through config), so we can't replace them with DLSS SR.
- // SMAA (without TX) is completely missing from here as it doesn't have a composition pass we could replace (well, maybe NeighborhoodBlendingSMAA).
-#if 0
+   // The "FXAA" and "SMAA 1TX" passes don't have any projection jitters (unless maybe "SMAA 1TX" could have them if we forced them through config), so we can't replace them with DLSS SR.
+   // SMAA (without TX) is completely missing from here as it doesn't have a composition pass we could replace (well we could replace, "NeighborhoodBlendingSMAA" (hash "2E9A5D4C"), but we couldn't be certain that then the TAA pass would run too after).
    shader_hashes_PostAA.pixel_shaders.emplace(std::stoul("D8072D98", nullptr, 16)); // FXAA
    shader_hashes_PostAA.pixel_shaders.emplace(std::stoul("E9D92B11", nullptr, 16)); // SMAA 1TX
-#endif
    shader_hashes_PostAA.pixel_shaders.emplace(std::stoul("BF813081", nullptr, 16)); // SMAA 2TX and TAA
+   shader_hashes_PostAA_TAA.pixel_shaders.emplace(std::stoul("BF813081", nullptr, 16)); // SMAA 2TX and TAA
    // PostAA lendWeightSMAA + PostAA LumaEdgeDetectionSMAA
    shader_hashes_SMAA_EdgeDetection.pixel_shaders = { std::stoul("5636A813", nullptr, 16), std::stoul("47B723BD", nullptr, 16) };
 
@@ -7953,6 +8104,8 @@ void Init(bool async)
    cb_luma_frame_settings.DLSS = 0; // We can't set this to 1 until we verified DLSS engaged correctly and is running
    cb_luma_frame_settings.LensDistortion = 0;
 
+   reprojection_matrix.SetIdentity();
+
    // Load settings
    {
       const std::unique_lock lock_reshade(s_mutex_reshade);
@@ -7966,7 +8119,7 @@ void Init(bool async)
          {
             const std::unique_lock lock_loading(s_mutex_loading);
             // NOTE: put behaviour to load previous versions into new ones here
-            CleanShadersCache(); // Force recompile shaders, just for extra safety (theoretically changes are auto detected through the preprocessor, but we can't be certain)
+            CleanShadersCache(); // Force recompile shaders, just for extra safety (theoretically changes are auto detected through the preprocessor, but we can't be certain). We don't need to change the last config serialized shader defines.
          }
          else if (config_version > Globals::VERSION)
          {
@@ -7978,6 +8131,9 @@ void Init(bool async)
       reshade::get_config_value(runtime, NAME, "DLSSSuperResolution", dlss_sr);
       reshade::get_config_value(runtime, NAME, "TonemapUIBackground", tonemap_ui_background);
       reshade::get_config_value(runtime, NAME, "PerspectiveCorrection", cb_luma_frame_settings.LensDistortion);
+      int HDR_textures_upgrade_requested_format_int = (HDR_textures_upgrade_requested_format == RE::ETEX_Format::eTF_R11G11B10F) ? 0 : 1;
+      reshade::get_config_value(runtime, NAME, "HDRPostProcessQuality", HDR_textures_upgrade_requested_format_int);
+      HDR_textures_upgrade_requested_format = HDR_textures_upgrade_requested_format_int == 0 ? RE::ETEX_Format::eTF_R11G11B10F : RE::ETEX_Format::eTF_R16G16B16A16F;
       reshade::get_config_value(runtime, NAME, "DisplayMode", cb_luma_frame_settings.DisplayMode);
 #if !DEVELOPMENT && !TEST // Don't allow "SDR in HDR for HDR" mode (there's no strong reason not to, but it avoids permutations exposed to users)
       if (cb_luma_frame_settings.DisplayMode >= 2)
@@ -8011,6 +8167,7 @@ void Init(bool async)
    }
 
    {
+      // Assume that the shader defines loaded from config match the ones the current pre-compiled shaders have (or, simply use the defaults otherwise)
       const std::unique_lock lock_shader_defines(s_mutex_shader_defines);
       ShaderDefineData::OnCompilation(shader_defines_data);
       for (int i = 0; i < shader_defines_data.size(); i++)
@@ -8031,7 +8188,7 @@ void Init(bool async)
             const std::unique_lock lock_loading(s_mutex_loading);
             // This is needed to make sure this thread locks "s_mutex_loading" before any other function could
             async_shader_compilation_semaphore.release();
-            CompileCustomShaders();
+            CompileCustomShaders(nullptr, true);
             const std::shared_lock lock_device(s_mutex_device);
             // Create custom device shaders if the device has already been created before custom shaders were loaded on boot, independently of "block_draw_until_device_custom_shaders_creation".
             // Note that this might be unsafe if "global_devices_data" was already being destroyed in "OnDestroyDevice()" (I'm not sure you can create device resources anymore at that point).
@@ -8207,6 +8364,10 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved)
       reshade::register_event<reshade::addon_event::push_descriptors>(OnPushDescriptors);
       reshade::register_event<reshade::addon_event::map_buffer_region>(OnMapBufferRegion);
       reshade::register_event<reshade::addon_event::unmap_buffer_region>(OnUnmapBufferRegion);
+#if DEVELOPMENT
+      reshade::register_event<reshade::addon_event::update_buffer_region>(OnUpdateBufferRegion);
+      reshade::register_event<reshade::addon_event::update_texture_region>(OnUpdateTextureRegion);
+#endif // DEVELOPMENT
       reshade::register_event<reshade::addon_event::copy_resource>(OnCopyResource);
       reshade::register_event<reshade::addon_event::copy_texture_region>(OnCopyTextureRegion);
 
@@ -8267,6 +8428,10 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved)
       reshade::unregister_event<reshade::addon_event::push_descriptors>(OnPushDescriptors);
       reshade::unregister_event<reshade::addon_event::map_buffer_region>(OnMapBufferRegion);
       reshade::unregister_event<reshade::addon_event::unmap_buffer_region>(OnUnmapBufferRegion);
+#if DEVELOPMENT
+      reshade::unregister_event<reshade::addon_event::update_buffer_region>(OnUpdateBufferRegion);
+      reshade::unregister_event<reshade::addon_event::update_texture_region>(OnUpdateTextureRegion);
+#endif // DEVELOPMENT
       reshade::unregister_event<reshade::addon_event::copy_resource>(OnCopyResource);
       reshade::unregister_event<reshade::addon_event::copy_texture_region>(OnCopyTextureRegion);
 
