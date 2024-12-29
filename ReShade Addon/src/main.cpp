@@ -760,14 +760,14 @@ namespace
        {"ENABLE_SSAO_TEMPORAL", '1', false, false, "Disable if you don't use TAA to avoid seeing noise in Ambient Occlusion (though it won't have the same quality)\nYou can disable it for you use TAA too but it's not suggested"},
        {"BLOOM_QUALITY", '1', false, false, "0 - Vanilla\n1 - High"},
        {"MOTION_BLUR_QUALITY", '0', false, false, "0 - Vanilla (user graphics setting based)\n1 - Ultra"},
-       {"SSR_QUALITY", '1', false, false, "Screen Space Reflections\n0 - Vanilla\n1 - High\n2 - Ultra\nThis can be fairly expensive so lower it if you are having performance issues"},
+       {"SSR_QUALITY", '1', false, false, "Screen Space Reflections\n0 - Vanilla\n1 - High\n2 - Ultra\n3 - Extreme (slow)\nThis can be fairly expensive so lower it if you are having performance issues"},
    #if DEVELOPMENT || TEST
        {"FORCE_MOTION_VECTORS_JITTERED", force_motion_vectors_jittered ? '1' : '0', false, false, "Forces Motion Vectors generation to include the jitters from the previous frame too, as DLSS needs\nEnabling this forces the native TAA to work as when we have DLSS enabled, making it look a little bit better (less shimmery)"},
    #endif
        {"ENABLE_POST_PROCESS", '1', false, false, "Allows you to disable all Post Processing (at once)"},
        {"ENABLE_CAMERA_MOTION_BLUR", '0', false, false, "Camera Motion Blur can look pretty botched in Prey, and can mess with DLSS/TAA, it's turned off by default in Luma"},
        {"ENABLE_COLOR_GRADING_LUT", '1', false, false, "Allows you to disable Color Grading\nDon't disable it unless you know what you are doing"},
-       {"POST_TAA_SHARPENING_TYPE", '2', false, false, "0 - None (disabled)\n1 - Vanilla (basic sharpening)\n2 - RCAS (AMD improved sharpening)"},
+       {"POST_TAA_SHARPENING_TYPE", '2', false, false, "0 - None (disabled, soft)\n1 - Vanilla (basic sharpening)\n2 - RCAS (AMD improved sharpening, default preset)\n3 - RCAS (AMD improved sharpening, strong preset)"},
        {"ENABLE_VIGNETTE", '1', false, false, "Allows you to disable Vignette\nIt's not that prominent in Prey, it's only used in certain cases to convey gameplay information,\nso don't disable it unless you know what you are doing"},
    #if DEVELOPMENT || TEST // Disabled these final users because these require the "DEVELOPMENT" flag to be used and we don't want users to mess around with them (it's not what the mod wants to achieve)
        {"ENABLE_SHARPENING", '1', false, false, "Allows you to disable Sharpening globally\nDisabling it is not suggested, especially if you use TAA (you can use \"POST_TAA_SHARPENING_TYPE\" for that anyway)"},

@@ -169,13 +169,15 @@
 #endif
 // 0 Vanilla
 // 1 High (best balance)
-// 2 Extreme (slow)
+// 2 Ultra (slow)
+// 3 Extreme (slowest)
 #ifndef SSR_QUALITY
 #define SSR_QUALITY 1
 #endif
-// 0 None: disabled
+// 0 None: disabled (soft)
 // 1 Vanilla: basic sharpening
-// 2 RCAS: AMD improved sharpening
+// 2 RCAS: AMD improved sharpening (default preset)
+// 3 RCAS: AMD improved sharpening (strong preset)
 #ifndef POST_TAA_SHARPENING_TYPE
 #define POST_TAA_SHARPENING_TYPE 2
 #endif

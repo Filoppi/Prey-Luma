@@ -218,7 +218,7 @@ void main(
 	
   // Most surfaces are smooth to a good degree
   // LUMA FT: added higher quality (we scale the non smoothness fixed samples separately as it seemed like a good idea)
-#if SSR_QUALITY >= 3 // Undocumented max quality (we don't want users to even try it, it's too slow, even if it's not as high as we'd need to go for proper clean reflections)
+#if SSR_QUALITY >= 3 // Max quality (we don't want users to even try it, it's too slow, even if it's not as high as we'd need to go for proper clean reflections)
 	uint numSamples = 8 + attribs.Smoothness * 84;
 #elif SSR_QUALITY >= 2
 	uint numSamples = 6 + attribs.Smoothness * 56;
@@ -250,11 +250,17 @@ void main(
 	// (I might have flipped the description of two cases above)
 	static const float samplesIntervalScale = 1.6; // Heuristically found by Crytek
 	const float intervalSize = maxReflDist / (numSamples * samplesIntervalScale) / CV_NearFarClipDist.y;
-	// LUMA FT: added variation in the length of the steps, the closer we are to the reflection, the shorter we make the steps, and the away we are, the longer we make them.
-	// This provies higher quality close to the camera, and lower "quality" for reflections that will likely end up being diffused anyway, so it's both an optimization and improvement on looks.
+	// LUMA FT: added variation in the length of the steps, the closer we are to the reflection, the shorter we make the steps, and the more away we are, the longer we make them. In other words, we bias the samples to focus more on close reflections.
+	// This provides higher quality close to the camera, and lower "quality" for reflections that will likely end up being diffused anyway, so it's both an optimization and an improvement on looks.
 	// Note that this might not scale the intervals up a 100% perfectly and might leave some holes between iterations that fail to find a match, thus reflections could look more segmented, but generally it looks good.
 	// Set to 0 to disable it (ignoring the implementation).
-	static const float range = 0.5; // A value around 0.5 looks the most balanced and best. For now we do this even at "SSR_QUALITY" 0
+	// A value around 0.5 looks the most balanced and best. For now we do this even at "SSR_QUALITY" 0 given it helps.
+	// Ideally we'd define a range normalized around 1 (with 1 being neutral and having no bias), but then the sum of lengths wouldn't match the expected max travel distance anymore, and I haven't found a simply way to calculate that, so for now our range will have to be between 1 and 2.
+#if SSR_QUALITY <= 2
+	static const float range = 0.5;
+#else
+	static const float range = 0.75;
+#endif
 	
 	// Perform raymarching
 	float rayProgress = numSamples == 1 ? 0.5 : 0.f; // "i" is 0
@@ -264,6 +270,7 @@ void main(
 	float2 sampleUVClamp = CV_HPosScale.xy - CV_ScreenSize.zw;
 	float2 prevDepthTC = 0.5;
 	float furthestdepthFromCameraCenter = 0.0;
+	//TODO LUMA: add hierarchical depth based SSR (downscale depth taking the max of 4 texels up to 1x, and then sample that)
 	[loop]
 	for (uint i = 0; i < numSamples;)
 	{
@@ -282,15 +289,20 @@ void main(
 		prevDepthTC = depthTC;
 #endif
 		
-		// LUMA FT: fixed depth clamp, it was using "CV_HPosClamp" here but "reflectionDepthScaledTex" is half resolution, so we need to clamp it differently
+#if 1
+		// LUMA FT: fixed depth clamp, it was using "CV_HPosClamp" here but "reflectionDepthScaledTex" is half resolution (or quarter res, but that's not code path is not reachable in Prey apparently), so we need to clamp it differently.
+		// We take the x with is the "max" of the 4 downscaled texels.
 		float fLinearDepthTap = reflectionDepthScaledTex.SampleLevel(ssReflectionPoint, ClampScreenTC(depthTC, sampleUVClamp), 0).x; // half res R16F
+#else // LUMA FT: There's no noticeable improvement in quality if we do this, in fact, it could even be worse as we wouldn't be sampling from a mipped texture that has the max depth of 4 texel, which makes this more accurate?
+		float fLinearDepthTap = reflectionDepthTex.SampleLevel(ssReflectionLinear, ClampScreenTC(depthTC, CV_HPosClamp.xy), 0);
+#endif
 		bool skip = false;
 
 // LUMA FT: stop if the depth becomes higher, given that we couldn't realistically be reflecting that.
 // Currently disabled as it hides too many reflections that would otherwise would look "good" (unless you stopped to look at them and observe they make no sense and are flipped in direction) (especially with lowerish samples numbers).
 // Reflecting impossible stuff is simply an assumption that SSR make and they work okish with that.
 // If we wanted to do this properly, we'd need to consider the reflection angle as well and only discard samples based on depth depending on the angle.
-#if 0
+#if 0 //TODOFT: try again?
 		float depthFromCameraCenter = ReconstructWorldPos(depthTC * CV_ScreenSize.xy, fLinearDepthTap, true).z; // This should be more correct that directly using "fLinearDepthTap"
 		if (furthestdepthFromCameraCenter != 0 && (depthFromCameraCenter / furthestdepthFromCameraCenter) > 1.0 + FLT_EPSILON)
 		{
@@ -430,7 +442,7 @@ void main(
 		// but here we are using this to blur a screen space render texture (through mip maps), so as we get closer to the reflected point, we need to blur the texture more to cause
 		// the same percevied diffuseness/blurring effect (that the same exact reflection would have had if we were further away).
 		float reflectionLength = length(reflVec) * bestHitLenght; // The reflection's ray bounced length (in world units)
-		static const float maxDiffusenessReflectionLength = 7.5; // We picked this value (in meter) heuristically, based on tests in many places. Values between 5 and 15 look good in different reflections.
+		static const float maxDiffusenessReflectionLength = 7.5; // We picked this value (in meter, probably) heuristically, based on tests in many places. Values between 5 and 15 look good in different reflections.
 
 		float currentMaxDiffusenessReflectionLength;
 		// This formula dynamically scales the target length at which we go fully diffused based on the specularity of the material.
@@ -454,7 +466,7 @@ void main(
 		//TODO LUMA: rebalance this a bit, maybe apply a pow? reflections don't get that much bluerried with distance, they don't scale exactly as one'd expect
 		outDiffuse = reflectionLength / currentMaxDiffusenessReflectionLength; // We tried applied a pow to this result but it's good as it is
 
-#if 0 //TODOFT: test more and finish or delete, it doesn't really seem to be needed? We could use a rebalancing of the ray distance control to blur more aggressively when the distance changes
+#if 0 //TODOFT: test more and finish or delete, it doesn't really seem to be needed? We could use a rebalancing of the ray distance control to blur more aggressively when the distance changes Also try to blur or hide reflections next to the surface (e.g. a book standing on a table).
 		// As the reflected point gets closer to the screen (up to a threshold), scale up its diffuness, as a way to make them blur more, because they'd be bigger in the view and require a lower mip map to give the same perceived diffuseness
 		float cameraPlaneDistance = fDepth * CV_NearFarClipDist.y; // Distance from the camera plane to the reflecting point (in world units)		
 		outDiffuse *= max(maxDiffusenessReflectionLength / cameraPlaneDistance, 1.0); // Re-use "maxDiffusenessReflectionLength" even if theoretically this is unrelated
