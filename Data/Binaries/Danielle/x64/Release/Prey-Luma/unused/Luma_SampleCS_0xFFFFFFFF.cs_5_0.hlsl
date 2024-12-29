@@ -7,6 +7,8 @@ void main( uint2 vDispatchThreadId : SV_DispatchThreadID )
 	const uint2 pixelPos = vDispatchThreadId.xy;
 	const float2 uv = pixelPos + 0.5; // Divide by the texture x y size if needed to be normalized
 
+#pragma warning( disable : 3206 ) // Not sure why it's needed
 	float4 color = sourceTargetTexture.Load(uint3(pixelPos, 0));
+#pragma warning( default : 3206 )
 	sourceTargetTexture[pixelPos] = color;
 }
