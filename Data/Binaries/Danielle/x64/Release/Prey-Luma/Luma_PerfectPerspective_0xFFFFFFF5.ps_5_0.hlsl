@@ -28,7 +28,7 @@ void main(float4 WPos : SV_Position0, float4 inBaseTC : TEXCOORD0, out float4 ou
 		float2 tcDiff = preClampDistortedTC - distortedTC;
 		// Give a 1 texel tolerance before fully going to black
 		float2 texelSize = CV_ScreenSize.zw * 2.0;
-		borderAlpha = saturate(max(tcDiff.x / texelSize.x, tcDiff.y / CV_ScreenSize.y));
+		borderAlpha = saturate(max(tcDiff.x / texelSize.x, tcDiff.y / texelSize.y));
 	}
 
 #if ENABLE_SCREEN_DISTORTION && 1 // Use mips
