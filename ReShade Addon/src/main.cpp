@@ -7531,7 +7531,11 @@ namespace
             if (textures_upgrade_format_changed)
             {
 #if ENABLE_NATIVE_PLUGIN
+#if DEVELOPMENT
                NativePlugin::SetTexturesFormat(LDR_textures_upgrade_requested_format, HDR_textures_upgrade_requested_format);
+#else
+               NativePlugin::SetTexturesFormat(RE::ETEX_Format::eTF_R16G16B16A16F, HDR_textures_upgrade_requested_format);
+#endif // DEVELOPMENT
 #endif // ENABLE_NATIVE_PLUGIN
             }
             ImGui::SameLine();
