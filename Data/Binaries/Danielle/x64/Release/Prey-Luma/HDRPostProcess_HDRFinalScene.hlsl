@@ -16,8 +16,8 @@ Texture2D<float4> hdrSourceTex : register(t0);
 Texture2D<float2> adaptedLumTex : register(t1); // 1px texture
 Texture2D<float4> bloomTex : register(t2);
 Texture2D<float> depthTex : register(t5); // Linear Depth (0 camera origin, 1 far)
-Texture2D<float4> vignettingTex : register(t7);
-Texture2D<float4> colorChartTex : register(t8);
+Texture2D<float> vignettingTex : register(t7); // LUMA FT: changed from float4 to float(1) to reflect the texture
+Texture2D<float4> colorChartTex : register(t8); // Color Grading LUT
 Texture2D<float4> sunshaftsTex : register(t9);
 
 void TestOutput(inout float3 outColor)
@@ -249,7 +249,8 @@ float4 FilmTonemapping( out float3 cSDRColor, in float4 cScene, in float4 cBloom
 void HDRFinalScenePS(float4 WPos, float4 baseTC, out float4 outColor)
 {
   int3 pixelCoord = int3(WPos.xy, 0);
-	float2 ScreenTC = MapViewportToRaster(baseTC.xy);
+	float2 screenTC = MapViewportToRaster(baseTC.xy);
+	float2 jitteredScreenTC = MapViewportToRaster(baseTC.xy + (LumaData.CameraJitters.xy * float2(0.5, -0.5)));
 
 #if DRAW_LUT && !TEST_MOTION_BLUR_TYPE && !TEST_SMAA_EDGES && !TEST_TAA_TYPE
   uint sourceLevel = 0;
@@ -281,7 +282,7 @@ void HDRFinalScenePS(float4 WPos, float4 baseTC, out float4 outColor)
 	float4 cScene = hdrSourceTex.Load(pixelCoord);
 #endif // ALLOW_MSAA
 
-  float2 jitteredBaseTC = baseTC.xy + LumaData.CameraJitters.xy * float2(0.5, -0.5);
+  float2 jitteredBaseTC = baseTC.xy + (LumaData.CameraJitters.xy * float2(0.5, -0.5));
 #if ENABLE_VIGNETTE
   // LUMA FT: Ultrawide friendly vignette implementation. To alter the vignette strength, we can multiply the offset from 1 (away from it)
   // LUMA FT: added jittering to vignette, so it's resolved over time more nicely (it's still bad that it's applied before TAA!)
@@ -289,7 +290,11 @@ void HDRFinalScenePS(float4 WPos, float4 baseTC, out float4 outColor)
 #else // !ENABLE_VIGNETTE
   float fVignetting = 1.0;
 #endif // ENABLE_VIGNETTE
-	float4 cBloom = bloomTex.Sample(ssHdrLinearClamp, ScreenTC); // We can't use "Load()" here as this texture has a different resolution
+#if REJITTER_BLOOM // LUMA FT: rejittered bloom sampling coordinates as we changed bloom to be generated on dejittered buffers, given it's pre TAA, to avoid it shimmering left and right and adding detail to its TAA reconstruction later
+	float4 cBloom = bloomTex.Sample(ssHdrLinearClamp, jitteredScreenTC);
+#else
+  float4 cBloom = bloomTex.Sample(ssHdrLinearClamp, screenTC); // We can't use "Load()" here as this texture has a different resolution
+#endif
 #if 1 // Exposure is always 1px
 	float2 vAdaptedLum = adaptedLumTex.Load(0); //TODOFT: make sure that this (and other usages in PostAA and Luma custom shaders) are correct, is this always 1px? Or could it be that when there's a scene mask, the exposure is different by pixel?
 #else

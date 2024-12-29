@@ -6,7 +6,7 @@ cbuffer CBExposure : register(b0)
 {
   struct
   {
-    float4 SampleLumOffsets[2];
+    float4 SampleLumOffsets[2]; // These aren't adjusted by DRS
     float EyeAdaptationSpeed;
     float RangeAdaptationSpeed;
     float2 __padding;
@@ -43,6 +43,7 @@ float GetBaseSample(float2 _uv)
 }
 
 // HDRSampleBaseLumPS
+// This draws a low resolution map with weird colors that roughly predicts the final exposure, relatively early in rendering
 void main(
   float4 WPos : SV_Position0,
   float4 inBaseTC : TEXCOORD0,
@@ -51,8 +52,11 @@ void main(
 	float2 inputResolution;
 	_tex0_D3D11.GetDimensions(inputResolution.x, inputResolution.y); // We can't use "CV_ScreenSize" here as that's for the output resolution
 	float2 sampleUVClamp = CV_HPosScale.xy - (0.5 / inputResolution);
+	
+	float2 jitters = LumaData.CameraJitters.xy * float2(0.5, -0.5);
+	inBaseTC.xy -= jitters;
 
-	// LUMA FT: fixed bad UVs DRS scaling
+	// LUMA FT: fixed bad UVs DRS scaling and added dejittering to make it more temporally stable
 	outColor.x = GetBaseSample(clamp(MapViewportToRaster(inBaseTC.xy + cbExposure.SampleLumOffsets[0].xy), 0.0, sampleUVClamp.xy));
 	outColor.y = GetBaseSample(clamp(MapViewportToRaster(inBaseTC.xy + cbExposure.SampleLumOffsets[0].zw), 0.0, sampleUVClamp.xy));
 	outColor.z = GetBaseSample(clamp(MapViewportToRaster(inBaseTC.xy + cbExposure.SampleLumOffsets[1].xy), 0.0, sampleUVClamp.xy));

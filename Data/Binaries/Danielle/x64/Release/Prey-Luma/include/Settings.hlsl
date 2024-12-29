@@ -159,6 +159,9 @@
 #ifndef BLOOM_QUALITY
 #define BLOOM_QUALITY 1
 #endif
+// Dejitter and rejitter bloom (and exposure) generation.
+// it makes bloom a lot more stable with TAA, but slightly changes its intensity.
+#define REJITTER_BLOOM 1
 // 0 Vanilla (based on user setting)
 // 1 Ultra
 #ifndef MOTION_BLUR_QUALITY
