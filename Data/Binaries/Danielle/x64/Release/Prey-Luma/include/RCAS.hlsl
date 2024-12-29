@@ -10,12 +10,13 @@
 #define RCAS_DENOISE 0
 #endif
 // Lower means less artifacts and "less sharpening", it's unclear what 16 stands for here, and whether this is meant for linear or gamma space (probably gamma space)
+// This is set at the limit of providing unnatural results for sharpening (anything more generates artifacts).
 #ifndef RCAS_LIMIT
 #define RCAS_LIMIT (0.25-(1.0/16.0))
 #endif
-
-Texture2D<float4> Source : register(t0);
-Texture2D<float2> Motion : register(t1);
+// This should look better, avoid hue shifts and be more compatible with HDR (scRGB, which can have negative values). This appears to have stronger sharpening when enabled, but also causes more black dots to appear at extreme sharpening values.
+// For now it's disabled by default as there's not enough proof to justify it, sharpening is a perceptual trick so hue shifts don't really matter (in fact, possibly they make it better).
+#define RCAS_LUMINANCE_BASED 0
 
 float getRCASLuma(float3 rgb)
 {
@@ -62,6 +63,9 @@ float4 RCAS(int2 pixelCoord, int2 minPixelCoord, int2 maxPixelCoord, float sharp
 
     float3 e = e4.rgb / paperWhite;
     // RCAS is always "pixel based" (the next 4 pixels)
+    //    b
+    //  d e f
+    //    h
     // We check for "maxPixelCoord" and "minPixelCoord" to support dynamic resolution scaling. We assume "pixelCoord" is already within the limits.
     float3 b = linearColorTexture.Load(int3(pixelCoord.x, max(pixelCoord.y - 1, minPixelCoord.y), 0)).rgb / paperWhite;
     float3 d = linearColorTexture.Load(int3(max(pixelCoord.x - 1, minPixelCoord.x), pixelCoord.y, 0)).rgb / paperWhite;
@@ -83,26 +87,51 @@ float4 RCAS(int2 pixelCoord, int2 minPixelCoord, int2 maxPixelCoord, float sharp
     nz = -0.5 * nz + 1.0;
 #endif
 
+    static const float samplesNum = 4.0; // There's 4 (5) colors to be mixed
+    // Immediate constants for peak range.
+    static const float2 peakC = float2(1.0, -samplesNum);
+
+#if RCAS_LUMINANCE_BASED
+    // These should all be >= 0, but tiny values below zero shouldn't hurt anyway, still, we clip them below as they'd be clipped by the screen anyway
+    float bLum = GetLuminance(b);
+    float dLum = GetLuminance(d);
+    float eLum = GetLuminance(e);
+    float fLum = GetLuminance(f);
+    float hLum = GetLuminance(h);
+
+    float minLum = max(min(min(bLum, dLum), min(fLum, hLum)), 0.0);
+    float maxLum = max(max(bLum, dLum), max(fLum, hLum));
+
+    float hitMin = minLum * rcp(samplesNum * maxLum);
+    float hitMax = (peakC.x - maxLum) * rcp(samplesNum * minLum + peakC.y);
+
+    float localLobe = max(-hitMin, hitMax);
+#else // !RCAS_LUMINANCE_BASED
     // Min and max of ring.
     float3 minRGB = min(min(b, d), min(f, h));
     float3 maxRGB = max(max(b, d), max(f, h));
 
-#if 0 //TODOFT4: make sure it's ok if the textures aren't in the 0-1 range, clamp some stuff otherwise. Is the "paperWhite" range useless? It's all relative to the min and max of the local pixels
+#if 0 // It seems like it's ok if these values aren't in the 0-1 range, the code below will still work as expected, and avoid clipping HDR (or anyway ignoring values beyond SDR) //TODOFT3: Lilium claims the code below can break for negative rgb (scRGB) values, investigate and fix it
     minRGB = saturate(minRGB);
     maxRGB = saturate(maxRGB);
 #endif
 
-    static const float samplesNum = 4.0; // There's 4 (5) colors to be mixed
-    // Immediate constants for peak range.
-    float2 peakC = float2(1.0, -samplesNum);
-
     // Limiters, these need to use high precision reciprocal operations.
-    // Decided to use standard rcp for now in hopes of optimizing it
+    // Decided to use standard rcp for now in hopes of optimizing it.
+    // It's fine if either of these can go below zero!
     float3 hitMin = minRGB * rcp(samplesNum * maxRGB);
     float3 hitMax = (peakC.xxx - maxRGB) * rcp(samplesNum * minRGB + peakC.yyy);
+
     float3 lobeRGB = max(-hitMin, hitMax);
-    float lobe = max(-RCAS_LIMIT, min(max(lobeRGB.r, max(lobeRGB.g, lobeRGB.b)), 0.0)) * sharpness; //TODOFT4: tweak RCAS_LIMIT
-    
+#if 0 // An attempt to make this code, which branches by r g b channel, color space agnostic. Without this, the result heavily depends by where the rgb coordinates are in the CIE color graph, and by how luminous they are. Unfortunately this drastically reduces the sharpening intensity, even if it makes it look even more natural.
+    float localLobe = max(lobeRGB.r * Rec709_Luminance.r * 3.0, max(lobeRGB.g * Rec709_Luminance.g * 3.0, lobeRGB.b * Rec709_Luminance.b * 3.0));
+#else
+    float localLobe = max(lobeRGB.r, max(lobeRGB.g, lobeRGB.b));
+#endif
+#endif // RCAS_LUMINANCE_BASED
+
+    float lobe = max(-RCAS_LIMIT, min(localLobe, 0.0)) * sharpness;
+
 #if RCAS_DENOISE >= 1
     // denoise
     lobe *= nz;
@@ -110,7 +139,15 @@ float4 RCAS(int2 pixelCoord, int2 minPixelCoord, int2 maxPixelCoord, float sharp
 
     // Resolve, which needs medium precision rcp approximation to avoid visible tonality changes.
     float rcpL = rcp(samplesNum * lobe + 1.0);
+    
+#if RCAS_LUMINANCE_BASED
+    float outputLum = ((bLum + dLum + hLum + fLum) * lobe + eLum) * rcpL;
+    // Questionable choice: in case the source center pixel had luminance zero (even if the rgb ratio wasn't flat), elevate it to grey and match the target luminance, or we'd have a division by zero.
+    // The alternative would be to keep "e" intact, but that then wouldn't have applied any sharpening.
+    float3 output = eLum != 0 ? (e * (outputLum / eLum)) : outputLum;
+#else // !RCAS_LUMINANCE_BASED
     float3 output = ((b + d + f + h) * lobe + e) * rcpL;
+#endif // RCAS_LUMINANCE_BASED
 
 #if 0 // Debug
     if (dynamicSharpening)
