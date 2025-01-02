@@ -455,7 +455,6 @@ namespace
    // Dev or User settings:
    bool auto_dump = (bool)ALLOW_SHADERS_DUMPING;
    bool auto_load = true;
-   bool live_reload = false;
 #if DEVELOPMENT
    bool trace_list_unique_shaders_only = false;
    bool trace_ignore_vertex_shaders = true;
@@ -548,7 +547,7 @@ namespace
       }
 
       // Pipelines by handle. Multiple pipelines can target the same shader, and even have multiple shaders within themselved.
-      // This only contains pipelines that we are replacing any shaders of.
+      // This only contains pipelines that we are replacing any shaders of (or does it???).
       std::unordered_map<uint64_t, CachedPipeline*> pipeline_cache_by_pipeline_handle;
       // Same as "pipeline_cache_by_pipeline_handle" but for cloned pipelines.
       std::unordered_map<uint64_t, CachedPipeline*> pipeline_cache_by_pipeline_clone_handle;
@@ -839,7 +838,6 @@ namespace
    bool last_pressed_unload = false;
    bool needs_unload_shaders = false;
    bool needs_load_shaders = false; // Load/compile or reload/recompile shaders, no need to default it to true, we have "auto_load" for that
-   bool needs_live_reload_update = live_reload;
 
    // There's only one swapchain and one device in Prey, but the game chances its configuration from different threads.
    // A new device+swapchain can be created if the user resets the settings as the old one is still rendering (or is it?).
@@ -2084,139 +2082,6 @@ namespace
       file.seekg(0, std::ios::beg).read(reinterpret_cast<char*>(data.data()), file_size);
       result = std::string(reinterpret_cast<const char*>(data.data()), file_size);
       return result;
-   }
-
-   OVERLAPPED overlapped;
-   HANDLE m_target_dir_handle = INVALID_HANDLE_VALUE;
-
-   bool needs_watcher_init = true;
-
-   std::aligned_storage_t<1U << 18, std::max<size_t>(alignof(FILE_NOTIFY_EXTENDED_INFORMATION), alignof(FILE_NOTIFY_INFORMATION))> watch_buffer;
-
-   void CALLBACK HandleEventCallback(DWORD error_code, DWORD bytes_transferred, LPOVERLAPPED overlapped)
-   {
-#if _DEBUG && LOG_VERBOSE
-      reshade::log::message(reshade::log::level::info, "Live editing callback");
-#endif
-      {
-         const std::shared_lock lock(s_mutex_device);
-         // TODO: verify this is safe. Replacing shaders from another thread at a random time could break as we need to wait one frame or the pipeline binding could hang.
-         for (auto global_device_data : global_devices_data)
-         {
-            LoadCustomShaders(*global_device_data);
-         }
-      }
-      // Trigger the watch again as the event is only triggered once
-      ToggleLiveWatching();
-   }
-
-   void CheckForLiveUpdate()
-   {
-      if (live_reload && !last_pressed_unload)
-      {
-         WaitForSingleObjectEx(overlapped.hEvent, 0, TRUE);
-      }
-   }
-
-   void ToggleLiveWatching()
-   {
-      if (live_reload && !last_pressed_unload)
-      {
-         auto directory = GetShaderPath();
-         if (!std::filesystem::exists(directory))
-         {
-            std::filesystem::create_directory(directory);
-         }
-         else if (!std::filesystem::is_directory(directory))
-         {
-            reshade::log::message(reshade::log::level::error, "ToggleLiveWatching: the target path is already taken by a file");
-            CancelIoEx(m_target_dir_handle, &overlapped);
-            return;
-         }
-
-#if _DEBUG && LOG_VERBOSE
-         reshade::log::message(reshade::log::level::info, "Watching live");
-#endif
-
-#if 0
-         // Clean up any previous handle for safety
-         if (m_target_dir_handle != INVALID_HANDLE_VALUE)
-         {
-            CancelIoEx(m_target_dir_handle, &overlapped);
-         }
-#endif
-
-         m_target_dir_handle = CreateFileW(
-            directory.c_str(),
-            FILE_LIST_DIRECTORY,
-            (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE),
-            NULL,  // NOLINT
-            OPEN_EXISTING,
-            (FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED),
-            NULL  // NOLINT
-         );
-         if (m_target_dir_handle == INVALID_HANDLE_VALUE)
-         {
-            reshade::log::message(reshade::log::level::error, "ToggleLiveWatching(targetHandle: invalid)");
-            return;
-         }
-#if _DEBUG && LOG_VERBOSE
-         {
-            std::stringstream s;
-            s << "ToggleLiveWatching(targetHandle: ";
-            s << reinterpret_cast<void*>(m_target_dir_handle);
-            reshade::log::message(reshade::log::level::info, s.str().c_str());
-         }
-#endif
-
-         memset(&watch_buffer, 0, sizeof(watch_buffer));
-         overlapped = { 0 };
-         overlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL); // NOLINT
-
-         const BOOL success = ReadDirectoryChangesExW(
-            m_target_dir_handle,
-            &watch_buffer,
-            sizeof(watch_buffer),
-            TRUE,
-            FILE_NOTIFY_CHANGE_FILE_NAME
-            | FILE_NOTIFY_CHANGE_DIR_NAME
-            | FILE_NOTIFY_CHANGE_ATTRIBUTES
-            | FILE_NOTIFY_CHANGE_SIZE
-            | FILE_NOTIFY_CHANGE_CREATION
-            | FILE_NOTIFY_CHANGE_LAST_WRITE,
-            NULL,  // NOLINT
-            &overlapped,
-            &HandleEventCallback,
-            ReadDirectoryNotifyExtendedInformation);
-
-         if (success == S_OK)
-         {
-#if _DEBUG && LOG_VERBOSE
-            reshade::log::message(reshade::log::level::info, "ToggleLiveWatching(ReadDirectoryChangesExW: Listening.)");
-#endif
-         }
-         else
-         {
-            std::stringstream s;
-            s << "ToggleLiveWatching(ReadDirectoryChangesExW: Failed: ";
-            s << GetLastError();
-            s << ")";
-            reshade::log::message(reshade::log::level::error, s.str().c_str());
-         }
-
-         const std::shared_lock lock(s_mutex_device);
-         for (auto global_device_data : global_devices_data)
-         {
-            LoadCustomShaders(*global_device_data);
-         }
-      }
-      else
-      {
-#if _DEBUG && LOG_VERBOSE
-         reshade::log::message(reshade::log::level::info, "Cancelling live");
-#endif
-         CancelIoEx(m_target_dir_handle, &overlapped);
-      }
    }
 
    void OnDisplayModeChanged()

@@ -5,6 +5,8 @@
 
 namespace
 {
+   typedef uint32_t uint;
+
    struct uint2
    {
       uint32_t x;

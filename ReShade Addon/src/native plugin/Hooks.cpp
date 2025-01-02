@@ -694,6 +694,8 @@ namespace Hooks
 		// set flags (done by the code that we wrote over)
 		a_desc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
 		
+		assert((a_desc.Flags & DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING) != 0);
+		
 		// set LDRPostProcessFormat
 		if (LDRPostProcessFormat == RE::ETEX_Format::eTF_R8G8B8A8) {
 			a_desc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -704,7 +706,7 @@ namespace Hooks
 			a_desc.BufferDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
 		}
 
-		// set swap effect
+		// set swap effect (no MSAA nor SRGB swap chains allowed!)
 		a_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
 	}
 

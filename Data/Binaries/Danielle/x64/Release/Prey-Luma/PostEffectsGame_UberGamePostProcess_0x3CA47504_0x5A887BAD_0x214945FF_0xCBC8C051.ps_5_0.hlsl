@@ -137,7 +137,7 @@ void ApplyRadialBlurAndChromaShift(inout float4 cScreen, float2 tcFinal)
 // UberGamePostProcessPS
 // This is only called when any of the parameters are in use.
 // This runs after upscaling/MSAA.
-// We let these draw on top of lens distortion black borders, as it's a screen overlay
+// We let these draw on top of lens distortion black borders, as it's mostly a screen overlay (it also does some screen space distortion, e.g. to simulate drunkness, but again it's fine)
 void main(float4 WPos : SV_Position0, float4 inBaseTC : TEXCOORD0, out float4 outColor : SV_Target0)
 {
 	outColor = 0;
