@@ -1035,7 +1035,6 @@ namespace
    };
 
    // Forward declares:
-   void ToggleLiveWatching();
    void DumpShader(uint32_t shader_hash, bool auto_detect_type);
    void AutoDumpShaders();
    void AutoLoadShaders(DeviceData* device_data);
@@ -3321,6 +3320,9 @@ namespace
    //TODOFT0: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project?
    //TODOFT3: add asserts for when we meet the shaders we are looking for
    //TODOFT4: add a new RT to draw UI on top (pre-multiplied alpha everywhere), so we could compose it smartly, possibly in the final linearization pass. Or, add a new UI gamma setting for when in full screen menus and swap to gamma space on the spot.
+   //TODOFT4: try to add lens distortion to psy-ops screen space effects (e.g. blue ring) so they aren't cropped with it?
+   //TODOFT4: try to not jitter MVs? Does it help?
+   //TODOFT4: lower brightness from 203 nits default?
 
    // Return false to prevent the original draw call from running (e.g. if you replaced it or just want to skip it)
    // Prey always seemengly draws in direct mode (?), but it uses different command lists on different threads (e.g. seemengly for the shadow projection maps, as they are separate, and stuff like that), though all the primary passes are done on the same thread.
@@ -4506,6 +4508,11 @@ namespace
                      {
                         native_device_context->CopyResource(output_color.get(), device_data.dlss_output_color.get()); // DX11 doesn't need barriers
                      }
+                     // In this case it's not our buisness to keep alive this "external" texture
+                     else
+                     {
+                        device_data.dlss_output_color = nullptr;
+                     }
 
                      return true; // "Cancel" the previously set draw call, DLSS has taken care of it
                   }
@@ -4519,7 +4526,6 @@ namespace
                      device_data.force_reset_dlss_sr = true; // We missed frames so it's good to do this, it might also help prevent further errors
                   }
                }
-               // In this case it's not our buisness to keep alive this "external" texture
                if (dlss_output_supports_uav)
                {
                   device_data.dlss_output_color = nullptr;
@@ -5129,7 +5135,7 @@ namespace
       device_data.resource_views.erase(view.handle);
    }
 
-   std::thread::id global_cbuffer_thread_id;
+   std::thread::id global_cbuffer_thread_id; //TODOFT: move
 #endif // DEVELOPMENT
 
    // Call this after reading the global cbuffer (index 13) memory (from CPU or GPU memory). This seemengly only happens in one thread.
@@ -5139,6 +5145,7 @@ namespace
    // An alternative way of approaching this would be to cache all the address of buffers that are ever filled up through ::Map() calls,
    // then store a copy of each of their instances, and when one of these buffers is set to a shader stage, re-set the same cbuffer with our
    // modified and fixed up data. That is a bit slower but it would be more safe, as it would guarantee us 100% that the buffer we are changing is cbuffer 13.
+   // If we were looking for the value of only one buffer in particular, we can simply store the buffer pointers from the DX state in a specific draw call, and then check for following map calls to it.
    bool UpdateGlobalCBuffer(const void* global_buffer_data_ptr, reshade::api::device* device)
    {
       const CBPerViewGlobal& global_buffer_data = *((const CBPerViewGlobal*)global_buffer_data_ptr);
@@ -6033,15 +6040,6 @@ namespace
       {
          if (!block_draw_until_device_custom_shaders_creation) s_mutex_shader_objects.unlock_shared();
       }
-
-#if DEVELOPMENT
-      if (needs_live_reload_update)
-      {
-         ToggleLiveWatching();
-         needs_live_reload_update = false;
-      }
-      CheckForLiveUpdate();
-#endif
    }
 
    bool OnReShadeSetEffectsState(reshade::api::effect_runtime* runtime, bool enabled)
@@ -6286,11 +6284,6 @@ namespace
          last_pressed_unload = true;
 #if 0  // Not necessary anymore with "last_pressed_unload"
          // For consistency, disable live reload and auto load, it makes no sense for them to be on if we have unloaded shaders
-         if (live_reload)
-         {
-            live_reload = false;
-            needs_live_reload_update = true;
-         }
          if (auto_load)
          {
             auto_load = false;
@@ -6384,16 +6377,6 @@ namespace
          {
             device_data.thread_auto_loading.join();
          }
-         const std::unique_lock lock(s_mutex_loading);
-         device_data.pipelines_to_reload.clear();
-      }
-      ImGui::PopID();
-
-      ImGui::SameLine();
-      ImGui::PushID("##LiveReloadCheckBox");
-      if (ImGui::Checkbox("Live Reload", &live_reload))
-      {
-         needs_live_reload_update = true;
          const std::unique_lock lock(s_mutex_loading);
          device_data.pipelines_to_reload.clear();
       }

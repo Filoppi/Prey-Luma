@@ -319,6 +319,10 @@ bool NGX::DLSS::UpdateSettings(DLSSInstanceData* data, ID3D11DeviceContext* comm
 	Microsoft::WRL::ComPtr<ID3D11Device> device;
 	commandList->GetDevice(device.GetAddressOf());
 	assert(data->device.Get() == device.Get());
+
+	Microsoft::WRL::ComPtr<ID3D11DeviceContext> immediate_context;
+	device->GetImmediateContext(&immediate_context);
+	assert(immediate_context.Get() == commandList); // DLSS only supports the immediate context apparently (both here and in the actual draw function)!
 #endif
 
 	// No need to re-instantiate DLSS "features" if all the params are the same
