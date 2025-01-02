@@ -6283,7 +6283,7 @@ namespace
          needs_unload_shaders = true;
          last_pressed_unload = true;
 #if 0  // Not necessary anymore with "last_pressed_unload"
-         // For consistency, disable live reload and auto load, it makes no sense for them to be on if we have unloaded shaders
+         // For consistency, disable auto load, it makes no sense for them to be on if we have unloaded shaders
          if (auto_load)
          {
             auto_load = false;
