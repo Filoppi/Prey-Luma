@@ -5913,6 +5913,14 @@ namespace
       return false;
    }
 
+#if DEVELOPMENT
+   bool OnResolveTextureRegion(reshade::api::command_list* cmd_list, reshade::api::resource source, uint32_t source_subresource, const reshade::api::subresource_box* source_box, reshade::api::resource dest, uint32_t dest_subresource, int32_t dest_x, int32_t dest_y, int32_t dest_z, reshade::api::format format)
+   {
+      ASSERT_ONCE(false);
+      return false;
+   }
+#endif
+
    void OnReShadePresent(reshade::api::effect_runtime* runtime)
    {
       auto& device_data = runtime->get_device()->get_private_data<DeviceData>();
@@ -8230,6 +8238,9 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved)
 #endif // DEVELOPMENT
       reshade::register_event<reshade::addon_event::copy_resource>(OnCopyResource);
       reshade::register_event<reshade::addon_event::copy_texture_region>(OnCopyTextureRegion);
+#if DEVELOPMENT
+      reshade::register_event<reshade::addon_event::resolve_texture_region>(OnResolveTextureRegion);
+#endif // DEVELOPMENT
 
       reshade::register_event<reshade::addon_event::draw>(OnDraw);
       reshade::register_event<reshade::addon_event::dispatch>(OnDispatch);
@@ -8294,6 +8305,9 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved)
 #endif // DEVELOPMENT
       reshade::unregister_event<reshade::addon_event::copy_resource>(OnCopyResource);
       reshade::unregister_event<reshade::addon_event::copy_texture_region>(OnCopyTextureRegion);
+#if DEVELOPMENT
+      reshade::unregister_event<reshade::addon_event::resolve_texture_region>(OnResolveTextureRegion);
+#endif // DEVELOPMENT
 
       reshade::unregister_event<reshade::addon_event::draw>(OnDraw);
       reshade::unregister_event<reshade::addon_event::dispatch>(OnDispatch);
