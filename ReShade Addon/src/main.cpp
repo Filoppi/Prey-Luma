@@ -84,6 +84,7 @@
 
 #define FORCE_KEEP_CUSTOM_SHADERS_LOADED 1
 #define ALLOW_LOADING_DEV_SHADERS 1
+#define GEOMETRY_SHADER_SUPPORT 0
 
 // This might not disable all shaders dumping related code, but it disables enough to remove any performance cost
 #define ALLOW_SHADERS_DUMPING (DEVELOPMENT || TEST)
@@ -547,9 +548,9 @@ namespace
       }
 
       // Pipelines by handle. Multiple pipelines can target the same shader, and even have multiple shaders within themselved.
-      // This only contains pipelines that we are replacing any shaders of (or does it???).
+      // This contains all pipelines that we can replace shaders of (e.g. pixel shaders, vertex shaders, ...).
       std::unordered_map<uint64_t, CachedPipeline*> pipeline_cache_by_pipeline_handle;
-      // Same as "pipeline_cache_by_pipeline_handle" but for cloned pipelines.
+      // Same as "pipeline_cache_by_pipeline_handle" but for cloned (custom) pipelines.
       std::unordered_map<uint64_t, CachedPipeline*> pipeline_cache_by_pipeline_clone_handle;
       // All the pipelines linked to a shader. By shader hash.
       std::unordered_map<uint32_t, std::unordered_set<CachedPipeline*>> pipeline_caches_by_shader_hash;
@@ -2502,7 +2503,9 @@ namespace
          {
             switch (subobject.type)
             {
+#if GEOMETRY_SHADER_SUPPORT // Simply skipping cloning geom shaders pipelines is enough to stop the whole functionality (and the only place that is performance relevant)
             case reshade::api::pipeline_subobject_type::geometry_shader:
+#endif // GEOMETRY_SHADER_SUPPORT
             case reshade::api::pipeline_subobject_type::vertex_shader:
             case reshade::api::pipeline_subobject_type::compute_shader:
             case reshade::api::pipeline_subobject_type::pixel_shader:
@@ -2538,12 +2541,15 @@ namespace
          {
             switch (subobject.type)
             {
+#if GEOMETRY_SHADER_SUPPORT
             case reshade::api::pipeline_subobject_type::geometry_shader:
+#endif // GEOMETRY_SHADER_SUPPORT
             case reshade::api::pipeline_subobject_type::vertex_shader:
             case reshade::api::pipeline_subobject_type::compute_shader:
             case reshade::api::pipeline_subobject_type::pixel_shader:
             {
                auto* new_desc = static_cast<reshade::api::shader_desc*>(subobjects_cache[i].data);
+               ASSERT_ONCE(new_desc->code_size > 0);
                if (new_desc->code_size == 0) break;
                found_replaceable_shader = true;
                auto shader_hash = compute_crc32(static_cast<const uint8_t*>(new_desc->code), new_desc->code_size);
@@ -3320,15 +3326,15 @@ namespace
    //TODOFT0: move project files out of the "build" folder? and the "ReShade Addon" folder? Add shader files to VS project?
    //TODOFT3: add asserts for when we meet the shaders we are looking for
    //TODOFT4: add a new RT to draw UI on top (pre-multiplied alpha everywhere), so we could compose it smartly, possibly in the final linearization pass. Or, add a new UI gamma setting for when in full screen menus and swap to gamma space on the spot.
-   //TODOFT4: try to add lens distortion to psy-ops screen space effects (e.g. blue ring) so they aren't cropped with it?
-   //TODOFT4: try to not jitter MVs? Does it help?
    //TODOFT4: lower brightness from 203 nits default?
+   //TODOFT5: weapon FOV resets on map load and save load!
+   //TODOFT5: fix draw call order!
 
    // Return false to prevent the original draw call from running (e.g. if you replaced it or just want to skip it)
    // Prey always seemengly draws in direct mode (?), but it uses different command lists on different threads (e.g. seemengly for the shadow projection maps, as they are separate, and stuff like that), though all the primary passes are done on the same thread.
    // There's a few compute shaders but most passes are classic pixel shaders.
    // If we ever wanted to still run the game's original draw call (first) and then ours (second), we'd need to pass more arguments in this function (to replicate the draw call identically).
-   bool HandlePreDraw(reshade::api::command_list* cmd_list, bool is_dispatch /*= false*/, ShaderHashesList& original_shader_hashes)
+   bool OnDraw_Custom(reshade::api::command_list* cmd_list, bool is_dispatch /*= false*/, ShaderHashesList& original_shader_hashes)
    {
       const auto* device = cmd_list->get_device();
       auto device_api = device->get_api();
@@ -3416,6 +3422,7 @@ namespace
       {
          if (cmd_list_data.pipeline_state_original_compute_shader.handle != 0)
          {
+            const std::shared_lock lock(s_mutex_generic);
             const auto pipeline_pair = device_data.pipeline_cache_by_pipeline_handle.find(cmd_list_data.pipeline_state_original_compute_shader.handle);
             if (pipeline_pair != device_data.pipeline_cache_by_pipeline_handle.end() && pipeline_pair->second != nullptr)
             {
@@ -3432,6 +3439,7 @@ namespace
       {
          if (cmd_list_data.pipeline_state_original_vertex_shader.handle != 0)
          {
+            const std::shared_lock lock(s_mutex_generic);
             const auto pipeline_pair = device_data.pipeline_cache_by_pipeline_handle.find(cmd_list_data.pipeline_state_original_vertex_shader.handle);
             if (pipeline_pair != device_data.pipeline_cache_by_pipeline_handle.end() && pipeline_pair->second != nullptr)
             {
@@ -3443,6 +3451,7 @@ namespace
 
          if (cmd_list_data.pipeline_state_original_pixel_shader.handle != 0)
          {
+            const std::shared_lock lock(s_mutex_generic);
             const auto pipeline_pair = device_data.pipeline_cache_by_pipeline_handle.find(cmd_list_data.pipeline_state_original_pixel_shader.handle);
             if (pipeline_pair != device_data.pipeline_cache_by_pipeline_handle.end() && pipeline_pair->second != nullptr)
             {
@@ -4791,7 +4800,7 @@ namespace
       uint32_t first_instance)
    {
       ShaderHashesList original_shader_hashes;
-      bool cancelled_or_replaced = HandlePreDraw(cmd_list, false, original_shader_hashes);
+      bool cancelled_or_replaced = OnDraw_Custom(cmd_list, false, original_shader_hashes);
 #if DEVELOPMENT
       // TODO: add support for cancelled passes here (and below), given that we can't retrieve the render target texture anymore.
       // First run the draw call (don't delegate it to ReShade) and then copy its output
@@ -4834,7 +4843,7 @@ namespace
       uint32_t first_instance)
    {
       ShaderHashesList original_shader_hashes;
-      bool cancelled_or_replaced = HandlePreDraw(cmd_list, false, original_shader_hashes);
+      bool cancelled_or_replaced = OnDraw_Custom(cmd_list, false, original_shader_hashes);
 #if DEVELOPMENT
       // First run the draw call (don't delegate it to ReShade) and then copy its output
       auto& cmd_list_data = cmd_list->get_private_data<CommandListData>();
@@ -4869,7 +4878,7 @@ namespace
    bool OnDispatch(reshade::api::command_list* cmd_list, uint32_t group_count_x, uint32_t group_count_y, uint32_t group_count_z)
    {
       ShaderHashesList original_shader_hashes;
-      bool cancelled_or_replaced = HandlePreDraw(cmd_list, true, original_shader_hashes);
+      bool cancelled_or_replaced = OnDraw_Custom(cmd_list, true, original_shader_hashes);
 #if DEVELOPMENT
       // First run the draw call (don't delegate it to ReShade) and then copy its output
       auto& cmd_list_data = cmd_list->get_private_data<CommandListData>();
@@ -4905,7 +4914,7 @@ namespace
       // NOTE: according to ShortFuse, this can be "reshade::api::indirect_command::unknown" too, so we'd need to fall back on checking what shader is bound to know if this is a compute shader draw
       bool is_dispatch = type == reshade::api::indirect_command::dispatch || type == reshade::api::indirect_command::dispatch_mesh || type == reshade::api::indirect_command::dispatch_rays;
       ShaderHashesList original_shader_hashes;
-      return HandlePreDraw(cmd_list, is_dispatch, original_shader_hashes);
+      return OnDraw_Custom(cmd_list, is_dispatch, original_shader_hashes);
    }
 
    // TODO: use the native ReShade sampler desc instead? It's not really necessary
@@ -5259,7 +5268,9 @@ namespace
       // After tonemapping, ignore fixing up these, because they'd be jitterless and we don't have a jitterless copy (they aren't used anyway!).
       // If in the previous frame we didn't render, we don't replace the matrix with the one from the last frame that was rendered,
       // because there's no guaranteed that it would match.
-      // If AA is disabled, or if the current form of AA doesn't used jittered rendering, this doesn't really make a difference (but it's still better because it creates motion vectors based on the previous view matrix).
+      // If AA is disabled, or if the current form of AA doesn't use jittered rendering, this doesn't really make a difference (but it's still better because it creates motion vectors based on the previous view matrix).
+      // We've also tried to completely remove the jitters from here and the DLSS reprojection matrix below, and disabling "NVSDK_NGX_DLSS_Feature_Flags_MVJittered" in DLSS, but it doesn't seem to help.
+      // Apparently we can also modulate the values in "CV_ViewProjMatr" etc to move the camera in game, but that would require a lot more to polish for (e.g.) a photo mode.
       if (replace_prev_projection_matrix && !device_data.has_drawn_tonemapping && device_data.has_drawn_main_post_processing_previous)
       {
          cb_per_view_global.CV_PrevViewProjMatr = previous_projection_matrix;
@@ -5989,6 +6000,14 @@ namespace
       }
 
       // Destroy the cloned pipelines in the following frame to avoid crashes
+      bool has_pipelines_to_destroy = false;
+      {
+         // This is fine because we can afford delaying it even further in case they were changed in between the read and write locks here
+         const std::shared_lock lock(s_mutex_generic);
+         has_pipelines_to_destroy = !device_data.pipelines_to_destroy.empty();
+
+      }
+      if (has_pipelines_to_destroy)
       {
          const std::unique_lock lock(s_mutex_generic);
          for (auto pair : device_data.pipelines_to_destroy)
@@ -6889,7 +6908,7 @@ namespace
                   }
                   if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
                   {
-                     ImGui::SetTooltip("The \"average\" brightness of the game scene.\nHigher does not mean better, change this to your liking (especially if you struggle to read UI text), and don't get too close to the peak white.\nThe in game settings brightness is best left at default.");
+                     ImGui::SetTooltip("The \"average\" brightness of the game scene.\nChange this to your liking, just don't get too close to the peak white.\nHigher does not mean better (especially if you struggle to read UI text), the brighter the image is, the lower the dynamic range (contrast) is.\nThe in game settings brightness is best left at default.");
                   }
                   ImGui::SameLine();
                   if (cb_luma_frame_settings.ScenePaperWhite != default_paper_white)

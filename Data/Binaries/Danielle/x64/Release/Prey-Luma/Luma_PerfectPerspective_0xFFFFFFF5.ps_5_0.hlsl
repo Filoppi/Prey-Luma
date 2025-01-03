@@ -48,6 +48,8 @@ void main(float4 WPos : SV_Position0, float4 inBaseTC : TEXCOORD0, out float4 ou
 	// https://github.com/TreyM/SHADERDECK/blob/main/shaders/SHADERDECK/FSR1_2X.fx
 	// https://github.com/40163650/FSRForReShade
 	// https://github.com/Blinue/Magpie/blob/dev/src/Effects/FSR/FSR_EASU.hlsl
+	//TODO LUMA: Psi effects, when charing them (e.g. holding right mouse button) will create a screen space ring like transparent particle effect, this is already looking decent with ultrawide aspect ratios,
+	//though with lens distortion it'd cropped a bit more than it should, it's not really a problem though, so we haven't taken care of it (the particle effect is drawn after g-buffers compositions as all transparency draws, and probably uses specific vertex shader (materials) that we could uniquely replace).
 
    	outColor.rgb = lerp(outColor.rgb, 0, borderAlpha); // Blend towards black as the border is black (we could ignore this if "CroppingFactor" was 1 but it doesn't matter)
 	outColor.a = 1.0 - borderAlpha; // Take advantage of the alpha texture to store whether this is a black texel (outside of the new lens distortion edges) (doesn't support R11G11B10F)

@@ -7,8 +7,11 @@
 cbuffer PER_BATCH : register(b0)
 {
   row_major float4x4 mViewProjPrev : packoffset(c0);
+  // Seemengly x 0 y 0 z aspect ratio and w 1
   float4 vDirectionalBlur : packoffset(c4);
+  // See below
   float4 vMotionBlurParams : packoffset(c5);
+  // See below
   float4 vRadBlurParam : packoffset(c6);
 }
 #else
@@ -43,9 +46,10 @@ float2 AdjustVelocityObjects(float2 VelocityObjects)
 }
 
 // PackVelocitiesPS
-// LUMA FT: this doesn't exactly produce motion vectors, but simply some patches of movement intensity.
-// It's run in big patches (e.g. 6, 14 or 24 patches), depending on the quality of MB, that probably doesn't scale properly with aspect ratio.
-// Note that this outputs on a 8bit UNORM texture, with or without Luma, hence it's low quality.
+// LUMA FT: this runs per pixel, and outputs the uv velocities per pixel (on a limited RGBA UNORM8), it's not necessarily matching the motion vectors, as the blur can be fake and generated for any reason (e.g. radial blur).
+// This is later downscaled to a 20x20 texture containing the max velocity of each patch.
+// In the actal motion blur application shader, this is kinda applied in patches (e.g. 6, 14 or 24 patches, depending on the user MB quality setting), each has a maximum velocity from the 20x20 texture, but it's still per pixel!
+// Note that this outputs on a 8bit UNORM texture, with or without Luma, hence it's low quality and possibly clipped, and could start to lose a lot of accuracy at high resolutions, due to uv offsets being so small.
 // If we wanted, we could make this have a fullscreen resolution, resulting in per pixel motion blur, but given the rarity of moving objects in this game, it's not really necessary.
 pixout main(vtxOut IN)
 {	
@@ -134,14 +138,25 @@ pixout main(vtxOut IN)
 	vVelocity *= vVelocityLenght == 0.0 ? 1.0 : saturate(MaxVelocityLen * invLen);
 #endif
 	
-	// Apply radial blur (around the edges of whatever dynamic center we have set)
+	// Apply radial blur (around the edges of whatever dynamic center we have set) (this looks similar to depth of field)
 #if _RT_SAMPLE0
 	float2 vBlur = 0;
-	vBlur = vRadBlurParam.xy - baseTC * vDirectionalBlur.zw; // LUMA FT: this should scale correctly for ultrawide too, effectively making the 16:9 edges on wider screens blur less (or wherever the blur center is)
+	// "vRadBlurParam.xy" are the center of the blur (where there is no blur), after scaling the uv by "vDirectionalBlur.zw"
+	vBlur = vRadBlurParam.xy - baseTC * vDirectionalBlur.zw;
+	// LUMA FT: fixed this not scaling properly for ultrawide, even if they scaled both "vRadBlurParam.x" and "vDirectionalBlur.z" to account for the aspect ratio,
+	// they shouldn't have, because that implies blur is a lot stronger within the 16:9 part of the image at wider aspect ratios (and even stronger at the edges).
+	// It might still not match with the look at 16:9 perfectly, maybe we'd need to scale it in FOV tan space, or maybe this isn't entirely correct, but it's a step in the right direction and good enough.
+	float screenAspectRatio = (float)CV_ScreenSize.w / (float)CV_ScreenSize.z;
+	vBlur.x *= NativeAspectRatio / screenAspectRatio;
+	// LUMA FT: "vDirectionalBlur.xy" would have been adjusted by the resolution (and thus aspect ratio), so it should be good.
+	// It's also unclear why they do saturate() on the blur length here, given it could randomly clamp results? it seems to be some kind of radial fade out.
+	// "vRadBlurParam" z should be its radius*amount and w just the amount (their values are not influenced by aspect ratio, even if they should have been!).
+	// This stuff seemengly scales correctly with 16:9 resolutions, it was just broken in ultrawide.
 	vBlur = vBlur * saturate(vRadBlurParam.w - length(vBlur) * vRadBlurParam.z) + vDirectionalBlur.xy;
 	vVelocity += vBlur;
 #endif
 	
+	// LUMA FT: if we ever changed the RT of this PS to not be a UNORM8, we should also change the output encoding function, as it's tailored for 8bit UNORM.
 	OUT.Color.xy = EncodeMotionVector(vVelocity);
 	OUT.Color.z = sqrt(length(vVelocity.xy) * 32.0f);
     OUT.Color.w = fDepth * CV_NearFarClipDist.y / 255.0f;

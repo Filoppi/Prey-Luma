@@ -45,10 +45,11 @@ namespace NGX
 	struct DLSSInstanceData
 	{
 		bool							isSupported = false;
-		unsigned int					renderWidth = 0;
-		unsigned int					renderHeight = 0;
-		unsigned int					outputWidth = 0;
-		unsigned int					outputHeight = 0;
+		unsigned int				renderWidth = 0;
+		unsigned int				renderHeight = 0;
+		unsigned int				outputWidth = 0;
+		unsigned int				outputHeight = 0;
+		bool							dynamicResolution = false;
 		bool							hdr = false;
 		float							sharpness = DLSS_DEFAULT_SHARPNESS; // Optimal value
 
@@ -105,9 +106,10 @@ namespace NGX
 #if 1 // Needed by Prey when feeding in the "default" (g-buffer) depth
 				| NVSDK_NGX_DLSS_Feature_Flags_DepthInverted
 #endif
-// We modified Prey to make sure this is the case.
+// We modified Prey to make sure this is the case (see "FORCE_MOTION_VECTORS_JITTERED").
 // Previously (dynamic objects) MVs were half jittered (with the current frame's jitters only), because they are rendered with g-buffers, on projection matrices that have jitters.
 // We could't remove these jitters properly when rendering the final motion vectors for DLSS (we tried...), so neither this flag on or off would have been correct.
+// Even if we managed to generate the final MVs without jitters included, it seemengly doesn't look any better anyway.
 #if 1
 				| NVSDK_NGX_DLSS_Feature_Flags_MVJittered
 #endif
@@ -328,7 +330,7 @@ bool NGX::DLSS::UpdateSettings(DLSSInstanceData* data, ID3D11DeviceContext* comm
 	// No need to re-instantiate DLSS "features" if all the params are the same
 	if ((int)outputWidth == data->outputWidth && (int)outputHeight == data->outputHeight
 		&& (int)renderWidth == data->renderWidth && (int)renderHeight == data->renderHeight
-		&& hdr == data->hdr && data->instance.commandList.Get() == commandList)
+		&& dynamicResolution == data->dynamicResolution && hdr == data->hdr && data->instance.commandList.Get() == commandList)
 	{
 		return true;
 	}
@@ -391,13 +393,11 @@ bool NGX::DLSS::UpdateSettings(DLSSInstanceData* data, ID3D11DeviceContext* comm
 		}
 	}
 
-	if (renderWidth >= outputWidth && renderHeight >= outputHeight)
+	if ((!dynamicResolution || bestModeDelta == (std::numeric_limits<unsigned int>::max)()) && renderWidth >= outputWidth && renderHeight >= outputHeight)
 	{
 		assert(qualityMode == NVSDK_NGX_PerfQuality_Value_DLAA);
 		qualityMode = NVSDK_NGX_PerfQuality_Value_DLAA; // Just in case (this isn't expected to happen)
 	}
-
-	data->hdr = hdr;
 
 	data->instance.commandList.Reset(); // Just to be explicit
 	data->instance = data->CreateSuperSamplingFeature(commandList, outputWidth, outputHeight, renderWidth, renderHeight, qualityMode);
@@ -408,6 +408,9 @@ bool NGX::DLSS::UpdateSettings(DLSSInstanceData* data, ID3D11DeviceContext* comm
 	data->outputHeight = outputHeight;
 	data->renderWidth = renderWidth;
 	data->renderHeight = renderHeight;
+	data->dynamicResolution = dynamicResolution;
+
+	data->hdr = hdr;
 
 	// If any of these are nullptr, then the initialization failed
 	return data->instance.superSamplingFeature != nullptr && data->instance.runtimeParams != nullptr;

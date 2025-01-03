@@ -68,7 +68,7 @@ DICESettings DefaultDICESettings()
 {
   DICESettings Settings;
   Settings.Type = DICE_TYPE_BY_CHANNEL_PQ;
-  Settings.ShoulderStart = (Settings.Type > DICE_TYPE_BY_LUMINANCE_RGB) ? (1.f / 3.f) : 0.f; //TODOFT3: increase value!!! (did I already?)
+  Settings.ShoulderStart = (Settings.Type > DICE_TYPE_BY_LUMINANCE_RGB) ? (1.f / 3.f) : 0.f; // Setting it higher than 1/3 might cause highlights clipping as detail is too compressed. Setting it lower than 1/4 would probably look dynamic range. 1/3 seems like the best compromize.
   Settings.DesaturationAmount = 1.0 / 3.0;
   Settings.DarkeningAmount = 1.0 / 3.0;
   return Settings;

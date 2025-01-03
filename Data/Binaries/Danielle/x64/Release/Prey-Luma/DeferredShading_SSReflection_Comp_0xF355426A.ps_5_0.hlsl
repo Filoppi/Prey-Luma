@@ -47,7 +47,7 @@ void main(
 	// given that it changes based on the texture size and we can't know what it is without querying it.
 	// Generally reflections are upwards, so not much reflects dowards at the bottom right of the screen,
 	// and the inconstency could probably hide themseleves under the bluring, but we fixed it anyway.
-	float4 refl0 = ssrComposeReflection0Tex.SampleLevel(ssReflectionLinear, ClampScreenTC(inBaseTC.xy, ssrComposeReflection0Tex), 0);
+	float4 refl0 = ssrComposeReflection0Tex.SampleLevel(ssReflectionLinear, ClampScreenTC(inBaseTC.xy, ssrComposeReflection0Tex), 0); //TODO LUMA: do 4 more samples and apply sharpening to this? It might not really work but it could help fix the blurry reflections on mirrors
 	float4 refl1 = ssrComposeReflection1Tex.SampleLevel(ssReflectionLinear, ClampScreenTC(inBaseTC.xy, ssrComposeReflection1Tex), 0);
 	float4 refl2 = ssrComposeReflection2Tex.SampleLevel(ssReflectionLinear, ClampScreenTC(inBaseTC.xy, ssrComposeReflection2Tex), 0);
 	float4 refl3 = ssrComposeReflection3Tex.SampleLevel(ssReflectionLinear, ClampScreenTC(inBaseTC.xy, ssrComposeReflection3Tex), 0); // LUMA FT: this was sampled but never used

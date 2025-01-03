@@ -18,7 +18,7 @@ cbuffer CBPerViewGlobal : register(b13)
   // Yet somehow, in Prey, motion vectors (which are based on this), manage to be generated correctly, even if it uses a different matrix from vanilla CryEngine (despite the MVs generation code being ~identical).
   // Supposedly they've also replaced and misnamed other variables in shaders so it all works out even if reading the code makes no sense.
   // With Luma hooks, we have kept it at it was in vanilla Prey, but included the previous jitters in it (it's now actually entirely based on the previous one).
-  // Similar variables are called "matReprojection", "mReprojection", "mViewProjPrev" and "PrevViewProjMatrix".
+  // Similar variables are called "matReprojection", "mReprojection", "mViewProjPrev" and "PrevViewProjMatrix" around shaders.
   row_major float4x4 CV_PrevViewProjMatr : packoffset(c17);
   // Same logic as in "CV_PrevViewProjMatr" (this was also broken in Prey code without Luma).
   row_major float4x4 CV_PrevViewProjNearestMatr : packoffset(c21);

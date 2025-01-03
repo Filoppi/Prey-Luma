@@ -38,7 +38,7 @@ float2 EncodeMotionVector(float2 vMotion, bool bFastEncode = false)
 		return vMotion;
 
 	vMotion = sqrt(abs(vMotion))* (vMotion.xy>0.0f ? float2(1, 1) : float2(-1, -1));
-	vMotion = vMotion* 0.5h + 127.f/255.f;
+	vMotion = vMotion * 0.5f + 127.f/255.f;
 
 	return vMotion.xy;
 }

@@ -25,6 +25,7 @@ SamplerState _tex2_s : register(s2); // Point
 
 // MotionBlurPS
 // This shader is run with pre-multiplied alpha blend, so if it alpha zero, it's purely additive, while if it returns alpha 1, it's purely override.
+// Somehow, this shader is used to emulate depth of field when taking the shape of objects through character powers (the "PackVelocities" pixel shader returns almost all white, through "vRadBlurParam" and "vDirectionalBlur").
 float4 main(float4 WPos : SV_Position0, float4 inBaseTC : TEXCOORD0) : SV_Target0
 {
 #if !ENABLE_MOTION_BLUR
