@@ -4,7 +4,7 @@
  */
 
  // Enable when you are developing shaders or code (not debugging, there's "NDEBUG" for that)
-#define DEVELOPMENT 0
+#define DEVELOPMENT 1
 // Enable when you are testing shaders or code (e.g. to dump the shaders etc etc)
 // This is not mutually exclusive with "DEVELOPMENT", but it should be a sub-set of it
 // If neither of these are true, then we are in "shipping" mode, with code meant to be used by the final user
@@ -84,6 +84,7 @@
 
 #define FORCE_KEEP_CUSTOM_SHADERS_LOADED 1
 #define ALLOW_LOADING_DEV_SHADERS 1
+#define UPGRADE_RESOURCES 1
 #define GEOMETRY_SHADER_SUPPORT 0
 
 // This might not disable all shaders dumping related code, but it disables enough to remove any performance cost
@@ -261,10 +262,9 @@ namespace
 
    struct ShaderHashesList
    {
-      #define SUPPORTS_GEOMETRY_SHADER 0
       std::unordered_set<uint32_t> pixel_shaders;
       std::unordered_set<uint32_t> vertex_shaders;
-#if SUPPORTS_GEOMETRY_SHADER
+#if GEOMETRY_SHADER_SUPPORT
       std::unordered_set<uint32_t> geometry_shaders;
 #endif
       std::unordered_set<uint32_t> compute_shaders;
@@ -280,7 +280,7 @@ namespace
          {
             if (vertex_shaders.contains(shader_hash)) return true;
          }
-#if SUPPORTS_GEOMETRY_SHADER
+#if GEOMETRY_SHADER_SUPPORT
          if ((shader_stage & reshade::api::shader_stage::geometry) != 0)
          {
             if (geometry_shaders.contains(shader_hash)) return true;
@@ -308,7 +308,7 @@ namespace
                return true;
             }
          }
-#if SUPPORTS_GEOMETRY_SHADER
+#if GEOMETRY_SHADER_SUPPORT
          for (const uint32_t shader_hash : other.geometry_shaders)
          {
             if (geometry_shaders.contains(shader_hash))
@@ -329,12 +329,11 @@ namespace
       bool Empty()
       {
          return pixel_shaders.empty() && vertex_shaders.empty() && compute_shaders.empty()
-#if SUPPORTS_GEOMETRY_SHADER
+#if GEOMETRY_SHADER_SUPPORT
             && geometry_shaders.empty()
 #endif
             ;
       }
-      #undef SUPPORTS_GEOMETRY_SHADER
    };
 
    static constexpr unsigned int crc_table[256] = {
@@ -449,7 +448,7 @@ namespace
    // For "global_native_devices", "global_device_datas", "game_window"
    recursive_shared_mutex s_mutex_device;
 #if DEVELOPMENT
-   // for "trace_shader_hashes", "trace_count", "trace_pipeline_handles", "trace_pipeline_draws", "trace_pipeline_draws_blend_descs", "trace_pipeline_draws_rtv_format", "trace_pipeline_draws_rt_format", "trace_pipeline_draws_rt_size", and "trace_threads" (writing only, reading is already safe)
+   // for "trace_count" and "trace_scheduled" and "trace_running"
    std::shared_mutex s_mutex_trace;
 #endif
 
@@ -457,7 +456,6 @@ namespace
    bool auto_dump = (bool)ALLOW_SHADERS_DUMPING;
    bool auto_load = true;
 #if DEVELOPMENT
-   bool trace_list_unique_shaders_only = false;
    bool trace_ignore_vertex_shaders = true;
 #endif
    constexpr bool precompile_custom_shaders = true; // Async shader compilation on boot
@@ -515,6 +513,30 @@ namespace
    const uint32_t shader_hash_transform_function_copy_pixel = std::stoul("FFFFFFF2", nullptr, 16);
    const uint32_t shader_hash_draw_exposure = std::stoul("FFFFFFF3", nullptr, 16);
    const uint32_t shader_hash_lens_distortion_pixel = std::stoul("FFFFFFF5", nullptr, 16);
+
+   struct TraceDrawCallData
+   {
+#if 1 // For now add a new "TraceDrawCallData" per shader (e.g. one for vertex and one for pixel, instead of doing it per draw call), this is due to legacy code that would require too much refactor
+      uint64_t pipeline_handle = 0;
+#else
+      uint64_t pipeline_handles = 0; // The actual list of pipelines that run within the traced frame (within this deferred command list, and then merged into the immediate one later)
+      ShaderHashesList shader_hashes;
+#endif
+
+      com_ptr<ID3D11DeviceContext> command_list;
+      std::thread::id thread_id;
+
+      // Render Target
+      D3D11_BLEND_DESC blend_desc = {};
+      DXGI_FORMAT rtv_format[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = {};
+      DXGI_FORMAT rt_format[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = {};
+      uint2 rt_size[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = {};
+      bool rt_is_swapchain[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = {};
+      // Shader Resource Views
+      DXGI_FORMAT srv_format[D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT] = {};
+      // Unordered Access Views
+      DXGI_FORMAT uav_format[D3D11_1_UAV_SLOT_COUNT] = {}; // TODO: add support for pixel shader RT UAVs
+   };
 
    struct __declspec(uuid("cfebf6d4-d184-4e1a-ac14-09d088e560ca")) DeviceData
    {
@@ -736,11 +758,17 @@ namespace
       std::unordered_set<uint64_t> back_buffers;
    };
 
+   // Applies to command lists and command queque (DirectX 11 command list and deferred or immediate contexts)
    struct __declspec(uuid("90d9d05b-fdf5-44ee-8650-3bfd0810667a")) CommandListData
    {
       reshade::api::pipeline pipeline_state_original_compute_shader = reshade::api::pipeline(0);
       reshade::api::pipeline pipeline_state_original_vertex_shader = reshade::api::pipeline(0);
       reshade::api::pipeline pipeline_state_original_pixel_shader = reshade::api::pipeline(0);
+
+#if DEVELOPMENT
+      std::shared_mutex mutex_trace;
+      std::vector<TraceDrawCallData> trace_draw_calls_data;
+#endif
    };
 
    // All the shaders the game ever loaded (including the ones that have been unloaded). Only used by shader dumping (if "ALLOW_SHADERS_DUMPING" is on) or to see their binary code in the ImGUI view. By shader hash.
@@ -848,18 +876,11 @@ namespace
    HWND game_window = 0; // This is fixed forever (in almost all games, and Prey)
 
 #if DEVELOPMENT
-   std::vector<uint64_t> trace_pipeline_handles; // The actual list of pipelines that run within the traced frame
-   std::vector<uint32_t> trace_pipeline_draws; // How many times the last bound pipeline drew
-   std::vector<D3D11_BLEND_DESC> trace_pipeline_draws_blend_descs;
-   std::vector<DXGI_FORMAT> trace_pipeline_draws_rtv_format;
-   std::vector<DXGI_FORMAT> trace_pipeline_draws_rt_format;
-   std::vector<uint2> trace_pipeline_draws_rt_size;
-   std::vector<std::thread::id> trace_threads; // The thread that drew (set) each pipeline
-   std::vector<uint32_t> trace_shader_hashes; // Just used to filter out what shaders we've already listed
-   bool trace_scheduled = false;
-   bool trace_running = false;
+   bool trace_scheduled = false; // For next frame
+   bool trace_running = false; // For this frame
+   uint32_t trace_count = 0; // Not exactly necessary but... it might help
+
    uint32_t shader_cache_count = 0; // For dumping
-   uint32_t trace_count = 0;
 
    std::string last_drawn_shader = ""; // Not exactly thread safe but it's fine...
    std::vector<std::string> cb_per_view_globals_last_drawn_shader;
@@ -2084,6 +2105,125 @@ namespace
       return result;
    }
 
+   // Expects mutexes to already be locked
+   void AddTraceDrawCallData(std::vector<TraceDrawCallData>& trace_draw_calls_data, const DeviceData& device_data, ID3D11DeviceContext* native_device_context, uint64_t pipeline_handle)
+   {
+      TraceDrawCallData trace_draw_call_data;
+
+#if 1
+      trace_draw_call_data.pipeline_handle = pipeline_handle;
+#else
+      trace_draw_call_data.shader_hashes = shader_hash;
+      trace_draw_call_data.pipeline_handles.push_back(pipeline_handle);
+#endif
+
+      trace_draw_call_data.command_list = native_device_context;
+      trace_draw_call_data.thread_id = std::this_thread::get_id();
+
+      // Note that the pipelines can be run more than once so this will return the first one matching (there's only one actually, we don't have separate settings for their running instance, as that's runtime stuff)
+      const auto pipeline_pair = device_data.pipeline_cache_by_pipeline_handle.find(pipeline_handle);
+      const bool is_valid = pipeline_pair != device_data.pipeline_cache_by_pipeline_handle.end() && pipeline_pair->second != nullptr;
+      if (is_valid)
+      {
+         const auto pipeline = pipeline_pair->second;
+         if (pipeline->HasPixelShader())
+         {
+            com_ptr<ID3D11BlendState> blend_state;
+            native_device_context->OMGetBlendState(&blend_state, nullptr, nullptr);
+            if (blend_state)
+            {
+               D3D11_BLEND_DESC blend_desc;
+               blend_state->GetDesc(&blend_desc);
+               // We always cache the last one used by the pipeline, hopefully it didn't change between draw calls
+               trace_draw_call_data.blend_desc = blend_desc;
+               // We don't care for the alpha blend operation (source alpha * dest alpha) as alpha is never read back from destination
+            }
+
+            com_ptr<ID3D11RenderTargetView> rtvs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
+            native_device_context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, &rtvs[0], nullptr);
+            for (UINT i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; i++)
+            {
+               if (rtvs[i] != nullptr)
+               {
+                  D3D11_RENDER_TARGET_VIEW_DESC rtv_desc;
+                  rtvs[i]->GetDesc(&rtv_desc);
+                  trace_draw_call_data.rtv_format[i] = rtv_desc.Format;
+                  com_ptr<ID3D11Resource> rt_resource;
+                  rtvs[i]->GetResource(&rt_resource);
+                  if (rt_resource)
+                  {
+                     trace_draw_call_data.rt_is_swapchain[i] = device_data.back_buffers.contains((uint64_t)rt_resource.get());
+                     
+                     com_ptr<ID3D11Texture2D> rt_texture_2d;
+                     HRESULT hr = rt_resource->QueryInterface(&rt_texture_2d);
+                     if (SUCCEEDED(hr) && rt_texture_2d)
+                     {
+                        D3D11_TEXTURE2D_DESC rt_texture_2d_desc;
+                        rt_texture_2d->GetDesc(&rt_texture_2d_desc);
+                        trace_draw_call_data.rt_format[i] = rt_texture_2d_desc.Format;
+                        trace_draw_call_data.rt_size[i] = uint2{ rt_texture_2d_desc.Width, rt_texture_2d_desc.Height };
+                     }
+                  }
+               }
+            }
+
+            com_ptr<ID3D11ShaderResourceView> srvs[D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT];
+            native_device_context->PSGetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, &srvs[0]);
+            for (UINT i = 0; i < D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT; i++)
+            {
+               if (srvs[i] != nullptr)
+               {
+                  D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+                  srvs[i]->GetDesc(&srv_desc);
+                  trace_draw_call_data.srv_format[i] = srv_desc.Format;
+               }
+            }
+         }
+         else if (pipeline->HasVertexShader())
+         {
+            com_ptr<ID3D11ShaderResourceView> srvs[D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT];
+            native_device_context->VSGetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, &srvs[0]);
+            for (UINT i = 0; i < D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT; i++)
+            {
+               if (srvs[i] != nullptr)
+               {
+                  D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+                  srvs[i]->GetDesc(&srv_desc);
+                  trace_draw_call_data.srv_format[i] = srv_desc.Format;
+               }
+            }
+         }
+         else if (pipeline->HasComputeShader())
+         {
+            com_ptr<ID3D11ShaderResourceView> srvs[D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT];
+            native_device_context->GSGetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, &srvs[0]);
+            for (UINT i = 0; i < D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT; i++)
+            {
+               if (srvs[i] != nullptr)
+               {
+                  D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+                  srvs[i]->GetDesc(&srv_desc);
+                  trace_draw_call_data.srv_format[i] = srv_desc.Format;
+               }
+            }
+
+            com_ptr<ID3D11UnorderedAccessView> uavs[D3D11_1_UAV_SLOT_COUNT];
+            native_device_context->CSGetUnorderedAccessViews(0, D3D11_1_UAV_SLOT_COUNT, &uavs[0]);
+            for (UINT i = 0; i < D3D11_1_UAV_SLOT_COUNT; i++)
+            {
+               if (uavs[i] != nullptr)
+               {
+                  D3D11_UNORDERED_ACCESS_VIEW_DESC uav_desc;
+                  uavs[i]->GetDesc(&uav_desc);
+                  trace_draw_call_data.uav_format[i] = uav_desc.Format;
+               }
+            }
+         }
+      }
+
+      trace_draw_calls_data.push_back(trace_draw_call_data);
+   }
+
    void OnDisplayModeChanged()
    {
       // s_mutex_reshade should already be locked here, it's not necessary anyway
@@ -2247,14 +2387,6 @@ namespace
       {
          const std::unique_lock lock_trace(s_mutex_trace);
          trace_count = 0;
-         trace_pipeline_handles.clear();
-         trace_pipeline_draws.clear();
-         trace_pipeline_draws_blend_descs.clear();
-         trace_pipeline_draws_rtv_format.clear();
-         trace_pipeline_draws_rt_format.clear();
-         trace_pipeline_draws_rt_size.clear();
-         trace_threads.clear();
-         trace_shader_hashes.clear();
       }
 #endif
 
@@ -2737,55 +2869,6 @@ namespace
       {
          cmd_list->bind_pipeline(stages, cached_pipeline->pipeline_clone);
       }
-
-#if DEVELOPMENT
-      if (!trace_running) return;
-
-      const std::unique_lock lock_trace(s_mutex_trace);
-
-      bool add_pipeline_trace = true;
-      // Not a particularly useful feature anymore, given that it hides away passes (we might wanna add some g-buffer geometry draws from the list but not the post processing stuff for example)
-      if (trace_list_unique_shaders_only)
-      {
-         auto trace_count = trace_shader_hashes.size();
-         for (auto index = 0; index < trace_count; index++)
-         {
-            auto hash = trace_shader_hashes.at(index);
-            if (std::find(cached_pipeline->shader_hashes.begin(), cached_pipeline->shader_hashes.end(), hash) != cached_pipeline->shader_hashes.end())
-            {
-               trace_shader_hashes.erase(trace_shader_hashes.begin() + index);
-               add_pipeline_trace = false;
-               break;
-            }
-         }
-      }
-
-      if (trace_ignore_vertex_shaders && (stages == reshade::api::pipeline_stage::vertex_shader || stages == reshade::api::pipeline_stage::input_assembler))
-      {
-         add_pipeline_trace = false;
-      }
-
-      // Pipelines are always "unique" (in DX11 they are simply shader state set calls)
-      // TODO: move this to actual draw calls, not pipelines bindings...
-      if (add_pipeline_trace)
-      {
-         trace_pipeline_handles.push_back(cached_pipeline->pipeline.handle);
-         trace_pipeline_draws.push_back(0);
-         trace_pipeline_draws_blend_descs.push_back(D3D11_BLEND_DESC{});
-         trace_pipeline_draws_rtv_format.push_back(DXGI_FORMAT_UNKNOWN);
-         trace_pipeline_draws_rt_format.push_back(DXGI_FORMAT_UNKNOWN);
-         trace_pipeline_draws_rt_size.push_back(uint2{});
-         trace_threads.push_back(std::this_thread::get_id());
-      }
-
-      for (auto shader_hash : cached_pipeline->shader_hashes)
-      {
-         if (!trace_list_unique_shaders_only || std::find(trace_shader_hashes.begin(), trace_shader_hashes.end(), shader_hash) == trace_shader_hashes.end())
-         {
-            trace_shader_hashes.push_back(shader_hash);
-         }
-      }
-#endif // DEVELOPMENT
    }
 
    enum class LumaConstantBufferType
@@ -2972,6 +3055,22 @@ namespace
       }
       device_context->RSSetViewports(viewports_num, &viewports[0]);
    }
+
+#if DEVELOPMENT
+   void OnExecuteSecondaryCommandList(reshade::api::command_list* cmd_list, reshade::api::command_list* secondary_cmd_list)
+   {
+      const std::shared_lock lock_trace(s_mutex_trace);
+      if (trace_running)
+      {
+         auto& cmd_list_data = cmd_list->get_private_data<CommandListData>();
+         auto& secondary_cmd_list_data = secondary_cmd_list->get_private_data<CommandListData>();
+         const std::unique_lock lock_trace_2(cmd_list_data.mutex_trace);
+         const std::unique_lock lock_trace_3(secondary_cmd_list_data.mutex_trace);
+         cmd_list_data.trace_draw_calls_data.append_range(secondary_cmd_list_data.trace_draw_calls_data);
+         secondary_cmd_list_data.trace_draw_calls_data.clear();
+      }
+   }
+#endif
 
    void OnPresent(
       reshade::api::command_queue* queue,
@@ -3328,7 +3427,6 @@ namespace
    //TODOFT4: add a new RT to draw UI on top (pre-multiplied alpha everywhere), so we could compose it smartly, possibly in the final linearization pass. Or, add a new UI gamma setting for when in full screen menus and swap to gamma space on the spot.
    //TODOFT4: lower brightness from 203 nits default?
    //TODOFT5: weapon FOV resets on map load and save load!
-   //TODOFT5: fix draw call order!
 
    // Return false to prevent the original draw call from running (e.g. if you replaced it or just want to skip it)
    // Prey always seemengly draws in direct mode (?), but it uses different command lists on different threads (e.g. seemengly for the shadow projection maps, as they are separate, and stuff like that), though all the primary passes are done on the same thread.
@@ -3341,59 +3439,6 @@ namespace
       ID3D11Device* native_device = (ID3D11Device*)(device->get_native());
       ID3D11DeviceContext* native_device_context = (ID3D11DeviceContext*)(cmd_list->get_native());
       auto& device_data = device->get_private_data<DeviceData>();
-
-#if DEVELOPMENT
-      if (trace_running)
-      {
-         const std::unique_lock lock_trace(s_mutex_trace);
-         // Hack to find the last matching index of "trace_pipeline_draws" and "trace_pipeline_draws_blend_descs" given that there's different command lists doing draw calls in multiple threads cuncurrently
-         for (int i = trace_threads.size() - 1; i >= 0; i--)
-         {
-            if (trace_threads[i] == std::this_thread::get_id())
-            {
-               trace_pipeline_draws[i]++;
-
-               if (!is_dispatch)
-               {
-                  com_ptr<ID3D11BlendState> blend_state;
-                  native_device_context->OMGetBlendState(&blend_state, nullptr, nullptr);
-                  if (blend_state)
-                  {
-                     D3D11_BLEND_DESC blend_desc;
-                     blend_state->GetDesc(&blend_desc);
-                     // We always cache the last one used by the pipeline, hopefully it didn't change between draw calls
-                     trace_pipeline_draws_blend_descs[i] = blend_desc;
-                     // We don't care for the alpha blend operation (source alpha * dest alpha) as alpha is never read back from destination
-                  }
-
-                  com_ptr<ID3D11RenderTargetView> rtv;
-                  native_device_context->OMGetRenderTargets(1, &rtv, nullptr);
-                  if (rtv)
-                  {
-                     D3D11_RENDER_TARGET_VIEW_DESC rtv_desc;
-                     rtv->GetDesc(&rtv_desc);
-                     trace_pipeline_draws_rtv_format[i] = rtv_desc.Format;
-                     com_ptr<ID3D11Resource> rt_resource;
-                     rtv->GetResource(&rt_resource);
-                     if (rt_resource)
-                     {
-                        com_ptr<ID3D11Texture2D> rt_texture_2d;
-                        HRESULT hr = rt_resource->QueryInterface(&rt_texture_2d);
-                        if (SUCCEEDED(hr) && rt_texture_2d)
-                        {
-                           D3D11_TEXTURE2D_DESC rt_texture_2d_desc;
-                           rt_texture_2d->GetDesc(&rt_texture_2d_desc);
-                           trace_pipeline_draws_rt_format[i] = rt_texture_2d_desc.Format;
-                           trace_pipeline_draws_rt_size[i] = uint2{ rt_texture_2d_desc.Width, rt_texture_2d_desc.Height };
-                        }
-                     }
-                  }
-               }
-               break;
-            }
-         }
-      }
-#endif
 
       reshade::api::shader_stage stages = reshade::api::shader_stage::all_graphics | reshade::api::shader_stage::all_compute;
 
@@ -3464,6 +3509,29 @@ namespace
             }
          }
       }
+
+#if DEVELOPMENT
+      {
+         const std::shared_lock lock_trace(s_mutex_trace);
+         if (trace_running)
+         {
+            const std::shared_lock lock_generic(s_mutex_generic);
+            const std::unique_lock lock_trace_2(cmd_list_data.mutex_trace);
+            if (is_dispatch)
+            {
+               AddTraceDrawCallData(cmd_list_data.trace_draw_calls_data, device_data, native_device_context, cmd_list_data.pipeline_state_original_compute_shader.handle);
+            }
+            else
+            {
+               AddTraceDrawCallData(cmd_list_data.trace_draw_calls_data, device_data, native_device_context, cmd_list_data.pipeline_state_original_vertex_shader.handle);
+               if (cmd_list_data.pipeline_state_original_pixel_shader.handle != 0) // Somehow this can happen
+               {
+                  AddTraceDrawCallData(cmd_list_data.trace_draw_calls_data, device_data, native_device_context, cmd_list_data.pipeline_state_original_pixel_shader.handle);
+               }
+            }
+         }
+      }
+#endif
 
       if (!original_shader_hashes.Empty())
       {
@@ -5936,36 +6004,34 @@ namespace
    {
       auto& device_data = runtime->get_device()->get_private_data<DeviceData>();
 #if DEVELOPMENT
-      if (trace_running)
       {
-#if _DEBUG && LOG_VERBOSE
-         reshade::log::message(reshade::log::level::info, "present()");
-         reshade::log::message(reshade::log::level::info, "--- End Frame ---");
-#endif
          const std::unique_lock lock_trace(s_mutex_trace);
-         trace_count = trace_pipeline_handles.size();
-         trace_running = false;
-      }
-      else if (trace_scheduled)
-      {
-         // Split the trace logic over "two" frames
-         trace_scheduled = false;
+         if (trace_running)
          {
-            const std::unique_lock lock_trace(s_mutex_trace);
-            trace_count = 0;
-            trace_pipeline_handles.clear();
-            trace_pipeline_draws.clear();
-            trace_pipeline_draws_blend_descs.clear();
-            trace_pipeline_draws_rtv_format.clear();
-            trace_pipeline_draws_rt_format.clear();
-            trace_pipeline_draws_rt_size.clear();
-            trace_threads.clear();
-            trace_shader_hashes.clear();
-         }
-         trace_running = true;
 #if _DEBUG && LOG_VERBOSE
-         reshade::log::message(reshade::log::level::info, "--- Frame ---");
+            reshade::log::message(reshade::log::level::info, "present()");
+            reshade::log::message(reshade::log::level::info, "--- End Frame ---");
 #endif
+            trace_running = false;
+            auto& cmd_list_data = runtime->get_command_queue()->get_immediate_command_list()->get_private_data<CommandListData>();
+            const std::shared_lock lock_trace_2(cmd_list_data.mutex_trace);
+            trace_count = cmd_list_data.trace_draw_calls_data.size();
+         }
+         else if (trace_scheduled)
+         {
+#if _DEBUG && LOG_VERBOSE
+            reshade::log::message(reshade::log::level::info, "--- Frame ---");
+#endif
+            // Split the trace logic over "two" frames
+            trace_scheduled = false;
+            {
+               auto& cmd_list_data = runtime->get_command_queue()->get_immediate_command_list()->get_private_data<CommandListData>();
+               const std::unique_lock lock_trace_2(cmd_list_data.mutex_trace);
+               cmd_list_data.trace_draw_calls_data.clear();
+            }
+            trace_count = 0;
+            trace_running = true;
+         }
       }
 #endif // DEVELOPMENT
 
@@ -6416,7 +6482,7 @@ namespace
          static int32_t selected_index = -1;
          bool changed_selected = false;
          ImGui::PushID("##ShadersTab");
-         bool handle_shader_tab = trace_count > 0 && ImGui::BeginTabItem(std::format("Traced Shaders ({})", trace_count).c_str());
+         bool handle_shader_tab = trace_count > 0 && ImGui::BeginTabItem(std::format("Traced Shaders ({})", trace_count).c_str()); // No need for "s_mutex_trace" here
          ImGui::PopID();
          if (handle_shader_tab)
          {
@@ -6424,14 +6490,16 @@ namespace
             {
                if (ImGui::BeginListBox("##HashesListbox", ImVec2(-FLT_MIN, -FLT_MIN)))
                {
+                  const std::shared_lock lock_trace(s_mutex_trace); // We don't really need "s_mutex_trace" here as when that data is being written ImGUI isn't running, but...
                   if (!trace_running)
                   {
-                     const std::shared_lock lock(s_mutex_generic);
+                     const std::shared_lock lock_generic(s_mutex_generic);
+                     auto& cmd_list_data = runtime->get_command_queue()->get_immediate_command_list()->get_private_data<CommandListData>();
+                     const std::shared_lock lock_trace_2(cmd_list_data.mutex_trace);
                      for (auto index = 0; index < trace_count; index++)
                      {
-                        auto pipeline_handle = trace_pipeline_handles.at(index); // We don't really need "s_mutex_trace" here as when that data is being written ImGUI isn't running
-                        auto thread_id = trace_threads.at(index)._Get_underlying_id(); // Possibly compiler dependent but whatever, cast to int alternatively
-                        auto draw_calls = trace_pipeline_draws.at(index);
+                        auto pipeline_handle = cmd_list_data.trace_draw_calls_data.at(index).pipeline_handle;
+                        auto thread_id = cmd_list_data.trace_draw_calls_data.at(index).thread_id._Get_underlying_id(); // Possibly compiler dependent but whatever, cast to int alternatively
                         const bool is_selected = selected_index == index;
                         // Note that the pipelines can be run more than once so this will return the first one matching (there's only one actually, we don't have separate settings for their running instance, as that's runtime stuff)
                         const auto pipeline_pair = device_data.pipeline_cache_by_pipeline_handle.find(pipeline_handle);
@@ -6443,12 +6511,17 @@ namespace
                         {
                            const auto pipeline = pipeline_pair->second;
 
-                           // Index - Thread ID - Draw Calls count - Shader Hash(es) - Shader Name
+                           // Index - Thread ID (command list) - Shader Hash(es) - Shader Name
                            name << std::setfill('0') << std::setw(3) << index << std::setw(0); // Fill up 3 slots for the index so the text is aligned
-                           name << " - " << thread_id;
-                           if (!pipeline->HasVertexShader())
+                           // Deferred
+                           if (cmd_list_data.trace_draw_calls_data.at(index).command_list->GetType() != D3D11_DEVICE_CONTEXT_IMMEDIATE)
                            {
-                              name << " - " << draw_calls << "x";
+                              name << " - " << thread_id << "*";
+                           }
+                           // Immediate
+                           else
+                           {
+                              name << " - " << thread_id;
                            }
                            for (auto shader_hash : pipeline->shader_hashes)
                            {
@@ -6458,6 +6531,10 @@ namespace
                            // Pick the default color by shader type
                            if (pipeline->HasVertexShader())
                            {
+                              if (trace_ignore_vertex_shaders)
+                              {
+                                 continue;
+                              }
                               text_color = IM_COL32(192, 192, 0, 255); // Yellow
                            }
                            else if (pipeline->HasComputeShader())
@@ -6553,9 +6630,11 @@ namespace
                   if (open_disassembly_tab_item)
                   {
                      static std::string disasm_string;
-                     if (selected_index >= 0 && trace_pipeline_handles.size() >= selected_index + 1 && (changed_selected || opened_disassembly_tab_item != open_disassembly_tab_item))
+                     auto& cmd_list_data = runtime->get_command_queue()->get_immediate_command_list()->get_private_data<CommandListData>();
+                     const std::shared_lock lock_trace(cmd_list_data.mutex_trace);
+                     if (selected_index >= 0 && cmd_list_data.trace_draw_calls_data.size() >= selected_index + 1 && (changed_selected || opened_disassembly_tab_item != open_disassembly_tab_item))
                      {
-                        const auto pipeline_handle = trace_pipeline_handles.at(selected_index);
+                        const auto pipeline_handle = cmd_list_data.trace_draw_calls_data.at(selected_index).pipeline_handle;
                         const std::unique_lock lock(s_mutex_generic);
                         if (auto pipeline_pair = device_data.pipeline_cache_by_pipeline_handle.find(pipeline_handle); pipeline_pair != device_data.pipeline_cache_by_pipeline_handle.end() && pipeline_pair->second != nullptr)
                         {
@@ -6600,10 +6679,12 @@ namespace
                      static std::string hlsl_string;
                      static bool hlsl_error = false;
                      static bool hlsl_warning = false;
-                     if (selected_index >= 0 && trace_pipeline_handles.size() >= selected_index + 1 && (changed_selected || opened_live_tab_item != open_live_tab_item || refresh_cloned_pipelines))
+                     auto& cmd_list_data = runtime->get_command_queue()->get_immediate_command_list()->get_private_data<CommandListData>();
+                     const std::shared_lock lock_trace(cmd_list_data.mutex_trace);
+                     if (selected_index >= 0 && cmd_list_data.trace_draw_calls_data.size() >= selected_index + 1 && (changed_selected || opened_live_tab_item != open_live_tab_item || refresh_cloned_pipelines))
                      {
                         bool hlsl_set = false;
-                        auto pipeline_handle = trace_pipeline_handles.at(selected_index);
+                        auto pipeline_handle = cmd_list_data.trace_draw_calls_data.at(selected_index).pipeline_handle;
 
                         const std::shared_lock lock(s_mutex_generic);
                         if (auto pipeline_pair = device_data.pipeline_cache_by_pipeline_handle.find(pipeline_handle);
@@ -6667,9 +6748,11 @@ namespace
                   ImGui::PopID();
                   if (open_settings_tab_item)
                   {
-                     if (selected_index >= 0 && trace_pipeline_handles.size() >= selected_index + 1)
+                     auto& cmd_list_data = runtime->get_command_queue()->get_immediate_command_list()->get_private_data<CommandListData>();
+                     const std::shared_lock lock_trace(cmd_list_data.mutex_trace);
+                     if (selected_index >= 0 && cmd_list_data.trace_draw_calls_data.size() >= selected_index + 1)
                      {
-                        auto pipeline_handle = trace_pipeline_handles.at(selected_index);
+                        auto pipeline_handle = cmd_list_data.trace_draw_calls_data.at(selected_index).pipeline_handle;
                         bool reload = false;
                         bool recompile = false;
                         {
@@ -6715,72 +6798,124 @@ namespace
                                  }
                                  if (pipeline_pair->second->HasPixelShader())
                                  {
-                                    // Show blend state here:
-                                    auto blend_desc = trace_pipeline_draws_blend_descs.at(selected_index);
-                                    auto rtv_format = trace_pipeline_draws_rtv_format.at(selected_index);
-                                    auto rt_format = trace_pipeline_draws_rt_format.at(selected_index);
-                                    auto rt_size = trace_pipeline_draws_rt_size.at(selected_index);
+                                    auto blend_desc = cmd_list_data.trace_draw_calls_data.at(selected_index).blend_desc;
 
-                                    ImGui::Text("Size: %ux%u", rt_size.x, rt_size.y);
-
-                                    if (GetFormatName(rt_format) != nullptr)
+                                    for (UINT i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; i++)
                                     {
-                                       ImGui::Text("RT Format: %s", GetFormatName(rt_format));
-                                    }
-                                    else
-                                    {
-                                       ImGui::Text("RT Format: %u", rt_format);
-                                    }
-                                    if (GetFormatName(rtv_format) != nullptr)
-                                    {
-                                       ImGui::Text("RTV Format: %s", GetFormatName(rtv_format));
-                                    }
-                                    else
-                                    {
-                                       ImGui::Text("RTV Format: %u", rtv_format);
-                                    }
-
-                                    // 0 No alpha blend (or other unknown blend types that we can ignore)
-                                    // 1 Straight alpha blend: "result = (source.RGB * source.A) + (dest.RGB * (1 - source.A))" or "result = lerp(dest.RGB, source.RGB, source.A)"
-                                    // 2 Pre-multiplied alpha blend (alpha is also pre-multiplied, not just rgb): "result = source.RGB + (dest.RGB * (1 - source.A))"
-                                    // 3 Additive alpha blend (source is "Straight alpha" while destination is retained at 100%): "result = (source.RGB * source.A) + dest.RGB"
-                                    // 4 Additive blend (source and destination are simply summed up, ignoring the alpha): result = source.RGB + dest.RGB
-                                    bool has_drawn_text = false;
-                                    // Only show render target 0 for now (Prey only uses that, almost always)
-                                    if (blend_desc.RenderTarget[0].BlendEnable)
-                                    {
-                                       if (blend_desc.RenderTarget[0].BlendOp == D3D11_BLEND_OP::D3D11_BLEND_OP_ADD)
+                                       auto rtv_format = cmd_list_data.trace_draw_calls_data.at(selected_index).rtv_format[i];
+                                       if (rtv_format == DXGI_FORMAT_UNKNOWN)
                                        {
-                                          if (blend_desc.RenderTarget[0].SrcBlend == D3D11_BLEND::D3D11_BLEND_ONE && blend_desc.RenderTarget[0].DestBlend == D3D11_BLEND::D3D11_BLEND_ONE)
+                                          continue;
+                                       }
+                                       auto rt_format = cmd_list_data.trace_draw_calls_data.at(selected_index).rt_format[i];
+                                       auto rt_size = cmd_list_data.trace_draw_calls_data.at(selected_index).rt_size[i];
+
+                                       ImGui::Text("");
+                                       ImGui::Text("RT Index: %u", i);
+                                       ImGui::Text("");
+                                       ImGui::Text("RT Format: %s", GetFormatName(rt_format));
+
+                                       ImGui::Text("RT Size: %ux%u", rt_size.x, rt_size.y);
+
+                                       if (GetFormatName(rt_format) != nullptr) // TODO: print name of the unsupported ones too!
+                                       {
+                                          ImGui::Text("RT Format: %s", GetFormatName(rt_format));
+                                       }
+                                       else
+                                       {
+                                          ImGui::Text("RT Format: %u", rt_format);
+                                       }
+                                       if (GetFormatName(rtv_format) != nullptr)
+                                       {
+                                          ImGui::Text("RTV Format: %s", GetFormatName(rtv_format));
+                                       }
+                                       else
+                                       {
+                                          ImGui::Text("RTV Format: %u", rtv_format);
+                                       }
+
+                                       ImGui::Text("RT Swapchain: %s", cmd_list_data.trace_draw_calls_data.at(selected_index).rt_is_swapchain[i] ? "True" : "False");
+
+                                       // 0 No alpha blend (or other unknown blend types that we can ignore)
+                                       // 1 Straight alpha blend: "result = (source.RGB * source.A) + (dest.RGB * (1 - source.A))" or "result = lerp(dest.RGB, source.RGB, source.A)"
+                                       // 2 Pre-multiplied alpha blend (alpha is also pre-multiplied, not just rgb): "result = source.RGB + (dest.RGB * (1 - source.A))"
+                                       // 3 Additive alpha blend (source is "Straight alpha" while destination is retained at 100%): "result = (source.RGB * source.A) + dest.RGB"
+                                       // 4 Additive blend (source and destination are simply summed up, ignoring the alpha): result = source.RGB + dest.RGB
+                                       bool has_drawn_text = false;
+                                       // Only show render target 0 for now (Prey only uses that, almost always)
+                                       if (blend_desc.RenderTarget[i].BlendEnable)
+                                       {
+                                          if (blend_desc.RenderTarget[i].BlendOp == D3D11_BLEND_OP::D3D11_BLEND_OP_ADD)
                                           {
-                                             ImGui::Text("Blend Mode: Additive Color");
-                                             has_drawn_text = true;
+                                             if (blend_desc.RenderTarget[i].SrcBlend == D3D11_BLEND::D3D11_BLEND_ONE && blend_desc.RenderTarget[i].DestBlend == D3D11_BLEND::D3D11_BLEND_ONE)
+                                             {
+                                                ImGui::Text("Blend Mode: Additive Color");
+                                                has_drawn_text = true;
+                                             }
+                                             else if (blend_desc.RenderTarget[i].SrcBlend == D3D11_BLEND::D3D11_BLEND_SRC_ALPHA && blend_desc.RenderTarget[i].DestBlend == D3D11_BLEND::D3D11_BLEND_ONE)
+                                             {
+                                                ImGui::Text("Blend Mode: Additive Alpha");
+                                                has_drawn_text = true;
+                                             }
+                                             else if (blend_desc.RenderTarget[i].SrcBlend == D3D11_BLEND::D3D11_BLEND_ONE && blend_desc.RenderTarget[i].DestBlend == D3D11_BLEND::D3D11_BLEND_INV_SRC_ALPHA)
+                                             {
+                                                ImGui::Text("Blend Mode: Premultiplied Alpha");
+                                                has_drawn_text = true;
+                                             }
+                                             else if (blend_desc.RenderTarget[i].SrcBlend == D3D11_BLEND::D3D11_BLEND_SRC_ALPHA && blend_desc.RenderTarget[i].DestBlend == D3D11_BLEND::D3D11_BLEND_INV_SRC_ALPHA)
+                                             {
+                                                ImGui::Text("Blend Mode: Straight Alpha");
+                                                has_drawn_text = true;
+                                             }
                                           }
-                                          else if (blend_desc.RenderTarget[0].SrcBlend == D3D11_BLEND::D3D11_BLEND_SRC_ALPHA && blend_desc.RenderTarget[0].DestBlend == D3D11_BLEND::D3D11_BLEND_ONE)
+                                          if (!has_drawn_text)
                                           {
-                                             ImGui::Text("Blend Mode: Additive Alpha");
-                                             has_drawn_text = true;
-                                          }
-                                          else if (blend_desc.RenderTarget[0].SrcBlend == D3D11_BLEND::D3D11_BLEND_ONE && blend_desc.RenderTarget[0].DestBlend == D3D11_BLEND::D3D11_BLEND_INV_SRC_ALPHA)
-                                          {
-                                             ImGui::Text("Blend Mode: Premultiplied Alpha");
-                                             has_drawn_text = true;
-                                          }
-                                          else if (blend_desc.RenderTarget[0].SrcBlend == D3D11_BLEND::D3D11_BLEND_SRC_ALPHA && blend_desc.RenderTarget[0].DestBlend == D3D11_BLEND::D3D11_BLEND_INV_SRC_ALPHA)
-                                          {
-                                             ImGui::Text("Blend Mode: Straight Alpha");
+                                             ImGui::Text("Blend Mode: Unknown");
                                              has_drawn_text = true;
                                           }
                                        }
                                        if (!has_drawn_text)
                                        {
-                                          ImGui::Text("Blend Mode: Unknown");
-                                          has_drawn_text = true;
+                                          ImGui::Text("Blend Mode: Disabled");
                                        }
                                     }
-                                    if (!has_drawn_text)
+                                 }
+
+                                 if (pipeline_pair->second->HasVertexShader() || pipeline_pair->second->HasPixelShader() || pipeline_pair->second->HasComputeShader())
+                                 {
+                                    for (UINT i = 0; i < D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT; i++)
                                     {
-                                       ImGui::Text("Blend Mode: Disabled");
+                                       auto srv_format = cmd_list_data.trace_draw_calls_data.at(selected_index).srv_format[i];
+                                       if (srv_format == DXGI_FORMAT_UNKNOWN)
+                                       {
+                                          continue;
+                                       }
+                                       ImGui::Text("");
+                                       ImGui::Text("SRV Index: %u", i);
+                                       ImGui::Text("");
+                                       if (GetFormatName(srv_format) != nullptr)
+                                       {
+                                          ImGui::Text("SRV Format: %s", GetFormatName(srv_format));
+                                       }
+                                    }
+                                 }
+
+                                 if (pipeline_pair->second->HasComputeShader())
+                                 {
+                                    for (UINT i = 0; i < D3D11_1_UAV_SLOT_COUNT; i++)
+                                    {
+                                       auto uav_format = cmd_list_data.trace_draw_calls_data.at(selected_index).uav_format[i];
+                                       if (uav_format == DXGI_FORMAT_UNKNOWN)
+                                       {
+                                          continue;
+                                       }
+                                       ImGui::Text("");
+                                       ImGui::Text("UAV Index: %u", i);
+                                       ImGui::Text("");
+                                       if (GetFormatName(uav_format) != nullptr)
+                                       {
+                                          ImGui::Text("UAV Format: %s", GetFormatName(uav_format));
+                                       }
                                     }
                                  }
                               }
@@ -8269,6 +8404,10 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved)
       reshade::register_event<reshade::addon_event::init_sampler>(OnInitSampler);
       reshade::register_event<reshade::addon_event::destroy_sampler>(OnDestroySampler);
 
+#if DEVELOPMENT
+      reshade::register_event<reshade::addon_event::execute_secondary_command_list>(OnExecuteSecondaryCommandList);
+#endif // DEVELOPMENT
+
       reshade::register_event<reshade::addon_event::present>(OnPresent);
 
       reshade::register_event<reshade::addon_event::reshade_present>(OnReShadePresent);
@@ -8335,6 +8474,10 @@ BOOL APIENTRY DllMain(HMODULE h_module, DWORD fdw_reason, LPVOID lpv_reserved)
 
       reshade::unregister_event<reshade::addon_event::init_sampler>(OnInitSampler);
       reshade::unregister_event<reshade::addon_event::destroy_sampler>(OnDestroySampler);
+
+#if DEVELOPMENT
+      reshade::unregister_event<reshade::addon_event::execute_secondary_command_list>(OnExecuteSecondaryCommandList);
+#endif // DEVELOPMENT
 
       reshade::unregister_event<reshade::addon_event::present>(OnPresent);
 
