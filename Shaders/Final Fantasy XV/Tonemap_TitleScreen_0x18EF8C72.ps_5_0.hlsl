@@ -57,7 +57,7 @@ void frag_main()
     bool EnabledToneCurve = cb0_m16.z != 0u;
 
     float3 _275;
-    if (LumaSettings.DisplayMode != 0)
+    if (LumaSettings.DisplayMode == 1)
     {
         float TenPowLogHighRangePlusContrastMinusOne = cb0_m2.x;
         float TenPowDispositionTimesTwoPowHighRange_PlusOne_Log_Inverse = cb0_m2.y;
@@ -107,33 +107,40 @@ void frag_main()
     float _464;
     float _465;
     float _466;
-    if (cb0_m15 != 0u && LumaSettings.GameSettings.UseVanillaGamutRatio != 0u)
+    if (cb0_m15 != 0u)
     {
-        float _453 = mad(_438, 0.0432999990880489349365234375f, (_436 * 0.627399981021881103515625f) + (_437 * 0.329299986362457275390625f));
-        float _454 = mad(_438, 0.011400000192224979400634765625f, (_436 * 0.069099999964237213134765625f) + (_437 * 0.91949999332427978515625f));
-        float _455 = mad(_438, 0.895600020885467529296875f, (_436 * 0.01640000008046627044677734375f) + (_437 * 0.087999999523162841796875f));
-        _464 = mad(cb0_m18.y, _438 - _455, _455);
-        _465 = mad(cb0_m18.y, _437 - _454, _454);
-        _466 = mad(cb0_m18.y, _436 - _453, _453);
+        
+        float3 color = float3(_436, _437, _438);
+        float3 color_bt2020 = BT709_To_BT2020(color);
+        color_bt2020 = LumaSettings.GameSettings.UseVanillaGamutRatio == 1 ? mad(cb0_m18.y, color - color_bt2020, color_bt2020) : color_bt2020;
+        _464 = color_bt2020.z;
+        _465 = color_bt2020.y;
+        _466 = color_bt2020.x;
     }
     else
     {
-        float3 color = BT709_To_BT2020(float3(_436, _437, _438));
+        _464 = _438;
+        _465 = _437;
+        _466 = _436;
+    }
 
-        _464 = color.z;
-        _465 = color.y;
-        _466 = color.x;
-    }
-    if (LumaSettings.DisplayMode != 0)
-    {
-        float3 color = ApplyTonemapAndGrading(float3(_466, _465, _464));
-        _466 = color.x;
-        _465 = color.y;
-        _464 = color.z;
-    }
     float _467 = max(_466, 0.0f);
     float _468 = max(_465, 0.0f);
     float _469 = max(_464, 0.0f);
+    if (LumaSettings.DisplayMode == 1)
+    {
+        float3 color = ApplyTonemapAndGrading(float3(_466, _465, _464), true);
+        _467 = color.x;
+        _468 = color.y;
+        _469 = color.z;
+        float gamePaperWhite = LumaSettings.GamePaperWhiteNits / sRGB_WhiteLevelNits;
+        float UIPaperWhite = LumaSettings.UIPaperWhiteNits / sRGB_WhiteLevelNits;
+
+        _467 *= gamePaperWhite / UIPaperWhite;
+        _468 *= gamePaperWhite / UIPaperWhite;
+        _469 *= gamePaperWhite / UIPaperWhite;
+    }
+
     bool _493 = cb0_m16.x != 0u;
     SV_TARGET.x = _493 ? ((_467 <= 0.003130800090730190277099609375f) ? (_467 * 12.9200000762939453125f) : mad(exp2(log2(_467) * 0.4166666567325592041015625f), 1.05499994754791259765625f, -0.054999999701976776123046875f)) : _467;
     SV_TARGET.y = _493 ? ((_468 <= 0.003130800090730190277099609375f) ? (_468 * 12.9200000762939453125f) : mad(exp2(log2(_468) * 0.4166666567325592041015625f), 1.05499994754791259765625f, -0.054999999701976776123046875f)) : _468;

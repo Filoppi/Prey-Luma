@@ -262,14 +262,9 @@ float3 FFXV_TonemapExtended(float3 untonemapped,
     return FFXV_Extended(untonemapped, FFXV(untonemapped, ZeroSlope, InvLog, Param_n37, Contrast, Param_n46, Param_n49), ZeroSlope, InvLog, Param_n37, Contrast, Param_n46, Param_n49, inflection);
 }
 
-float3 ApplyTonemapAndGrading(float3 color)
+float3 ApplyTonemapAndGrading(float3 color, bool title)
 {
-    // color = BT2020_To_BT709(color);
     float3 tonemapped_color = renodx::tonemap::neutwo::PerChannel(color, PEAK_NITS/GAME_NITS);
-#if UI_DRAW_TYPE == 2
-   ColorGradingLUTTransferFunctionInOutCorrected(tonemapped_color, VANILLA_ENCODING_TYPE, GAMMA_CORRECTION_TYPE, true);
-   tonemapped_color *= GAME_NITS / UI_NITS;
-   ColorGradingLUTTransferFunctionInOutCorrected(tonemapped_color, GAMMA_CORRECTION_TYPE, VANILLA_ENCODING_TYPE, true);
-#endif
-    return (tonemapped_color);
+    // tonemapped_color = max(0, tonemapped_color);
+    return tonemapped_color;
 }

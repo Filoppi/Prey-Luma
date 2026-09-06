@@ -61,16 +61,16 @@ void main(
       // r1.y = r1.y * 0.895600021 + r1.z;
     float3 color_bt709 = gamma_sRGB_to_linear(color_srgb.rgb, GCT_MIRROR);
 
-    if (LumaSettings.DisplayMode != 0)
+    if (LumaSettings.DisplayMode == 1)
     {
         color_bt709 = PumboAutoHDR(color_bt709, 400.f, LumaSettings.GamePaperWhiteNits);
-#if UI_DRAW_TYPE == 2
-        ColorGradingLUTTransferFunctionInOutCorrected(color_bt709, VANILLA_ENCODING_TYPE, GAMMA_CORRECTION_TYPE, true);
-        color_bt709 *= GAME_NITS / UI_NITS;
-        ColorGradingLUTTransferFunctionInOutCorrected(color_bt709, GAMMA_CORRECTION_TYPE, VANILLA_ENCODING_TYPE, true);
-#endif
+        color_bt709 = max(0, color_bt709);
+        float gamePaperWhite = LumaSettings.GamePaperWhiteNits / sRGB_WhiteLevelNits;
+        float UIPaperWhite = LumaSettings.UIPaperWhiteNits / sRGB_WhiteLevelNits;
+        color_bt709 *= gamePaperWhite / UIPaperWhite;
     }
     float3 color_bt2020 = BT709_To_BT2020(color_bt709);
+
 
     // float3 r4 = r1.rgb;
     // r4.x = r0.w;
@@ -99,15 +99,13 @@ void main(
     // r1.y = r1.y * 1.05499995 + -0.0549999997;
     // o0.z = r0.w ? r1.x : r1.y;
   } else {
-    if (LumaSettings.DisplayMode != 0)
+    if (LumaSettings.DisplayMode == 1)
     {
       float3 color_bt709 = gamma_sRGB_to_linear(color_srgb);
       color_bt709 = PumboAutoHDR(color_bt709, 400.f, LumaSettings.GamePaperWhiteNits); // TODO: default "SaturationExpansionIntensity"?
-#if UI_DRAW_TYPE == 2
-      ColorGradingLUTTransferFunctionInOutCorrected(color_bt709, VANILLA_ENCODING_TYPE, GAMMA_CORRECTION_TYPE, true);
-      color_bt709 *= GAME_NITS / UI_NITS;
-      ColorGradingLUTTransferFunctionInOutCorrected(color_bt709, GAMMA_CORRECTION_TYPE, VANILLA_ENCODING_TYPE, true);
-#endif
+      float gamePaperWhite = LumaSettings.GamePaperWhiteNits / sRGB_WhiteLevelNits;
+      float UIPaperWhite = LumaSettings.UIPaperWhiteNits / sRGB_WhiteLevelNits;
+      color_bt709 *= gamePaperWhite / UIPaperWhite;
       color_srgb = linear_to_sRGB_gamma(color_bt709);
 
     }

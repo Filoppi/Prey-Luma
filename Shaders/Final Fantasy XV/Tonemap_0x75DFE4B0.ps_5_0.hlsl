@@ -26,32 +26,18 @@ cbuffer cb0_buf : register(b0)
 SamplerState s0 : register(s0);
 Texture2D<float4> t0 : register(t0);
 
-static const float3x3 m_GameToTonemapSpace = float3x3(
-    0.40263977, 0.56909563, 0.02826359,
-    0.06732446, 0.91025139, 0.02242317,
-    0.02130433, 0.11774699, 0.86094864
-);
-
-// Converts Tonemap Working Space back to Graded Linear RGB (Game Space)
-// Math: inverse(m_GameToTonemapSpace)
-static const float3x3 m_TonemapSpaceToGame = float3x3(
-    2.77516492, -1.72909329, -0.04607056,
-    -0.20425457, 1.22957414, -0.02531856,
-    -0.04073724, -0.12537505, 1.16611217
-);
-
 static float2 TEXCOORD;
 static float4 SV_TARGET;
 
 struct SPIRV_Cross_Input
 {
-    float4 v0 : SV_POSITION0;
+    float4 Position : SV_Position;
     float2 TEXCOORD : TEXCOORD0;
 };
 
 struct SPIRV_Cross_Output
 {
-    float4 SV_TARGET : SV_TARGET0;
+    float4 SV_TARGET : SV_Target0;
 };
 
 float dp3_f32(float3 a, float3 b)
@@ -70,7 +56,7 @@ void frag_main()
     float _216 = dp3_f32(_213, float3(0.0064210002310574054718017578125f, 0.0243079997599124908447265625f, 0.969271004199981689453125f));
     bool EnabledToneCurve = cb0_m17.z != 0u;
     float3 _277;
-    if (LumaSettings.DisplayMode != 0)
+    if (LumaSettings.DisplayMode == 1)
     {
         float TenPowLogHighRangePlusContrastMinusOne = cb0_m2.x;
         float TenPowDispositionTimesTwoPowHighRange_PlusOne_Log_Inverse = cb0_m2.y;
@@ -86,7 +72,9 @@ void frag_main()
                              TenPowLogHighRangePlusContrastMinusOne, TenPowDispositionTimesTwoPowHighRange_PlusOne_Log_Inverse, ZeroSlopeByTenPowDispositionPlusOne, Param_n37, Param_n46, Param_n49);
         }
         float3 untonemapped = float3(_214, _215, _216);
+        float3 vanilla = FFXV(untonemapped, ZeroSlopeByTenPowDispositionPlusOne, TenPowDispositionTimesTwoPowHighRange_PlusOne_Log_Inverse, Param_n37, TenPowLogHighRangePlusContrastMinusOne, Param_n46, Param_n49);
         float3 tonemapped = FFXV_TonemapExtended(untonemapped, ZeroSlopeByTenPowDispositionPlusOne, TenPowDispositionTimesTwoPowHighRange_PlusOne_Log_Inverse, Param_n37, TenPowLogHighRangePlusContrastMinusOne, Param_n46, Param_n49);
+        tonemapped = lerp(tonemapped, vanilla, 0.25f);
         _277 = EnabledToneCurve ? tonemapped : untonemapped;
     }
     else 
@@ -119,37 +107,40 @@ void frag_main()
     float _460 = dp3_f32(_459, float3(1.914248943328857421875f, -0.8911859989166259765625f, -0.02306200005114078521728515625f));
     float _461 = dp3_f32(_459, float3(-0.086308002471923828125f, 1.104712009429931640625f, -0.018403999507427215576171875f));
     float _462 = dp3_f32(_459, float3(-0.02810700051486492156982421875f, -0.100798003375530242919921875f, 1.1289050579071044921875f));
-
     float _488;
     float _489;
     float _490;
-    if (cb0_m16 != 0u && LumaSettings.GameSettings.UseVanillaGamutRatio != 0u)
+    if (cb0_m16 != 0u)
     {
-        float _477 = mad(_462, 0.0432999990880489349365234375f, (_460 * 0.627399981021881103515625f) + (_461 * 0.329299986362457275390625f));
-        float _478 = mad(_462, 0.011400000192224979400634765625f, (_460 * 0.069099999964237213134765625f) + (_461 * 0.91949999332427978515625f));
-        float _479 = mad(_462, 0.895600020885467529296875f, (_460 * 0.01640000008046627044677734375f) + (_461 * 0.087999999523162841796875f));
-        _488 = mad(cb0_m19.y, _462 - _479, _479);
-        _489 = mad(cb0_m19.y, _461 - _478, _478);
-        _490 = mad(cb0_m19.y, _460 - _477, _477);
+        float3 color = float3(_460, _461, _462);
+        float3 color_bt2020 = BT709_To_BT2020(color);
+        color_bt2020.xyz = LumaSettings.GameSettings.UseVanillaGamutRatio == 1 ? mad(cb0_m19.y, color - color_bt2020, color_bt2020) : color_bt2020;
+        color = BT2020_To_BT709(color_bt2020);
+        _488 = color.z;
+        _489 = color.y;
+        _490 = color.x;
     }
     else
     {
-        float3 color_bt2020 = BT709_To_BT2020(float3(_460, _461, _462));
-        _488 = color_bt2020.z;
-        _489 = color_bt2020.y;
-        _490 = color_bt2020.x;
-    }
-
-    if (LumaSettings.DisplayMode != 0)
-    {
-        float3 color = ApplyTonemapAndGrading(float3(_490, _489, _488));
-        _490 = color.x;
-        _489 = color.y;
-        _488 = color.z;
+        _488 = _462;
+        _489 = _461;
+        _490 = _460;
     }
     float _491 = max(_490, 0.0f);
     float _492 = max(_489, 0.0f);
     float _493 = max(_488, 0.0f);
+    if (LumaSettings.DisplayMode == 1)
+    {
+        float3 color = ApplyTonemapAndGrading(float3(_491, _492, _493), false);
+        _491 = color.x;
+        _492 = color.y;
+        _493 = color.z;
+        float gamePaperWhite = LumaSettings.GamePaperWhiteNits / sRGB_WhiteLevelNits;
+        float UIPaperWhite = LumaSettings.UIPaperWhiteNits / sRGB_WhiteLevelNits;
+        _491 *= gamePaperWhite / UIPaperWhite;
+        _492 *= gamePaperWhite / UIPaperWhite;
+        _493 *= gamePaperWhite / UIPaperWhite;
+    }
     bool _517 = cb0_m17.x != 0u;
     SV_TARGET.x = _517 ? ((_491 <= 0.003130800090730190277099609375f) ? (_491 * 12.9200000762939453125f) : mad(exp2(log2(_491) * 0.4166666567325592041015625f), 1.05499994754791259765625f, -0.054999999701976776123046875f)) : _491;
     SV_TARGET.y = _517 ? ((_492 <= 0.003130800090730190277099609375f) ? (_492 * 12.9200000762939453125f) : mad(exp2(log2(_492) * 0.4166666567325592041015625f), 1.05499994754791259765625f, -0.054999999701976776123046875f)) : _492;
