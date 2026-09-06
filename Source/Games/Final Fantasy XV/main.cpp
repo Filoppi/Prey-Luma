@@ -1,6 +1,5 @@
 #define GAME_FINALFANTASYXV 1
 
-
 #ifdef _DEBUG
 #define ALLOW_SHADERS_DUMPING 1
 #define ALLOW_SHADER_PATCHES_DUMPING 1
@@ -179,7 +178,6 @@ public:
       use_os_reference_white_level = false;
 
       native_shaders_definitions.emplace(CompileTimeStringHash("Decode MVs CS"), ShaderDefinition{"Luma_FFXV_MotionVec_Decode", reshade::api::pipeline_subobject_type::compute_shader});
-      native_shaders_definitions.emplace(CompileTimeStringHash("Output Scaled PS"), ShaderDefinition{"Luma_FFXV_Output_Scaled", reshade::api::pipeline_subobject_type::pixel_shader});
       native_shaders_definitions.emplace(0x2100CE9BU, ShaderDefinition{"Luma_Directional_Light", reshade::api::pipeline_subobject_type::pixel_shader});
       native_shaders_definitions.emplace(0xA315F1E7U, ShaderDefinition{"Luma_Directional_Light_CSM", reshade::api::pipeline_subobject_type::pixel_shader});
       native_shaders_definitions.emplace(0x4B8E0FF8U, ShaderDefinition{"Luma_Directional_Light_CSM_AO", reshade::api::pipeline_subobject_type::pixel_shader});
@@ -256,6 +254,32 @@ public:
       if (ImGui::TreeNodeEx("Post Process", ImGuiTreeNodeFlags_DefaultOpen))
       {
 
+         if (cb_luma_global_settings.DisplayMode == DisplayModeType::HDR)
+         {
+            bool use_sdr_over_hdr = cb_luma_global_settings.GameSettings.UseSDROverHDR == 1;
+            if (ImGui::Checkbox("Use SDR Tonemap Curve", &use_sdr_over_hdr))
+            {
+               cb_luma_global_settings.GameSettings.UseSDROverHDR = use_sdr_over_hdr ? 1 : 0;
+               reshade::set_config_value(runtime, NAME, "UseSDROverHDR", use_sdr_over_hdr);
+            }
+            if (DrawResetButton(use_sdr_over_hdr, true, "UseSDROverHDR", runtime))
+            {
+               cb_luma_global_settings.GameSettings.UseSDROverHDR = 1;
+               reshade::set_config_value(runtime, NAME, "UseSDROverHDR", use_sdr_over_hdr);
+            }
+
+            bool use_vanilla_gamut_ratio = cb_luma_global_settings.GameSettings.UseVanillaGamutRatio == 1;
+            if (ImGui::Checkbox("Use Vanilla Gamut Ratio", &use_vanilla_gamut_ratio))
+            {
+               cb_luma_global_settings.GameSettings.UseVanillaGamutRatio = use_vanilla_gamut_ratio ? 1 : 0;
+               reshade::set_config_value(runtime, NAME, "UseVanillaGamutRatio", use_vanilla_gamut_ratio);
+            }
+            if (DrawResetButton(use_vanilla_gamut_ratio, false, "UseVanillaGamutRatio", runtime))
+            {
+               cb_luma_global_settings.GameSettings.UseVanillaGamutRatio = 0;
+               reshade::set_config_value(runtime, NAME, "UseVanillaGamutRatio", use_vanilla_gamut_ratio);
+            }
+         }
          if (ImGui::Checkbox("Directional Shadows", &enable_directional_shadows))
          {
             reshade::set_config_value(runtime, NAME, "DirectionalShadows", enable_directional_shadows);
@@ -433,9 +457,7 @@ public:
 
 #if LUMA_HAS_RECIPE_PROVIDERS
       // Bind recipe resources only when toggle is ON and this shader was patched.
-      if ((stages & reshade::api::shader_stage::pixel) != 0
-          && dithering_patch_enabled.load(std::memory_order_relaxed)
-          && !original_shader_hashes.pixel_shaders.empty())
+      if ((stages & reshade::api::shader_stage::pixel) != 0 && dithering_patch_enabled.load(std::memory_order_relaxed) && !original_shader_hashes.pixel_shaders.empty())
       {
          BindPatchedResources(native_device_context, cmd_list_data, device_data, original_shader_hashes, stages, updated_cbuffers);
       }
@@ -446,7 +468,7 @@ public:
       {
 
          auto shader = device_data.native_pixel_shaders.find(original_shader_hashes.pixel_shaders[0])->second.get();
-         
+
          if (shader != nullptr)
          {
             native_device_context->PSSetShader(shader, nullptr, 0);
@@ -457,7 +479,7 @@ public:
             {
                native_device_context->PSSetShaderResources(42, 1, &fast_noise_srv);
 #if DEVELOPMENT
-            VerifyFastNoiseBinding(native_device_context, 42, fast_noise_srv, "AttachFastNoise");
+               VerifyFastNoiseBinding(native_device_context, 42, fast_noise_srv, "AttachFastNoise");
 #endif
             }
          }
@@ -662,12 +684,12 @@ public:
          else
          {
             if (!SetupSROutput(native_device, device_data, output_rtv, output_color, output_texture_desc, output_supports_uav, output_changed))
-            {
-               Log_Debug(
-                  reshade::log::level::warning,
-                  "Failed to set up SR output texture for TAA pass - skipping TAA pass handling");
-               return DrawOrDispatchOverrideType::None;
-            }
+         {
+            Log_Debug(
+               reshade::log::level::warning,
+               "Failed to set up SR output texture for TAA pass - skipping TAA pass handling");
+            return DrawOrDispatchOverrideType::None;
+         }
          }
 
          // auto clear_upscale_frame_tracking = [&]()
@@ -740,8 +762,8 @@ public:
             ASSERT_ONCE(false);
             if (output_supports_uav)
             {
-               game_device_data.sr_output_srv = nullptr;
-               device_data.sr_output_color = nullptr;
+            game_device_data.sr_output_srv = nullptr;
+            device_data.sr_output_color = nullptr;
             }
             // Roll back tracking activation: SR never ran so the pool texture has no valid data.
             if (taa_upscaled_mapping_ready)
@@ -831,27 +853,26 @@ public:
 #endif
                // need to copyback the upscaled result to the original TAA output. It is used as previous frame input for SSR.
 
-               native_device_context->OMSetRenderTargets(0, nullptr, nullptr);
-               SetLumaConstantBuffers(native_device_context, cmd_list_data, device_data, reshade::api::shader_stage::pixel, LumaConstantBufferType::LumaSettings);
+            native_device_context->OMSetRenderTargets(0, nullptr, nullptr);
 
-               DrawCustomPixelShader(
-                  native_device_context,
-                  device_data.default_depth_stencil_state.get(),
-                  device_data.default_blend_state.get(),
-                  device_data.sampler_state_linear.get(),
-                  device_data.native_vertex_shaders[CompileTimeStringHash("Copy VS")].get(),
-                  device_data.native_pixel_shaders[CompileTimeStringHash("Output Scaled PS")].get(),
-                  game_device_data.sr_output_srv.get(),
-                  output_rtv,
-                  output_texture_desc.Width,
-                  output_texture_desc.Height);
+            DrawCustomPixelShader(
+               native_device_context,
+               device_data.default_depth_stencil_state.get(),
+               device_data.default_blend_state.get(),
+               device_data.sampler_state_linear.get(),
+               device_data.native_vertex_shaders[CompileTimeStringHash("Scale VS")].get(),
+               device_data.native_pixel_shaders[CompileTimeStringHash("Scale PS")].get(),
+               game_device_data.sr_output_srv.get(),
+               output_rtv,
+               output_texture_desc.Width,
+               output_texture_desc.Height);
 
-               device_data.sr_output_color = nullptr; // SR output is the pooled texture linked to TAA output, so clear the main SR output reference to avoid confusion. The pooled texture is accessed via the upscale tracking system, not the main SR output slot.
-               game_device_data.sr_output_srv = nullptr;
+            device_data.sr_output_color = nullptr;
+            game_device_data.sr_output_srv = nullptr;
 
-               draw_state_stack.Restore(native_device_context);
-               compute_state_stack.Restore(native_device_context);
-               return DrawOrDispatchOverrideType::Replaced;
+            draw_state_stack.Restore(native_device_context);
+            compute_state_stack.Restore(native_device_context);
+            return DrawOrDispatchOverrideType::Replaced;
             }
             else
             {
@@ -886,7 +907,7 @@ public:
          if (output_supports_uav)
          {
             device_data.sr_output_color = nullptr;
-            game_device_data.sr_output_srv = nullptr;
+         game_device_data.sr_output_srv = nullptr;
          }
          draw_state_stack.Restore(native_device_context);
          compute_state_stack.Restore(native_device_context);
@@ -993,21 +1014,6 @@ public:
             ReplaceUpscaledInputs(
                native_device_context, game_device_data.upscale_tracking,
                is_compute, &upscale_srv_swapped);
-#endif
-#if DEVELOPMENT
-            {
-               const std::shared_lock lock_trace(s_mutex_trace);
-               if (trace_running)
-               {
-                  const std::shared_lock lock_generic(s_mutex_generic);
-                  const std::unique_lock lock_trace_2(cmd_list_data.mutex_trace);
-                  const std::lock_guard<std::recursive_mutex> lock_dumping(s_mutex_dumping);
-                  const std::shared_lock lock_device(device_data.mutex);
-                  AddTraceDrawCallData(cmd_list_data.trace_draw_calls_data, device_data, native_device_context, cmd_list_data.pipeline_state_original_vertex_shader.handle, shader_cache, last_draw_dispatch_data, device_data.resource_upgrades.original_resource_views_to_mirrored_upgraded_resource_views);
-                  if (cmd_list_data.pipeline_state_original_pixel_shader.handle != 0)
-                     AddTraceDrawCallData(cmd_list_data.trace_draw_calls_data, device_data, native_device_context, cmd_list_data.pipeline_state_original_pixel_shader.handle, shader_cache, last_draw_dispatch_data, device_data.resource_upgrades.original_resource_views_to_mirrored_upgraded_resource_views);
-               }
-            }
 #endif
             return DrawOrDispatchOverrideType::None;
          }
@@ -1165,23 +1171,6 @@ public:
                }
                Log_Debug(reshade::log::level::debug, pre_draw_log);
             }
-#endif
-#if DEVELOPMENT
-            {
-               const std::shared_lock lock_trace(s_mutex_trace);
-               if (trace_running)
-               {
-                  const std::shared_lock lock_generic(s_mutex_generic);
-                  const std::unique_lock lock_trace_2(cmd_list_data.mutex_trace);
-                  const std::lock_guard<std::recursive_mutex> lock_dumping(s_mutex_dumping);
-                  const std::shared_lock lock_device(device_data.mutex);
-                  AddTraceDrawCallData(cmd_list_data.trace_draw_calls_data, device_data, native_device_context, cmd_list_data.pipeline_state_original_vertex_shader.handle, shader_cache, last_draw_dispatch_data, device_data.resource_upgrades.original_resource_views_to_mirrored_upgraded_resource_views);
-                  if (cmd_list_data.pipeline_state_original_pixel_shader.handle != 0)
-                     AddTraceDrawCallData(cmd_list_data.trace_draw_calls_data, device_data, native_device_context, cmd_list_data.pipeline_state_original_pixel_shader.handle, shader_cache, last_draw_dispatch_data, device_data.resource_upgrades.original_resource_views_to_mirrored_upgraded_resource_views);
-               }
-            }
-#endif
-#if DEVELOPMENT || TEST
             {
                const uint32_t active_hash = static_cast<uint32_t>(original_shader_hashes.pixel_shaders[0]);
                char log_buf[256];
@@ -1859,13 +1848,14 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
       // auto_texture_format_upgrade_shader_hashes[std::stoul("75DFE4B0", nullptr, 16)] = {{0}, {}}; // Main game tonemapping
       // auto_texture_format_upgrade_shader_hashes[std::stoul("18EF8C72", nullptr, 16)] = {{0}, {}}; // Title screen tonemapping
       // auto_texture_format_upgrade_shader_hashes[std::stoul("DD4C5B74", nullptr, 16)] = {{0}, {}}; // Post-processing / swapchain
-      //  TAA seed: upgrade its output RTV 0 and scale it render_resolution -> output_resolution.
-      {
-         AutoTextureFormatUpgradeShaderHash taa_upgrade;
-         taa_upgrade.rtv_slots = {0};
-         taa_upgrade.scale = true;
-         auto_texture_format_upgrade_shader_hashes[std::stoul("0DF0A97D", nullptr, 16)] = taa_upgrade; // TAA
-      }
+      //  TAA seed: upgrade its output RTV 0 (RGBA16F, required by the copy conversion paths) and scale it
+      //  render_resolution -> output_resolution.
+      //  {
+      //    AutoTextureFormatUpgradeShaderHash taa_upgrade;
+      //    taa_upgrade.rtv_slots = {0};
+      //    taa_upgrade.scale = false;
+      //    auto_texture_format_upgrade_shader_hashes[std::stoul("0DF0A97D", nullptr, 16)] = taa_upgrade; // TAA
+      //  }
 
       enable_samplers_upgrade = true;
 

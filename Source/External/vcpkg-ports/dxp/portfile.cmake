@@ -1,10 +1,10 @@
 # Keep the SHA512 in sync with the released zip (bump together with the version).
 if(VCPKG_TARGET_ARCHITECTURE STREQUAL "x86")
     set(DXP_ARCH "x86")
-    set(DXP_SHA512 "503889c876d48dfb5d29395ca0baf30efe36e0fe558de7d6261153399ff8761bdbf5f5e6cd836fdfe81e550b048c94270cf9333fc2a6de229e6da6f5bf3e88b5")
+    set(DXP_SHA512 "b1335e775de2da845007be313a6bc308d6e28d622a7b9bd813cf4030c997feffb4aceedffb75fea99cceb7911df73e3c70a0dc21592b8814b95f3260b1f9ed32")
 elseif(VCPKG_TARGET_ARCHITECTURE STREQUAL "x64")
     set(DXP_ARCH "x64")
-    set(DXP_SHA512 "17cdcc24094c957f28724553942bf0aa664c99cb135c69d2a046af9b4a84e05ba62128db106f846a65a396edf13871bfddb9cf311c89cbf72712bff5ee5cb716")
+    set(DXP_SHA512 "cf7a69460272ba4b4f05cac6f73344ce2bf58c9127e5e9f834077df0bac213410b1286a3118dbe4f75ca54d87b975e06c997acae62996a348fe812a419ea65d1")
 else()
     message(FATAL_ERROR "DXP supports only x64 and x86, got ${VCPKG_TARGET_ARCHITECTURE}")
 endif()
