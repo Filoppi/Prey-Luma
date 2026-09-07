@@ -115,7 +115,7 @@ void frag_main()
         float3 color = float3(_460, _461, _462);
         float3 color_bt2020 = BT709_To_BT2020(color);
         color_bt2020.xyz = LumaSettings.GameSettings.UseVanillaGamutRatio == 1 ? mad(cb0_m19.y, color - color_bt2020, color_bt2020) : color_bt2020;
-        color = BT2020_To_BT709(color_bt2020);
+        color = (color_bt2020);
         _488 = color.z;
         _489 = color.y;
         _490 = color.x;
