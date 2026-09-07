@@ -97,18 +97,18 @@ public:
       CustomAspectRatio = 1 << 4,
       // All mip chain sizes based starting from the highest resolution between rendering and swapchain resolution (they should generally have the same aspect ratio anyway) to 1.
       // This can be useful for blur passes etc, if they used power of 2 mips, instead of simply halving the base resolution.
-      Mips = 1 << 5,
+      Mips = 1 << 6,
       // Upgrade textures cubes (of all sizes), these are sometimes used by old games to do reflections (e.g. Burnout Revenge cars reflections)
-      Cubes = 1 << 6,
+      Cubes = 1 << 7,
       // Checks the swapchain/output resolution width only (e.g. used by games that add horizontal lines, like "Thumper" or "Beyond: Two Souls").
       // These are usually hard to match to an aspect ratio without using the "CustomAspectRatio" with a manually found aspect ratio,
       // and thus mips like bloom might be missing
-      SwapchainResolutionWidth = 1 << 7,
-      SwapchainResolutionHeight = 1 << 8,
+      SwapchainResolutionWidth = 1 << 8,
+      SwapchainResolutionHeight = 1 << 9,
       // Avoid upgrading 1x1 textures
-      No1Px = 1 << 9,
+      No1Px = 1 << 12,
       // Custom sizes (width/height pairs) to match for upgrades.
-      CustomSize = 1 << 10,
+      CustomSize = 1 << 5,
       // "None" needs to be != 0, and specify all the negating flags
       None = No1Px,
    };
