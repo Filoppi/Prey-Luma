@@ -273,7 +273,13 @@ bool ResourceUpgradeManager::FindOrCreateIndirectUpgradedResource(
          const float render_aspect = state.render_resolution.x / state.render_resolution.y;
          const bool matches_render = !is_1x1 && !is_2x2 && render_aspect >= (min_aspect - FLT_EPSILON) && render_aspect <= (max_aspect + FLT_EPSILON);
          if (matches_render)
-            needs_scale = true;
+         {
+            if (in_source_resource == 0)
+               needs_scale = true;
+            else
+               needs_scale = source_desc.texture.width == (uint32_t)state.output_resolution.x
+                  && source_desc.texture.height == (uint32_t)state.output_resolution.y;
+         }
       }
       // Keep the original (render) size for the mirror bookkeeping, before the scale override below.
       const uint32_t original_width = target_desc.texture.width;
