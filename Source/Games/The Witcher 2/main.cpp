@@ -72,10 +72,12 @@ static bool g_hide_ui = false;    // hide the game's HUD (for clean screenshots)
 // XeGTAO knobs CB slot, must match "register(b9)" in Luma_TW2_XeGTAO.hlsl. Not b11: core's DrawBloom owns
 // that slot for its own constants.
 static constexpr UINT kGTAOKnobsCBSlot = 9;
-// XeGTAO calibration knobs (DEV sliders, shipped at calibrated values).
-static float g_gtao_final_value_power = 1.f; // primary darkness dial (user-calibrated: matches the vanilla AO histogram, mean 0.90 vs native 0.89)
-static float g_gtao_depth_scale = 1.f;       // viewZ divisor (game units -> ~meters); dial against broad over-occlusion
-static float g_gtao_radius_override = 0.f;   // > 0 overrides the shader's EFFECT_RADIUS (view units after DepthScale)
+// XeGTAO calibration knobs (DEV sliders). DepthScale and RadiusOverride ship at their calibrated values;
+// FinalValuePower does NOT - 2.2 is a preference, while 1.0 is the value whose AO histogram matches the
+// game's own HBAO (mean 0.90 against native 0.89).
+static float g_gtao_final_value_power = 2.2f; // primary darkness dial (higher = darker)
+static float g_gtao_depth_scale = 1.f;        // viewZ divisor (game units -> ~meters); dial against broad over-occlusion
+static float g_gtao_radius_override = 0.f;    // > 0 overrides the shader's EFFECT_RADIUS (view units after DepthScale)
 #if DEVELOPMENT || TEST
 static int g_gtao_debug_view = 0; // 0=off 1=depth gradient 2=normals 3=AO x8 4=edges (shader honors it under DEVELOPMENT too)
 #endif
@@ -1159,7 +1161,7 @@ public:
       ImGui::BeginDisabled(!g_gtao_enable);
       ImGui::SliderFloat("GTAO Final Value Power", &g_gtao_final_value_power, 0.3f, 4.5f, "%.2f");
       if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-         ImGui::SetTooltip("Primary darkness dial (higher = darker AO). Calibrated to 1.0 here: the native HBAO histogram mean is 0.89 against XeGTAO's 0.90.");
+         ImGui::SetTooltip("Primary darkness dial (higher = darker AO). Shipped at 2.2 by preference; 1.0 is the value that matches the native HBAO histogram, mean 0.89 against XeGTAO's 0.90.");
       ImGui::SliderFloat("GTAO Depth Scale", &g_gtao_depth_scale, 0.01f, 200.f, "%.2f", ImGuiSliderFlags_Logarithmic);
       if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
          ImGui::SetTooltip("viewZ divisor (game depth units -> meters). Stays 1.0 in this game: its depth buffer is already LINEAR view-space metres (measured p50 7.3, max 686).");
