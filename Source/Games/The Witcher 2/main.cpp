@@ -32,7 +32,9 @@ static constexpr uint32_t kTonemapAdaptiveTint = 0x00E31BF9;   // DX9 0xF01A691E
 // Final grade (FXAA + gamma + tints + vignette), last pass before UI; hosts the HDR block and the SMAA hook.
 static constexpr uint32_t kFinalGrade = 0xDE5CF9CD;
 static constexpr uint32_t kFinalGradeNoAA = 0xCF3B72A9;       // game AA off: no FXAA block, scene alpha passed through
-static constexpr uint32_t kFinalGradeNoVignette = 0xBABBFFAD; // no FXAA and no vignette; dump-verified as the last perm
+static constexpr uint32_t kFinalGradeNoVignette = 0xBABBFFAD; // no FXAA and no vignette
+// FXAA on, vignette off: the fourth corner of the 2x2 permutation matrix.
+static constexpr uint32_t kFinalGradeAANoVignette = 0x058E2498;
 // Native SSAO generator (HBAO variant, VS 0x5D9D0449): half-res r32_float LINEAR view depth at t0 -> half-res
 // r8g8b8a8 (.x = AO, .y = viewZ). Only this draw is replaced; the vanilla chain downstream reads just .x:
 // pack 0x953119B5 -> ping-pong 0xC131C40D x2 -> blur 0xD01CBD13 x2 -> apply 0x5C63E1C2.
@@ -50,6 +52,7 @@ static constexpr uint32_t kTonemapAdaptiveTint_v281 = 0xB293C5B1;
 static constexpr uint32_t kFinalGrade_v281 = 0x517DC6D5;
 static constexpr uint32_t kFinalGradeNoAA_v281 = 0xBBFEC706;
 static constexpr uint32_t kFinalGradeNoVignette_v281 = 0x2CA0631E;
+static constexpr uint32_t kFinalGradeAANoVignette_v281 = 0xA966D512;
 static constexpr uint32_t kAOGen_v281 = 0x6EC596CA;
 static constexpr uint32_t kAOPack_v281 = 0x495E9133;
 
@@ -236,11 +239,11 @@ class TheWitcher2Game final : public Game
       return true;
    }
 
-   // Any of the three final-grade permutations (FXAA and vignette are compiled in or out independently); all
-   // three host the Luma HDR block through the same shader file.
+   // Any of the four final-grade permutations (FXAA and vignette are compiled in or out independently); all
+   // four host the Luma HDR block through the same shader file.
    static bool IsFinalGrade(const ShaderHashesList<OneShaderPerPipeline>& shader_hashes)
    {
-      return ContainsPixelShader(shader_hashes, kFinalGrade, kFinalGrade_v281) || ContainsPixelShader(shader_hashes, kFinalGradeNoAA, kFinalGradeNoAA_v281) || ContainsPixelShader(shader_hashes, kFinalGradeNoVignette, kFinalGradeNoVignette_v281);
+      return ContainsPixelShader(shader_hashes, kFinalGrade, kFinalGrade_v281) || ContainsPixelShader(shader_hashes, kFinalGradeNoAA, kFinalGradeNoAA_v281) || ContainsPixelShader(shader_hashes, kFinalGradeNoVignette, kFinalGradeNoVignette_v281) || ContainsPixelShader(shader_hashes, kFinalGradeAANoVignette, kFinalGradeAANoVignette_v281);
    }
 
    // dgVoodoo sometimes leaves blending ENABLED on a secondary render target while RT0 has it off. D3D9 has one
