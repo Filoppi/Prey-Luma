@@ -15,6 +15,7 @@ namespace CB
 		float2 InvOutputRes;
 		float RenderScale;
 		float InvRenderScale;
+        uint FrameIndex;
     };
 
     struct LumaGameData

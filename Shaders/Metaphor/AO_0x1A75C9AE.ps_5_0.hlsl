@@ -76,9 +76,9 @@ void main(
 	{
 		float2 noiseSampleCoord = float2(0.03125,0.03125) * v0.xy;
 		r1.yzw = randomTexture.Sample(linearSampler_s, noiseSampleCoord).xyz;
-		if(LumaSettings.GameSettings.SRType == 1) //only DLSS for now FSR needs less aggresive spatial blur
+		if(LumaSettings.SRType == 1) //only DLSS for now, current spatial denoise makes noise look like features to FSR
 		{
-			uint2 randomOffset = uint2(RandomFromIndex(LumaSettings.FrameIndex), RandomFromIndex2(LumaSettings.FrameIndex));
+			uint2 randomOffset = uint2(RandomFromIndex(LumaSettings.GameSettings.FrameIndex), RandomFromIndex2(LumaSettings.GameSettings.FrameIndex));
 			noiseSampleCoord = float2(0.03125,0.03125) * (v0.xy + randomOffset);
 			r1.zw = randomTexture.Sample(linearSampler_s, noiseSampleCoord).yz;
 		}

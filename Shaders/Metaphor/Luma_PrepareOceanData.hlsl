@@ -23,6 +23,7 @@ struct VSCONST_OCEAN_PREV_DATA
     float4x4 mtxLocalToWorldPrev;
     float4x4 mtxViewProjPrev;
 	float2 TexShiftPrev;
+	float2 Pad;
 };
 
 ByteAddressBuffer CachedTexShift : register(t0);
