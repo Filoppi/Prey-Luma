@@ -461,6 +461,8 @@ struct GameDeviceDataMetaphor final : public GameDeviceData
    // std::vector<ComPtr<ID3D11Texture2D>> bayer_matrix_textures;
    // std::vector<ComPtr<ID3D11ShaderResourceView>> bayer_matrix_texture_srvs;
 
+   ComPtr<ID3D10Multithread> multithread;
+
    ComPtr<ID3D11Texture2D> noise_texture;
    ComPtr<ID3D11ShaderResourceView> noise_texture_srv;
 
@@ -874,6 +876,8 @@ public:
 
          game_device_data.draw_contexts[i].ocean_buffer = std::make_unique<StretchyBuffer>(native_device, context.get(), 32);
       }
+
+      native_device->QueryInterface(game_device_data.multithread.put());
 
       // no taa but needed for DLSS indicator in UI
       device_data.taa_detected = true;
@@ -2344,15 +2348,6 @@ public:
 
       cb_luma_global_settings.SRType = SrActive(device_data) ? (uint(device_data.sr_type) + 1) : 0;
       device_data.cb_luma_global_settings_dirty = true;
-
-      // flip model present makes dlss stumble in some situations
-      // flushing every frame seems to at least slightly mitigate it
-      if (swapchain_upgrade_type != SwapchainUpgradeType::None)
-      {
-         ComPtr<ID3D11DeviceContext> native_device_context;
-         native_device->GetImmediateContext(native_device_context.put());
-         native_device_context->Flush();
-      }
    }
 
    static void OnExecuteSecondaryCommandList(reshade::api::command_list* cmd_list, reshade::api::command_list* secondary_cmd_list)
@@ -2654,9 +2649,23 @@ public:
             draw_data.vert_fov = context_data.fov;
             draw_data.reset = device_data.force_reset_sr;
 
+            bool multithread_protected = game_device_data.multithread ? game_device_data.multithread->GetMultithreadProtected() == TRUE : false;
+
+            bool locked = false;
+            if (game_device_data.multithread && multithread_protected)
+            {
+               game_device_data.multithread->Enter();
+               locked = true;
+            }
+
             bool dlss_succeeded = sr_implementations[device_data.sr_type]->Draw(sr_instance_data, native_device_context.get(), draw_data);
             game_device_data.has_drawn_upscaling = dlss_succeeded;
             device_data.has_drawn_sr = dlss_succeeded;
+
+            if (locked)
+            {
+               game_device_data.multithread->Leave();
+            }
          }
          {
             ComPtr<ID3D11Device> device;
