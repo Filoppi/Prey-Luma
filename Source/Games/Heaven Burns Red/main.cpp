@@ -6,6 +6,7 @@
 #define CHECK_GRAPHICS_API_COMPATIBILITY 1
 #define DISABLE_SWAPCHAIN_FLIP_MODEL 1
 #define ENABLE_POST_DRAW_DISPATCH_CALLBACK 1
+#define ALLOW_SHADERS_DUMPING_WITH_NAME 1
 
 #include "..\..\Core\core.hpp"
 #include "..\..\Core\includes\shader_patching.h"
@@ -15,6 +16,9 @@ namespace
    static const int msaa_values[] = { 2, 4, 8 };
    int msaa_index = 0;
    int enable_alpha_to_coverage = 0;
+   int enable_character_supersampling = 0;
+   
+   ShaderHashesList shader_hashes_skinning;
 }
 
 struct SHEXHeader
@@ -192,12 +196,85 @@ bool PatchPixelShader(std::vector<std::byte>& shader_code)
    return is_alpha_tested;
 }
 
+void PatchCharacterPixelShader(std::vector<std::byte>& shader_code)
+{
+   DXBCHeader* dxbc_header = (DXBCHeader*)&shader_code[0];
+
+   for (uint32_t i = 0; i < dxbc_header->chunk_count; ++i)
+   {
+      if (strncmp((const char*)&shader_code[dxbc_header->chunk_offsets[i]], "SHEX", 4) == 0)
+      {
+         std::byte* shex = &shader_code[dxbc_header->chunk_offsets[i]];
+         SHEXHeader* shex_header = (SHEXHeader*)shex;
+         
+         uint32_t pos = 16;
+         
+         for (;;)
+         {
+            D3D10_SB_OPCODE_TYPE opcode_type = DECODE_D3D10_SB_OPCODE_TYPE(*(uint32_t*)(shex + pos));
+            uint32_t len;
+            if (opcode_type != D3D10_SB_OPCODE_CUSTOMDATA)
+            {
+               len = DECODE_D3D10_SB_TOKENIZED_INSTRUCTION_LENGTH(*(uint32_t*)(shex + pos));
+            }
+            else
+            {
+               len = *(uint32_t*)(shex + pos + 4);
+            }
+            
+            if (opcode_type == D3D10_SB_OPCODE_DCL_OUTPUT)
+            {
+               break;
+            }
+            
+            if (opcode_type == D3D10_SB_OPCODE_DCL_INPUT_PS)
+            {
+               uint32_t opcode = *(uint32_t*)(shex + pos);
+               D3D10_SB_INTERPOLATION_MODE interpolation_mode = DECODE_D3D10_SB_INPUT_INTERPOLATION_MODE(opcode);
+               switch (interpolation_mode)
+               {
+                  case D3D10_SB_INTERPOLATION_LINEAR:
+                     interpolation_mode = D3D10_SB_INTERPOLATION_LINEAR_SAMPLE;
+                     break;
+                  case D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE:
+                     interpolation_mode = D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_SAMPLE;
+                     break;
+                  default:
+                     break;
+               }
+               
+               opcode &= ~D3D10_SB_INPUT_INTERPOLATION_MODE_MASK;
+               opcode |= ENCODE_D3D10_SB_INPUT_INTERPOLATION_MODE(interpolation_mode);
+               
+               *(uint32_t*)(shex + pos) = opcode;
+            }
+            
+            if (pos + len * 4 >= shex_header->chunk_size + 8)
+            {
+               break;
+            }
+
+            pos += len * 4;
+         }
+      }
+   }
+
+   dxbc_header->file_size = shader_code.size();
+   Hash::MD5::Digest md5_digest = CalcDXBCHash(shader_code.data(), shader_code.size());
+   std::memcpy(&dxbc_header->hash, &md5_digest.data, DXBCHeader::hash_size);
+}
+
 struct GameDeviceHeavenBurnsRed final : public GameDeviceData
 {
    std::unordered_map<ID3D11BlendState*, ComPtr<ID3D11BlendState>> alpha_blend_states;
-   std::unordered_map<uint32_t, com_ptr<ID3D11PixelShader>> modified_pixel_shaders;
+   std::unordered_map<uint32_t, ComPtr<ID3D11PixelShader>> modified_atoc_pixel_shaders;
+   std::unordered_map<uint32_t, ComPtr<ID3D11PixelShader>> modified_character_pixel_shaders;
+   std::unordered_map<uint32_t, std::vector<std::byte>> pixel_shader_code;
+   
+   std::unordered_set<ID3D11Buffer*> skinned_vertex_buffers;
+   
+   // Immediate context only
    bool is_current_rtv_ms = false;
-   bool blend_state_changed = false;
 };
 
 class HeavenBurnsRed final : public Game
@@ -277,7 +354,13 @@ public:
                std::vector<std::byte> shader_code((const std::byte*)original_shader_desc->code, ((const std::byte*)original_shader_desc->code) + original_shader_desc->code_size);
 
                uint32_t hash = Shader::BinToHash((const uint8_t*)original_shader_desc->code, original_shader_desc->code_size);
-
+               
+               std::vector<std::byte> code;
+               code.resize(original_shader_desc->code_size);
+               memcpy(&code[0], original_shader_desc->code, original_shader_desc->code_size);
+               game_device_data.pixel_shader_code[hash] = std::move(code);
+               
+               // Better build the shader list here than check per draw
                bool is_alpha_tested_shader = PatchPixelShader(shader_code);
                
                if (!is_alpha_tested_shader)
@@ -287,7 +370,7 @@ public:
                com_ptr<ID3D11PixelShader> patched_shader;
                native_device->CreatePixelShader(shader_code.data(), shader_code.size(), nullptr, &patched_shader);
 
-               game_device_data.modified_pixel_shaders[hash] = patched_shader;
+               game_device_data.modified_atoc_pixel_shaders[hash] = patched_shader.get();
             }
          }
       }
@@ -327,6 +410,43 @@ public:
       game_device_data.is_current_rtv_ms = desc.texture.samples > 1;
    }
    
+   static ID3D11PixelShader* GetCharacterPixelShader(
+      uint32_t pixel_shader_hash,
+      ID3D11Device* native_device,
+      GameDeviceHeavenBurnsRed& game_device_data)
+   {
+      auto shader_it = game_device_data.modified_character_pixel_shaders.find(pixel_shader_hash);
+   
+      if (shader_it != game_device_data.modified_character_pixel_shaders.end())
+      {
+         return shader_it->second.get();
+      }
+      else
+      {
+         const auto shader_code_it = game_device_data.pixel_shader_code.find(pixel_shader_hash);
+         if (shader_code_it == game_device_data.pixel_shader_code.cend())
+         {
+            return nullptr;
+         }
+
+         std::vector<std::byte> shader_code = shader_code_it->second;
+         
+         PatchCharacterPixelShader(shader_code);
+         
+#if DEVELOPMENT
+         reshade::log::message(reshade::log::level::debug, std::format("Character Pixel Shader Patched: 0x{:08X}", pixel_shader_hash).c_str());
+#endif
+
+         HRESULT hr = native_device->CreatePixelShader(shader_code.data(), shader_code.size(), nullptr, game_device_data.modified_character_pixel_shaders[pixel_shader_hash].put());
+         if (FAILED(hr))
+         {
+            game_device_data.modified_character_pixel_shaders.erase(pixel_shader_hash);
+            return nullptr;
+         }
+         return game_device_data.modified_character_pixel_shaders[pixel_shader_hash].get();
+      }
+   }
+   
    DrawOrDispatchOverrideType OnDrawOrDispatch(
       ID3D11Device* native_device,
       ID3D11DeviceContext* native_device_context,
@@ -336,47 +456,91 @@ public:
       bool is_custom_pass, bool& updated_cbuffers,
       std::function<void()>* original_draw_dispatch_func) override
    {
-      if (enable_alpha_to_coverage == 0)
-         return DrawOrDispatchOverrideType::None;
+      auto& game_device_data = GetGameDeviceData(device_data);
+      if (enable_character_supersampling)
+      {
+         if (original_shader_hashes.Contains(shader_hashes_skinning))
+         {
+            ComPtr<ID3D11UnorderedAccessView> uavs[5] = {};
+
+            native_device_context->CSGetUnorderedAccessViews(0, 5, reinterpret_cast<ID3D11UnorderedAccessView**>(uavs));
+
+            for (const auto& uav : uavs)
+            {
+               if (!uav)
+                  continue;
+
+               ComPtr<ID3D11Resource> resource;
+               uav->GetResource(resource.put());
+
+               ComPtr<ID3D11Buffer> buffer;
+               if (SUCCEEDED(resource->QueryInterface(buffer.put())))
+                  game_device_data.skinned_vertex_buffers.insert(buffer.get());
+            }
+         }
+      }
       
       if ((stages & reshade::api::shader_stage::pixel) == 0)
          return DrawOrDispatchOverrideType::None;
-
-      auto& game_device_data = GetGameDeviceData(device_data);
       
-      auto shader_it = game_device_data.modified_pixel_shaders.find(original_shader_hashes.pixel_shaders[0]);
+      if (original_shader_hashes.pixel_shaders.empty())
+         return DrawOrDispatchOverrideType::None;
       
-      if (shader_it != game_device_data.modified_pixel_shaders.end())
+      if (game_device_data.is_current_rtv_ms)
       {
-         if (game_device_data.is_current_rtv_ms)
+         if (enable_alpha_to_coverage)
          {
-            ComPtr<ID3D11BlendState> blend_state;
-            FLOAT blend_factor[4];
-            UINT sample_mask;
-
-            native_device_context->OMGetBlendState(blend_state.put(), blend_factor, &sample_mask);
-            const auto blend_state_replacement = game_device_data.alpha_blend_states.find(blend_state.get());
-            if (blend_state_replacement != game_device_data.alpha_blend_states.end())
+            auto shader_it = game_device_data.modified_atoc_pixel_shaders.find(original_shader_hashes.pixel_shaders[0]);
+         
+            if (shader_it != game_device_data.modified_atoc_pixel_shaders.end())
             {
-               native_device_context->OMSetBlendState(blend_state_replacement->second.get(), blend_factor, sample_mask);
-               //reshade::log::message(reshade::log::level::info, "Blend State: Replaced.");
+               ComPtr<ID3D11BlendState> blend_state;
+               FLOAT blend_factor[4];
+               UINT sample_mask;
+
+               native_device_context->OMGetBlendState(blend_state.put(), blend_factor, &sample_mask);
+               const auto blend_state_replacement = game_device_data.alpha_blend_states.find(blend_state.get());
+               if (blend_state_replacement != game_device_data.alpha_blend_states.end())
+               {
+                  native_device_context->OMSetBlendState(blend_state_replacement->second.get(), blend_factor, sample_mask);
+                  //reshade::log::message(reshade::log::level::info, "Blend State: Replaced.");
+               }
+               else
+               {
+                  D3D11_BLEND_DESC desc;
+                  blend_state->GetDesc(&desc);
+                  desc.AlphaToCoverageEnable = true;
+                  ComPtr<ID3D11BlendState> new_blend_state;
+                  native_device->CreateBlendState(&desc, new_blend_state.put());
+                  game_device_data.alpha_blend_states[blend_state.get()] = new_blend_state;
+                  native_device_context->OMSetBlendState(new_blend_state.get(), blend_factor, sample_mask);
+               }
+               
+               native_device_context->PSSetShader(shader_it->second.get(), nullptr, 0);
+               (*original_draw_dispatch_func)();
+               native_device_context->OMSetBlendState(blend_state.get(), blend_factor, sample_mask);
+               
+               return DrawOrDispatchOverrideType::Replaced;
+            }
+         }
+         
+         if (enable_character_supersampling)
+         {
+            auto shader_it = game_device_data.modified_character_pixel_shaders.find(original_shader_hashes.pixel_shaders[0]);
+            if (shader_it != game_device_data.modified_character_pixel_shaders.end())
+            {
+               native_device_context->PSSetShader(shader_it->second.get(), nullptr, 0);
             }
             else
             {
-               D3D11_BLEND_DESC desc;
-               blend_state->GetDesc(&desc);
-               desc.AlphaToCoverageEnable = true;
-               ComPtr<ID3D11BlendState> new_blend_state;
-               native_device->CreateBlendState(&desc, new_blend_state.put());
-               game_device_data.alpha_blend_states[blend_state.get()] = new_blend_state;
-               native_device_context->OMSetBlendState(new_blend_state.get(), blend_factor, sample_mask);
+               ComPtr<ID3D11Buffer> vertex_buffer;
+               native_device_context->IAGetVertexBuffers(0, 1, vertex_buffer.put(), nullptr, nullptr);
+               if (game_device_data.skinned_vertex_buffers.contains(vertex_buffer.get()))
+               {
+                  native_device_context->PSSetShader(GetCharacterPixelShader(original_shader_hashes.pixel_shaders[0], native_device, game_device_data), nullptr, 0);
+               }
             }
-            
-            native_device_context->PSSetShader(shader_it->second.get(), nullptr, 0);
-            (*original_draw_dispatch_func)();
-            native_device_context->OMSetBlendState(blend_state.get(), blend_factor, sample_mask);
-            
-            return DrawOrDispatchOverrideType::Replaced;
+            return DrawOrDispatchOverrideType::None;
          }
       }
       
@@ -389,8 +553,9 @@ public:
    {
       auto& game_device_data = GetGameDeviceData(device_data);
       
+      game_device_data.skinned_vertex_buffers.clear();
+      
       game_device_data.is_current_rtv_ms = false;
-      game_device_data.blend_state_changed = false;
    }
    
    void LoadConfigs() override
@@ -398,6 +563,7 @@ public:
       reshade::api::effect_runtime* runtime = nullptr;
       reshade::get_config_value(runtime, NAME, "MSAA", msaa_index);
       reshade::get_config_value(runtime, NAME, "AlphaToCoverage", enable_alpha_to_coverage);
+      reshade::get_config_value(runtime, NAME, "SuperSampling", enable_character_supersampling);
    }
    
    void DrawImGuiSettings(DeviceData& device_data) override
@@ -415,6 +581,11 @@ public:
       if (ImGui::SliderInt("Alpha To Coverage", &enable_alpha_to_coverage, 0, 1, labels_toggle[enable_alpha_to_coverage]))
       {
          reshade::set_config_value(runtime, NAME, "AlphaToCoverage", enable_alpha_to_coverage);
+      }
+      
+      if (ImGui::SliderInt("Character Supersampling", &enable_character_supersampling, 0, 1, labels_toggle[enable_character_supersampling]))
+      {
+         reshade::set_config_value(runtime, NAME, "SuperSampling", enable_character_supersampling);
       }
    }
    
@@ -438,6 +609,19 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
       force_disable_display_composition = true;
       
       enable_samplers_upgrade = false; // Exit hang
+      
+      shader_hashes_skinning.compute_shaders = {
+         0x1169398B,
+         0x46D63650,
+         0x778CD6B1,
+         0xC7D613CC,
+         0xFB8B5077,
+         0x15236F79,
+         0x1A08AE68,
+         0x79BE3FB5,
+         0x9963F2F1,
+         0xB3F6C938,
+      };
 
       game = new HeavenBurnsRed();
    }
