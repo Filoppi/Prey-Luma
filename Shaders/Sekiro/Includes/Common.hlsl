@@ -9,6 +9,63 @@
 #define HDR_SHOULDERSTART GS.TonemapperRolloffStart / GamePaperWhiteNits
 #define HDR_MAXEXPECTED GS.TonemapperMaxExpected / GamePaperWhiteNits
 
+/////////////////////////////////////////////////////////////////////////////////////
+
+float3 RestoreHueAndChrominanceUcsInternal(float3 targetUcs, float3 sourceUcs, float currentChrominance, float hueStrength, float chrominanceStrength, float minChromaRatio = 0.f)
+{
+  if (targetUcs.x == 0) return targetUcs;
+
+  if (hueStrength != 0.0)
+  {
+    const float chrominancePre = currentChrominance;
+    targetUcs.yz = lerp(targetUcs.yz, sourceUcs.yz, hueStrength);
+    const float chrominancePost = length(targetUcs.yz);
+    float chrominanceRatio = safeDivision(chrominancePre, chrominancePost, 1);
+    targetUcs.yz *= chrominanceRatio;
+  }
+
+  if (chrominanceStrength != 0.0)
+  {
+    const float sourceChrominance = length(sourceUcs.yz);
+    float targetChrominanceRatio = safeDivision(sourceChrominance, currentChrominance, 1);
+    targetChrominanceRatio = clamp(targetChrominanceRatio, minChromaRatio, FLT_MAX);
+    targetUcs.yz *= lerp(1.0, targetChrominanceRatio, chrominanceStrength);
+  }
+
+  return targetUcs;
+}
+
+float3 RestoreHueAndChrominanceUcs(float3 targetUcs, float3 sourceUcs, float hueStrength, float chrominanceStrength, float minChromaRatio = 0.f)
+{
+  return RestoreHueAndChrominanceUcsInternal(targetUcs, sourceUcs, length(targetUcs.yz), hueStrength, chrominanceStrength, minChromaRatio);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////
+
+// https://www.desmos.com/calculator/vyegkra6zo
+float ReinhardSekiro(float x, float4 g_ReinhardParam, float4 g_ToneMapParam)
+{
+  float2 r0;
+  r0.x = (0.2 * x) / (1 - x);
+  r0.x = g_ReinhardParam.y * r0.x;
+  r0.x = pow(r0.x, g_ReinhardParam.x);
+  r0.y = 1 + r0.x;
+  r0.x = r0.x / r0.y;
+  r0.x = pow(r0.x, rcp(g_ToneMapParam.y));
+  return r0.x;
+}
+
+float3 ReinhardSekiro(float3 x, float4 g_ReinhardParam, float4 g_ToneMapParam)
+{
+  return float3(
+    ReinhardSekiro(x.x, g_ReinhardParam, g_ToneMapParam),
+    ReinhardSekiro(x.y, g_ReinhardParam, g_ToneMapParam),
+    ReinhardSekiro(x.z, g_ReinhardParam, g_ToneMapParam)
+  );
+}
+
+/////////////////////////////////////////////////////////////////////////////////////
+
 // in/out gamma encoded BT709
 float3 HDRTonemap(float3 x) {
   float p = HDR_PEAK;

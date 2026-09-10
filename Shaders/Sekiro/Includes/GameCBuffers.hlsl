@@ -9,8 +9,7 @@ namespace CB
 {
 	struct LumaGameSettings
 	{
-		float GameSetting01;
-		uint GameSetting02;
+		float UIBrightnessRatio;
 	};
 	
 	struct LumaGameData

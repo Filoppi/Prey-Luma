@@ -36,10 +36,9 @@ cbuffer cbToneMap : register(b1)
   float4 g_vCameraParam : packoffset(c25);
 }
 
-
-
 // 3Dmigoto declarations
 #define cmp -
+#include "./Includes/Common.hlsl"
 
 void main(
   float4 v0 : SV_Position0,
@@ -50,17 +49,7 @@ void main(
   uint4 bitmask, uiDest;
   float4 fDest;
 
-  r0.x = (0.2 * v1.x) / (1 - v1.x);
-
-  r0.x = g_ReinhardParam.y * r0.x;
-  r0.x = pow(r0.x, g_ReinhardParam.x);
-  
-  r0.y = 1 + r0.x;
-  r0.x = r0.x / r0.y;
-
-  r0.x = pow(r0.x, rcp(g_ToneMapParam.y));
-
-  o0.xyz = r0.x;
+  o0.xyz = ReinhardSekiro(v1.x, g_ReinhardParam, g_ToneMapParam);
 
   o0.w = 1;
   return;

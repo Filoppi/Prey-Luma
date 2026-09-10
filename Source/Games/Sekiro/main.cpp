@@ -146,6 +146,21 @@ namespace
       }
    }
 
+   namespace ConstBuffer
+   {
+      void OnInit()
+      {
+         luma_settings_cbuffer_index = 13;
+         luma_data_cbuffer_index = 12;
+         
+         cb_luma_global_settings.GameSettings.UIBrightnessRatio = default_luma_global_game_settings.UIBrightnessRatio = 1.0f;
+      }
+
+      void OnLoad()
+      {
+         reshade::get_config_value(nullptr, NAME, "UIBrightnessRatio", cb_luma_global_settings.GameSettings.UIBrightnessRatio);
+      }
+   }
    
    namespace ResourceGather
    {
@@ -288,9 +303,8 @@ class GameSekiro final : public Game
 public:
    void OnInit(bool async) override
    {
-      // Luma cb
-      luma_settings_cbuffer_index = 13;
-      luma_data_cbuffer_index = 12;
+      // ConstBuffers
+      ConstBuffer::OnInit();
 
       // Shader Defines
       ShaderDefineInfo::OnInit();
@@ -323,11 +337,26 @@ public:
 
    }
 
+   void LoadConfigs() override
+   {
+      // ConstBuffers
+      ConstBuffer::OnLoad();
+   }
+
    void DrawImGuiSettings(DeviceData& device_data) override
    {
       ImGui::Separator();
 
       ShaderDefineInfo::UIToggleCheckmark(ShaderDefineInfo::TONEMAP_BT2020, "Tonemap BT2020", "Do per-channel tonemap in BT2020 instead of BT709.");
+
+      if (bool is_need_clamp_1 = cb_luma_global_settings.GameSettings.UIBrightnessRatio > 1.0f && cb_luma_global_settings.DisplayMode == DisplayModeType::SDR;
+         ImGui::SliderFloat("UI Brightness Ratio", &cb_luma_global_settings.GameSettings.UIBrightnessRatio, 0.0f, cb_luma_global_settings.DisplayMode == DisplayModeType::HDR ? 2.0f : 1.0f, "%.2f") || is_need_clamp_1)
+      {
+         if (is_need_clamp_1) cb_luma_global_settings.GameSettings.UIBrightnessRatio = 1.0f;
+         reshade::set_config_value(nullptr, NAME, "UIBrightnessRatio", cb_luma_global_settings.GameSettings.UIBrightnessRatio);
+      }
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Simple brightness multiplier on UI.");
+      DrawResetButton(cb_luma_global_settings.GameSettings.UIBrightnessRatio, default_luma_global_game_settings.UIBrightnessRatio, nullptr);
       
       if (DEVELOPMENT) ImGui::Separator();
    }

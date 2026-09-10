@@ -37,8 +37,8 @@ void main(
 
   r0.x = 0.100000024 * uiMaxLumScale;
   r0.yzw = HDRScene.Sample(PointSampler_s, v2.xy).xyz;
-  r0.yzw = float3(2.009233,2.009233,2.009233) * r0.yzw;
-  r0.yzw = pow(r0.yzw, 1.5);
+  // r0.yzw = 2.009233 * r0.yzw;
+  // r0.yzw = pow(r0.yzw, 1.5);
 
   r0.yzw = HDRTonemap(r0.yzw);
 
@@ -62,7 +62,7 @@ void main(
   r0.x = cmp(0 < r1.x);
   r1.xyz = r0.xxx ? r1.yzw : 0;
   r0.xyz = rangeAdj ? r1.xyz : r0.yzw;
-  r1.xyz = /* uiMaxLumScale * */ r2.xyz; // comment out = max is 1
+  r1.xyz = /* uiMaxLumScale * */GS.UIBrightnessRatio * r2.xyz; // comment out = max is 1
   r1.xyz = r0.xyz * r2.www + r1.xyz;
   r0.xyz = noUIBlend ? r0.xyz : r1.xyz;
 

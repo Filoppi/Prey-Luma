@@ -21,7 +21,7 @@ Texture2D<float4> UIScene : register(t1);
 
 // 3Dmigoto declarations
 #define cmp -
-
+#include "./Includes/Common.hlsl"
 
 void main(
   float4 v0 : SV_Position0,
@@ -35,6 +35,13 @@ void main(
 
   r0.xyz = HDRScene.Sample(PointSampler_s, v2.xy).xyz;
   r1.xyzw = UIScene.Sample(PointSampler_s, v2.xy).xyzw;
+
+  if (GS.UIBrightnessRatio < 1) {
+     r1.xyz = pow(r1.xyz, 2.2);
+     r1.xyz *= GS.UIBrightnessRatio;
+     r1.xyz = pow(r1.xyz, 1/2.2);
+  }
+
   r0.xyz = r0.xyz * r1.www + r1.xyz;
   r0.xyz = log2(r0.xyz);
   r0.xyz = outputGammaForSDR * r0.xyz;
