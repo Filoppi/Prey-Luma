@@ -37,9 +37,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
       prevent_fullscreen_state = true;
       
       swapchain_format_upgrade_type  = TextureFormatUpgradesType::AllowedEnabled;
-      swapchain_upgrade_type = SwapchainUpgradeType::scRGB;
+      swapchain_upgrade_type         = SwapchainUpgradeType::scRGB;
       
-      texture_format_upgrades_type   = TextureFormatUpgradesType::None;
+      texture_format_upgrades_type = TextureFormatUpgradesType::AllowedEnabled;
+      texture_upgrade_formats = {};
+      texture_format_upgrades_2d_size_filters = 0;
 
       // force_disable_display_composition = true;
 
