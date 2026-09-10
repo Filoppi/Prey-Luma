@@ -38,9 +38,10 @@ void main(
   r0.x = 0.100000024 * uiMaxLumScale;
   r0.yzw = HDRScene.Sample(PointSampler_s, v2.xy).xyz;
   r0.yzw = float3(2.009233,2.009233,2.009233) * r0.yzw;
-  r0.yzw = log2(r0.yzw);
-  r0.yzw = float3(1.5,1.5,1.5) * r0.yzw;
-  r0.yzw = exp2(r0.yzw);
+  r0.yzw = pow(r0.yzw, 1.5);
+
+  r0.yzw = HDRTonemap(r0.yzw);
+
   r1.x = dot(float3(0.298999995,0.587000012,0.114), r0.yzw);
   r1.y = -uiMaxLumScale + r1.x;
   r1.z = -r1.y / r0.x;
@@ -61,43 +62,52 @@ void main(
   r0.x = cmp(0 < r1.x);
   r1.xyz = r0.xxx ? r1.yzw : 0;
   r0.xyz = rangeAdj ? r1.xyz : r0.yzw;
-  r1.xyz = uiMaxLumScale * r2.xyz;
+  r1.xyz = /* uiMaxLumScale * */ r2.xyz; // comment out = max is 1
   r1.xyz = r0.xyz * r2.www + r1.xyz;
   r0.xyz = noUIBlend ? r0.xyz : r1.xyz;
 
-  // r0.xyz = log2(r0.xyz);
-  // r0.xyz = float3(2.20000005,2.20000005,2.20000005) * r0.xyz;
-  // r0.xyz = exp2(r0.xyz);
-    r0.xyz = pow(r0.xyz, 2.2);
-
-  // PQ Encode
-  if (DVS2) {
-    // color matrix convert (BT709 -> BT2020)
-    r1.x = dot(r0.xyz, mtxColorConvert._m00_m10_m20);
-    r1.y = dot(r0.xyz, mtxColorConvert._m01_m11_m21);
-    r1.z = dot(r0.xyz, mtxColorConvert._m02_m12_m22);
-
-    r0.xyz = 0.02 * r1.xyz;
-    r0.xyz = pow(r0.xyz, 0.25);
-    r0.xyz = r0.xyz * float3(0.99609375,0.99609375,0.99609375) + float3(0.001953125,0.001953125,0.001953125);
-    r0.w = 0;
-    r1.x = PQEncodeLUT.Sample(LinearClampSampler_s, r0.xw).x;
-    r1.y = PQEncodeLUT.Sample(LinearClampSampler_s, r0.yw).x;
-    r1.z = PQEncodeLUT.Sample(LinearClampSampler_s, r0.zw).x;
-  } else {
-    // r0.xyz *= DVS1;
-    // r1.xyz = Linear_to_PQ(r0.xyz, GCT_POSITIVE);
-    r1.xyz = r0.xyz;
-  }
+  // PQ Encode (doubles BT2020 perchannel tonemap)
+//   if (false) {
+//     r0.xyz = pow(r0.xyz, 2.2);
+// 
+//     // color matrix convert (BT709 -> BT2020 + user saturation)
+//     r1.x = dot(r0.xyz, mtxColorConvert._m00_m10_m20);
+//     r1.y = dot(r0.xyz, mtxColorConvert._m01_m11_m21);
+//     r1.z = dot(r0.xyz, mtxColorConvert._m02_m12_m22);
+// 
+//     r0.xyz = 0.02 * r1.xyz;
+//     r0.xyz = pow(r0.xyz, 0.25);
+//     r0.xyz = r0.xyz * float3(0.99609375,0.99609375,0.99609375) + float3(0.001953125,0.001953125,0.001953125);
+//     r0.w = 0;
+//     r1.x = PQEncodeLUT.Sample(LinearClampSampler_s, r0.xw).x;
+//     r1.y = PQEncodeLUT.Sample(LinearClampSampler_s, r0.yw).x;
+//     r1.z = PQEncodeLUT.Sample(LinearClampSampler_s, r0.zw).x;
+//   } else {
+//     float p = PeakWhiteNits / GamePaperWhiteNits;
+// 
+//     r0.xyz = gamma_sRGB_to_linear(r0.xyz);
+//     // r0.xyz = r0.xyz / ((r0.xyz / p) + 1);
+//     r0.xyz = (r0.xyz * p) * rsqrt(r0.xyz * r0.xyz + p * p);
+//     r0.xyz = linear_to_sRGB_gamma(r0.xyz);
+// 
+//     r1.xyz = r0.xyz;
+//   }
 
   // noise & dither
+#if 0
   r0.x = dot(float2(171,231), v0.xy);
   r0.xyz = float3(0.0093457941,0.010309278,0.0149253728) * r0.xxx;
   r0.xyz = frac(r0.xyz);
   r0.xyz = float3(-0.5,-0.5,-0.5) + r0.xyz;
   r0.xyz = noiseIntensity * r0.xyz;
   r0.xyz = r0.xyz * float3(0.000977517106,0.000977517106,0.000977517106) + r1.xyz;
-  o0.xyz = enableDithering ? r0.xyz : r1.xyz;
+  r0.xyz = enableDithering ? r0.xyz : r1.xyz;
+#else
+  r0.xyz = r1.xyz;
+#endif
+
+  o0.xyz = r0.xyz;
   o0.w = 1;
+
   return;
 }
