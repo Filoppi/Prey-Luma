@@ -70,7 +70,6 @@ void main(
   // r0.xyz = exp2(r0.xyz);
     r0.xyz = pow(r0.xyz, 2.2);
 
-
   // PQ Encode
   if (DVS2) {
     // color matrix convert (BT709 -> BT2020)

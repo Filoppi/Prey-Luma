@@ -92,7 +92,9 @@ void main(
   // o0.xyz = pow(r0.xyz, 1/2.2); return; //debug
 
   if (g_bEnableFlags.z != 0) {
+    //// HDR ////
     // o0.xyz = float3(1,0,1); return; //debug
+
     r1.xyz = r0.xyz;
     
     // r1.xyz = log2(r1.xyz);
@@ -104,7 +106,7 @@ void main(
     r1.xyz = r1.xyz * float3(0.9375,0.9375,0.9375) + float3(0.03125,0.03125,0.03125);
     r1.xyz = g_ColorGradingLUTTexture.Sample(SS_ClampLinear_s, r1.xyz).xyz;
     r1.xyz = max(float3(0,0,0), r1.xyz);
-      o0.xyz = pow(r1.xyz, 1/* /2.2 */); return; //debug
+      // o0.xyz = pow(r1.xyz, 1/* /2.2 */); return; //debug
 
     r0.w = 1 / g_ToneMapParam.z;
 
@@ -117,9 +119,12 @@ void main(
     r2.xyz = max(float3(0.00999999978,0.00999999978,0.00999999978), r2.xyz); // safe
     r2.xyz = r1.xyz / r2.xyz;
     r0.w = 1 / g_ReinhardParam.x;
-    r2.xyz = log2(r2.xyz);
-    r2.xyz = r2.xyz * r0.www;
-    r2.xyz = exp2(r2.xyz);
+    
+    // r2.xyz = log2(r2.xyz);
+    // r2.xyz = r2.xyz * r0.www;
+    // r2.xyz = exp2(r2.xyz);
+      r2.xyz = pow(r2.xyz, r0.w);
+
     r0.w = dot(r2.xyz, float3(0.298909992,0.586610019,0.114480004));
 
     // r1.w = log2(r0.w);
@@ -158,6 +163,8 @@ void main(
 
     r1.xyz = float3(0.49770236,0.49770236,0.49770236) * r1.xyz;
   } else {
+    //// SDR ////
+    // o0.xyz = float3(1,0,1); return; //debug
 
     // r0.xyz = log2(r0.xyz);
     // r0.xyz = g_ToneMapParam.zzz * r0.xyz;
@@ -166,7 +173,6 @@ void main(
 
     r0.xyz = r0.xyz * float3(0.9375,0.9375,0.9375) + float3(0.03125,0.03125,0.03125);
     r1.xyz = g_ColorGradingLUTTexture.Sample(SS_ClampLinear_s, r0.xyz).xyz;
-
   }
 
   o0.xyz = r1.xyz;
