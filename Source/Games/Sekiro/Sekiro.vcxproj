@@ -180,7 +180,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Development-Release|Win32'" Label="Vcpkg" />
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Development-Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>..\..\External\reshade;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\External\reshade;..\..\External\FidelityFX;..\..\External\NGX;..\..\External\NVAPI;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <ExceptionHandling>Sync</ExceptionHandling>
@@ -197,7 +197,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <EnforceTypeConversionRules>true</EnforceTypeConversionRules>
       <LanguageStandard_C>stdclatest</LanguageStandard_C>
-      <ForcedIncludeFiles>%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <ForcedIncludeFiles>../../../Shaders/$(ProjectName)/Includes/GameCBuffers.hlsl;%(ForcedIncludeFiles)</ForcedIncludeFiles>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);_DEBUG;_WINDOWS</PreprocessorDefinitions>
@@ -212,10 +212,8 @@
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <Link>
-      <AdditionalDependencies>
-      </AdditionalDependencies>
-      <AdditionalLibraryDirectories>
-      </AdditionalLibraryDirectories>
+      <AdditionalDependencies>nvsdk_ngx_d.lib;ffx_backend_dx11_x64.lib;ffx_fsr3_x64.lib;ffx_frameinterpolation_x64.lib;ffx_fsr3upscaler_x64.lib;ffx_opticalflow_x64.lib;nvapi64.lib;</AdditionalDependencies>
+      <AdditionalLibraryDirectories>..\..\External\NGX\libs;..\..\External\FidelityFX\libs;..\..\External\NVAPI\amd64</AdditionalLibraryDirectories>
       <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
       <GenerateDebugInformation>DebugFull</GenerateDebugInformation>
       <ImportLibrary>
@@ -286,7 +284,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Publishing-Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>..\..\External\reshade;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\External\reshade;..\..\External\FidelityFX;..\..\External\NGX;..\..\External\NVAPI;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ExceptionHandling>Sync</ExceptionHandling>
       <InlineFunctionExpansion>Default</InlineFunctionExpansion>
       <LanguageStandard>stdcpplatest</LanguageStandard>
@@ -301,7 +299,7 @@
       <EnforceTypeConversionRules>true</EnforceTypeConversionRules>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard_C>stdclatest</LanguageStandard_C>
-      <ForcedIncludeFiles>%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <ForcedIncludeFiles>../../../Shaders/$(ProjectName)/Includes/GameCBuffers.hlsl;%(ForcedIncludeFiles)</ForcedIncludeFiles>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);_WINDOWS;NDEBUG</PreprocessorDefinitions>
@@ -316,10 +314,8 @@
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <Link>
-      <AdditionalDependencies>
-      </AdditionalDependencies>
-      <AdditionalLibraryDirectories>
-      </AdditionalLibraryDirectories>
+      <AdditionalDependencies>nvsdk_ngx_d.lib;ffx_backend_dx11_x64.lib;ffx_fsr3_x64.lib;ffx_frameinterpolation_x64.lib;ffx_fsr3upscaler_x64.lib;ffx_opticalflow_x64.lib;nvapi64.lib;</AdditionalDependencies>
+      <AdditionalLibraryDirectories>..\..\External\NGX\libs;..\..\External\FidelityFX\libs;..\..\External\NVAPI\amd64</AdditionalLibraryDirectories>
       <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <ImportLibrary>
@@ -335,7 +331,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Test-Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>..\..\External\reshade;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\External\reshade;..\..\External\FidelityFX;..\..\External\NGX;..\..\External\NVAPI;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ExceptionHandling>Sync</ExceptionHandling>
       <InlineFunctionExpansion>Default</InlineFunctionExpansion>
       <LanguageStandard>stdcpplatest</LanguageStandard>
@@ -350,7 +346,7 @@
       <EnforceTypeConversionRules>true</EnforceTypeConversionRules>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard_C>stdclatest</LanguageStandard_C>
-      <ForcedIncludeFiles>%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <ForcedIncludeFiles>../../../Shaders/$(ProjectName)/Includes/GameCBuffers.hlsl;%(ForcedIncludeFiles)</ForcedIncludeFiles>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);_WINDOWS;NDEBUG</PreprocessorDefinitions>
@@ -365,10 +361,8 @@
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <Link>
-      <AdditionalDependencies>
-      </AdditionalDependencies>
-      <AdditionalLibraryDirectories>
-      </AdditionalLibraryDirectories>
+      <AdditionalDependencies>nvsdk_ngx_d.lib;ffx_backend_dx11_x64.lib;ffx_fsr3_x64.lib;ffx_frameinterpolation_x64.lib;ffx_fsr3upscaler_x64.lib;ffx_opticalflow_x64.lib;nvapi64.lib;</AdditionalDependencies>
+      <AdditionalLibraryDirectories>..\..\External\NGX\libs;..\..\External\FidelityFX\libs;..\..\External\NVAPI\amd64</AdditionalLibraryDirectories>
       <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
       <GenerateDebugInformation>DebugFull</GenerateDebugInformation>
       <ImportLibrary>
@@ -384,7 +378,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Development-Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>..\..\External\reshade;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\External\reshade;..\..\External\FidelityFX;..\..\External\NGX;..\..\External\NVAPI;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ExceptionHandling>Sync</ExceptionHandling>
       <InlineFunctionExpansion>Default</InlineFunctionExpansion>
       <LanguageStandard>stdcpplatest</LanguageStandard>
@@ -399,7 +393,7 @@
       <EnforceTypeConversionRules>true</EnforceTypeConversionRules>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard_C>stdclatest</LanguageStandard_C>
-      <ForcedIncludeFiles>%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <ForcedIncludeFiles>../../../Shaders/$(ProjectName)/Includes/GameCBuffers.hlsl;%(ForcedIncludeFiles)</ForcedIncludeFiles>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);_WINDOWS;NDEBUG</PreprocessorDefinitions>
@@ -414,10 +408,8 @@
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <Link>
-      <AdditionalDependencies>
-      </AdditionalDependencies>
-      <AdditionalLibraryDirectories>
-      </AdditionalLibraryDirectories>
+      <AdditionalDependencies>nvsdk_ngx_d.lib;ffx_backend_dx11_x64.lib;ffx_fsr3_x64.lib;ffx_frameinterpolation_x64.lib;ffx_fsr3upscaler_x64.lib;ffx_opticalflow_x64.lib;nvapi64.lib;</AdditionalDependencies>
+      <AdditionalLibraryDirectories>..\..\External\NGX\libs;..\..\External\FidelityFX\libs;..\..\External\NVAPI\amd64</AdditionalLibraryDirectories>
       <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
       <GenerateDebugInformation>DebugFull</GenerateDebugInformation>
       <ImportLibrary>

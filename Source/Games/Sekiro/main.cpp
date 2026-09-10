@@ -1,22 +1,28 @@
-// ### Rename this ###
-#define GAME_TEMPLATE 1
+#define GAME_SEKIRO 1
+
+#define ENABLE_NGX 1
+#define ENABLE_FIDELITY_SK 1
+
+#define DISABLE_AUTO_DEBUGGER 1
+// #define ENABLE_NVAPI 1
+// #define DISABLE_SWAPCHAIN_FLIP_MODEL 1
 
 #include "..\..\Core\core.hpp"
 
-class GameTemplate final : public Game // ### Rename this to your game's name ###
+class GameSekiro final : public Game
 {
 public:
    void OnInit(bool async) override
    {
-      // ### Update these (find the right values) ###
-      // ### See the "GameCBuffers.hlsl" in the shader directory to expand settings ###
       luma_settings_cbuffer_index = 13;
       luma_data_cbuffer_index = 12;
+
+      auto_recompile_defines = true;
    }
 
    void PrintImGuiAbout() override
    {
-      ImGui::Text("Template Luma mod - about and credits section", ""); // ### Rename this ###
+      
    }
 };
 
@@ -24,32 +30,20 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 {
    if (ul_reason_for_call == DLL_PROCESS_ATTACH)
    {
-      Globals::SetGlobals(PROJECT_NAME, "Template Luma mod"); // ### Rename this ###
+      Globals::SetGlobals(PROJECT_NAME, "Sekiro - Luma");
       Globals::VERSION = 1;
 
+      force_borderless = true;
+      prevent_fullscreen_state = true;
+      
       swapchain_format_upgrade_type  = TextureFormatUpgradesType::AllowedEnabled;
-      swapchain_upgrade_type         = SwapchainUpgradeType::scRGB;
-      texture_format_upgrades_type   = TextureFormatUpgradesType::AllowedEnabled;
-      // ### Check which of these are needed and remove the rest ###
-      texture_upgrade_formats = {
-            reshade::api::format::r8g8b8a8_unorm,
-            reshade::api::format::r8g8b8a8_unorm_srgb,
-            reshade::api::format::r8g8b8a8_typeless,
-            reshade::api::format::r8g8b8x8_unorm,
-            reshade::api::format::r8g8b8x8_unorm_srgb,
-            reshade::api::format::b8g8r8a8_unorm,
-            reshade::api::format::b8g8r8a8_unorm_srgb,
-            reshade::api::format::b8g8r8a8_typeless,
-            reshade::api::format::b8g8r8x8_unorm,
-            reshade::api::format::b8g8r8x8_unorm_srgb,
-            reshade::api::format::b8g8r8x8_typeless,
+      swapchain_upgrade_type = SwapchainUpgradeType::scRGB;
+      
+      texture_format_upgrades_type   = TextureFormatUpgradesType::None;
 
-            reshade::api::format::r11g11b10_float,
-      };
-      // ### Check these if textures are not upgraded ###
-      texture_format_upgrades_2d_size_filters = 0 | (uint32_t)TextureFormatUpgrades2DSizeFilters::SwapchainResolution | (uint32_t)TextureFormatUpgrades2DSizeFilters::SwapchainAspectRatio;
+      // force_disable_display_composition = true;
 
-      game = new GameTemplate();
+      game = new GameSekiro();
    }
 
    CoreMain(hModule, ul_reason_for_call, lpReserved);
