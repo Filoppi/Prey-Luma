@@ -1,4 +1,4 @@
-#define GAME_METAPHOR 1
+#define GAME_METAPHOR_REFANTAZIO 1
 
 #define ALLOW_SHADERS_DUMPING 0
 #define ENABLE_DRAW_DISPATCH_DATA_CACHE 1
@@ -396,7 +396,7 @@ namespace
    ShaderHashesList shader_hashes_material;
 } // namespace
 
-struct GameDeviceDataMetaphor final : public GameDeviceData
+struct GameDeviceDataMetaphorReFantazio final : public GameDeviceData
 {
 #if ENABLE_SR
    // SR
@@ -467,11 +467,11 @@ struct GameDeviceDataMetaphor final : public GameDeviceData
    std::unordered_map<uint32_t, ComPtr<ID3D11PixelShader>> modified_pixel_shaders;
 };
 
-class Metaphor final : public Game
+class MetaphorReFantazio final : public Game
 {
-   static GameDeviceDataMetaphor& GetGameDeviceData(DeviceData& device_data)
+   static GameDeviceDataMetaphorReFantazio& GetGameDeviceData(DeviceData& device_data)
    {
-      return *static_cast<GameDeviceDataMetaphor*>(device_data.game);
+      return *static_cast<GameDeviceDataMetaphorReFantazio*>(device_data.game);
    }
 
    static bool SrActive(const DeviceData& device_data)
@@ -583,12 +583,12 @@ public:
       native_shaders_definitions.emplace(CompileTimeStringHash("Temporal AA Depth Without History"),
          ShaderDefinition{"Luma_TemporalAADepth", reshade::api::pipeline_subobject_type::compute_shader, nullptr, nullptr, {}});
 
-      reshade::register_event<reshade::addon_event::execute_secondary_command_list>(Metaphor::OnExecuteSecondaryCommandList);
-      reshade::register_event<reshade::addon_event::update_buffer_region_command>(Metaphor::OnUpdateBufferRegionCommand);
-      reshade::register_event<reshade::addon_event::create_pipeline>(Metaphor::OnCreatePipeline);
-      reshade::register_event<reshade::addon_event::init_resource>(Metaphor::OnInitResource);
-      reshade::register_event<reshade::addon_event::destroy_resource>(Metaphor::OnDestroyResource);
-      reshade::register_event<reshade::addon_event::init_command_list>(Metaphor::OnInitCommandList);
+      reshade::register_event<reshade::addon_event::execute_secondary_command_list>(MetaphorReFantazio::OnExecuteSecondaryCommandList);
+      reshade::register_event<reshade::addon_event::update_buffer_region_command>(MetaphorReFantazio::OnUpdateBufferRegionCommand);
+      reshade::register_event<reshade::addon_event::create_pipeline>(MetaphorReFantazio::OnCreatePipeline);
+      reshade::register_event<reshade::addon_event::init_resource>(MetaphorReFantazio::OnInitResource);
+      reshade::register_event<reshade::addon_event::destroy_resource>(MetaphorReFantazio::OnDestroyResource);
+      reshade::register_event<reshade::addon_event::init_command_list>(MetaphorReFantazio::OnInitCommandList);
    }
 
    void LoadConfigs() override
@@ -939,7 +939,7 @@ public:
       context_data.vsconst_transform_data_changed = true;
    }
 
-   static void UpdatePreviousTransformAndCache(bool has_pixel_shader, bool is_outline_pass, bool is_skinned_mesh, ID3D11Buffer* vertex_buffer, ID3D11DeviceContext* native_device_context, ContextTag context_tag, GameDeviceDataMetaphor& game_device_data, const ShaderHashesList<OneShaderPerPipeline>& original_shader_hashes)
+   static void UpdatePreviousTransformAndCache(bool has_pixel_shader, bool is_outline_pass, bool is_skinned_mesh, ID3D11Buffer* vertex_buffer, ID3D11DeviceContext* native_device_context, ContextTag context_tag, GameDeviceDataMetaphorReFantazio& game_device_data, const ShaderHashesList<OneShaderPerPipeline>& original_shader_hashes)
    {
       DrawContextData& context_data = game_device_data.draw_contexts[GetContextIndex(context_tag)];
       GFD_VSCONST_TRANSFORM vs_consts = context_data.vsconst_transform_data;
@@ -1052,7 +1052,7 @@ public:
       game_device_data.draw_contexts[GetContextIndex(context_tag)].vsconst_transform_data_changed = false;
    }
 
-   static ID3D11PixelShader* GetMotionVectorPixelShader(uint32_t vertex_shader_hash, uint32_t pixel_shader_hash, ID3D11Device* native_device, GameDeviceDataMetaphor& game_device_data)
+   static ID3D11PixelShader* GetMotionVectorPixelShader(uint32_t vertex_shader_hash, uint32_t pixel_shader_hash, ID3D11Device* native_device, GameDeviceDataMetaphorReFantazio& game_device_data)
    {
       game_device_data.pixel_shader_mutex.lock_shared();
       const auto pixel_shader_it = game_device_data.modified_pixel_shaders.find(pixel_shader_hash);
@@ -1117,7 +1117,7 @@ public:
       }
    }
 
-   static void ResolveSceneUI(ID3D11DeviceContext* native_device_context, ContextTag tag, GameDeviceDataMetaphor& game_device_data, DeviceData& device_data)
+   static void ResolveSceneUI(ID3D11DeviceContext* native_device_context, ContextTag tag, GameDeviceDataMetaphorReFantazio& game_device_data, DeviceData& device_data)
    {
       DrawContextData& context_data = game_device_data.draw_contexts[GetContextIndex(tag)];
 
@@ -2283,7 +2283,7 @@ public:
 
    void OnCreateDevice(ID3D11Device* native_device, DeviceData& device_data) override
    {
-      device_data.game = new GameDeviceDataMetaphor;
+      device_data.game = new GameDeviceDataMetaphorReFantazio;
    }
 
    void OnPresent(ID3D11Device* native_device, DeviceData& device_data) override
@@ -3095,7 +3095,7 @@ public:
 
    void PrintImGuiAbout() override
    {
-      ImGui::Text("Metaphor Luma mod - about and credits section", "");
+      ImGui::Text("Metaphor: ReFantazio Luma mod - about and credits section", "");
       ImGui::Text("Credits:\n"
                   "Idarion\n"
                   "Luma Framework: Pumbo\n"
@@ -3155,7 +3155,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 {
    if (ul_reason_for_call == DLL_PROCESS_ATTACH)
    {
-      Globals::SetGlobals(PROJECT_NAME, "Metaphor Luma mod");
+      Globals::SetGlobals(PROJECT_NAME, "Metaphor: ReFantazio Luma mod");
       Globals::DEVELOPMENT_STATE = Globals::ModDevelopmentState::Playable;
       Globals::VERSION = 1;
 
@@ -3254,16 +3254,16 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
       luma_settings_cbuffer_index = 8;
       luma_data_cbuffer_index = 9;
 
-      game = new Metaphor();
+      game = new MetaphorReFantazio();
    }
    else if (ul_reason_for_call == DLL_PROCESS_DETACH)
    {
-      reshade::unregister_event<reshade::addon_event::execute_secondary_command_list>(Metaphor::OnExecuteSecondaryCommandList);
-      reshade::unregister_event<reshade::addon_event::update_buffer_region_command>(Metaphor::OnUpdateBufferRegionCommand);
-      reshade::unregister_event<reshade::addon_event::create_pipeline>(Metaphor::OnCreatePipeline);
-      reshade::unregister_event<reshade::addon_event::init_resource>(Metaphor::OnInitResource);
-      reshade::unregister_event<reshade::addon_event::destroy_resource>(Metaphor::OnDestroyResource);
-      reshade::unregister_event<reshade::addon_event::init_command_list>(Metaphor::OnInitCommandList);
+      reshade::unregister_event<reshade::addon_event::execute_secondary_command_list>(MetaphorReFantazio::OnExecuteSecondaryCommandList);
+      reshade::unregister_event<reshade::addon_event::update_buffer_region_command>(MetaphorReFantazio::OnUpdateBufferRegionCommand);
+      reshade::unregister_event<reshade::addon_event::create_pipeline>(MetaphorReFantazio::OnCreatePipeline);
+      reshade::unregister_event<reshade::addon_event::init_resource>(MetaphorReFantazio::OnInitResource);
+      reshade::unregister_event<reshade::addon_event::destroy_resource>(MetaphorReFantazio::OnDestroyResource);
+      reshade::unregister_event<reshade::addon_event::init_command_list>(MetaphorReFantazio::OnInitCommandList);
    }
 
    CoreMain(hModule, ul_reason_for_call, lpReserved);

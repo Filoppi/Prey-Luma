@@ -4,7 +4,7 @@
 // Include this after the global "Settings.hlsl" file
 
 /////////////////////////////////////////
-// Metaphor LUMA advanced settings
+// Metaphor ReFantazio LUMA advanced settings
 /////////////////////////////////////////
 
 #endif // SRC_GAME_SETTINGS_HLSL

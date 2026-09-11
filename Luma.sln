@@ -99,7 +99,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Metro Redux", "Source\Games
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Kingdom Come Deliverance", "Source\Games\Kingdom Come Deliverance\Kingdom Come Deliverance.vcxproj", "{3FAC4E39-0051-42AC-89D5-CA74C3D5961B}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Metaphor", "Source\Games\Metaphor\Metaphor.vcxproj", "{6CC6AE7C-9E02-4497-B397-897332ED4805}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Metaphor: ReFantazio", "Source\Games\Metaphor ReFantazio\Metaphor ReFantazio.vcxproj", "{6CC6AE7C-9E02-4497-B397-897332ED4805}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Mortal Kombat 11", "Source\Games\Mortal Kombat 11\Mortal Kombat 11.vcxproj", "{8066E72F-C800-45D1-ADE9-F40D23430505}"
 EndProject
