@@ -290,24 +290,6 @@ M_INLINE bool IsOutsideFrustum(const float4x4& worldViewProj, const BoundingBox&
    return _mm_movemask_ps(test) != 0;
 }
 
-double MillisecondsNow()
-{
-   static LARGE_INTEGER s_frequency;
-   static BOOL s_use_qpc = QueryPerformanceFrequency(&s_frequency);
-   double milliseconds = 0;
-   if (s_use_qpc)
-   {
-      LARGE_INTEGER now;
-      QueryPerformanceCounter(&now);
-      milliseconds = double(1000.0 * now.QuadPart) / s_frequency.QuadPart;
-   }
-   else
-   {
-      milliseconds = double(GetTickCount64());
-   }
-   return milliseconds;
-}
-
 struct DrawContextData
 {
    GFD_VSCONST_TRANSFORM vsconst_transform_data;
@@ -369,7 +351,6 @@ struct DrawContextData
    float3 prev_eye_pos = {};
 
    // cached skinning data
-   std::atomic_bool skin_data_pending = false;
    std::unordered_map<ID3D11Buffer*, SkinCacheItem> pending_skin_cache;
    std::unique_ptr<StretchyBuffer> skin_buffer;
    std::unordered_map<ID3D11Buffer*, SkinCacheEntry> skin_lookup;
@@ -931,6 +912,10 @@ public:
 
    void CommitSkinCache(ID3D11DeviceContext* native_device_context, DrawContextData& context_data)
    {
+      if (context_data.pending_skin_cache.empty())
+      {
+         return;
+      }
       context_data.skin_buffer->Reset();
       context_data.skin_lookup.clear();
       for (const auto& it : context_data.pending_skin_cache)
@@ -946,7 +931,6 @@ public:
          context_data.skin_lookup[it.first] = cache_entry;
       }
       context_data.pending_skin_cache.clear();
-      context_data.skin_data_pending = true;
    }
 
    static void HandleTransformUpdate(ID3D11Buffer* buffer, const void* data, DrawContextData& context_data)
@@ -1305,19 +1289,6 @@ public:
       DrawOrDispatchOverrideType overrideType = DrawOrDispatchOverrideType::None;
       if (!context_data.frame_progress.Reached(FrameProgress::FrameStarted))
       {
-         {
-            const DrawContextData& previous_context_data = game_device_data.draw_contexts[GetPreviousContextIndex(GetContextIndex(context_tag))];
-            // usually this shouldn't happen but if the previous frame hasn't progressed to cache skin data we spin lock
-            // but give up after 10 ms so the whole application doesn't freeze
-            if (previous_context_data.skin_data_pending)
-            {
-               double start = MillisecondsNow();
-               while (!previous_context_data.skin_data_pending && MillisecondsNow() - start < 10)
-               {
-               }
-            }
-         }
-
          context_data.ocean_lookup.clear();
          context_data.ocean_buffer->Reset();
 
@@ -1650,13 +1621,72 @@ public:
          native_device_context->PSSetShaderResources(0, 1, context_data.bloom_texture_srv.get_addressof());
          native_device_context->Draw(4, 0);
 
-         return DrawOrDispatchOverrideType::Replaced;
+         overrideType = DrawOrDispatchOverrideType::Replaced;
       }
-
-      if (context_data.frame_progress.Reached(FrameProgress::OpaqueRenderingStarted) &&
-          !context_data.frame_progress.Reached(FrameProgress::BackgroundTonemapped))
+      else if (SrActive(device_data) &&
+          original_shader_hashes.pixel_shaders.size() > 0 &&
+          (original_shader_hashes.pixel_shaders.front() == 0xA7108284 || // tonemap background
+             original_shader_hashes.pixel_shaders.front() == 0xC1787BC6))
       {
-         if (original_shader_hashes.Contains(shader_hashes_tonemap))
+         CommitSkinCache(native_device_context, context_data);
+
+         native_device_context->Draw(4, 0);
+
+         ComPtr<ID3D11RenderTargetView> render_target_view;
+         native_device_context->OMGetRenderTargets(1, render_target_view.put(), nullptr);
+
+         ComPtr<ID3D11Resource> color_resource;
+         render_target_view->GetResource(color_resource.put());
+         color_resource->QueryInterface(context_data.source_color.put());
+         context_data.dest_color = context_data.source_color;
+
+         // split the command list since DLSS must be executed on an immediate context
+         ComPtr<ID3D11CommandList> command_list;
+         native_device_context->FinishCommandList(TRUE, command_list.put());
+         context_data.partial_command_lists.push_back(command_list);
+
+         context_data.frame_progress.SetReached(FrameProgress::BackgroundTonemapped);
+         device_data.has_drawn_main_post_processing = true;
+         overrideType = DrawOrDispatchOverrideType::Replaced;
+      }
+      else if (original_shader_hashes.pixel_shaders.size() > 0 &&
+               (original_shader_hashes.pixel_shaders.front() == 0xD8196629)) // apply lut
+      {
+         context_data.frame_progress.SetReached(FrameProgress::LutApplied);
+
+         // if there's no bloom or particle we use this as a second chance to inject super resolution
+         if (SrActive(device_data) &&
+             !context_data.frame_progress.Reached(FrameProgress::AddedParticles) &&
+             !context_data.frame_progress.Reached(FrameProgress::LutApplied) &&
+             context_data.depth_texture)
+         {
+            CommitSkinCache(native_device_context, context_data);
+
+            ComPtr<ID3D11ShaderResourceView> srv;
+            native_device_context->PSGetShaderResources(0, 1, srv.put());
+
+            ComPtr<ID3D11Resource> color_resource;
+            srv->GetResource(color_resource.put());
+            color_resource->QueryInterface(context_data.source_color.put());
+            context_data.dest_color = context_data.source_color;
+
+            // split the command list since DLSS must be executed on an immediate context
+            ComPtr<ID3D11CommandList> command_list;
+            native_device_context->FinishCommandList(TRUE, command_list.put());
+            context_data.partial_command_lists.push_back(command_list);
+         }
+         ID3D11SamplerState* sampler = device_data.sampler_state_linear.get();
+         native_device_context->PSSetSamplers(0, 1, &sampler);
+      }
+      else if (!context_data.frame_progress.Reached(FrameProgress::AddedParticles) &&
+               original_shader_hashes.pixel_shaders.size() > 0 &&
+               (original_shader_hashes.pixel_shaders.front() == 0xAC103037)) // add particles
+      {
+         context_data.frame_progress.SetReached(FrameProgress::AddedParticles);
+
+         // only apply sr when we have the necessary input resources
+         if (SrActive(device_data) &&
+             context_data.depth_texture)
          {
             CommitSkinCache(native_device_context, context_data);
 
@@ -1670,15 +1700,27 @@ public:
             color_resource->QueryInterface(context_data.source_color.put());
             context_data.dest_color = context_data.source_color;
 
+            ComPtr<ID3D11ShaderResourceView> particle_srv;
+            native_device_context->PSGetShaderResources(2, 1, particle_srv.put());
+
+            ComPtr<ID3D11Resource> particle_resource;
+            particle_srv->GetResource(particle_resource.put());
+
+            particle_resource->QueryInterface(context_data.particle_texture.put());
+
             // split the command list since DLSS must be executed on an immediate context
             ComPtr<ID3D11CommandList> command_list;
             native_device_context->FinishCommandList(TRUE, command_list.put());
             context_data.partial_command_lists.push_back(command_list);
 
-            context_data.frame_progress.SetReached(FrameProgress::BackgroundTonemapped);
-            device_data.has_drawn_main_post_processing = true;
-            return DrawOrDispatchOverrideType::Replaced;
+            overrideType = DrawOrDispatchOverrideType::Replaced;
          }
+      }
+      else if (context_data.frame_progress.Reached(FrameProgress::OpaqueRenderingStarted) &&
+          !context_data.frame_progress.Reached(FrameProgress::BackgroundTonemapped) &&
+          !context_data.frame_progress.Reached(FrameProgress::LutApplied) &&
+          !context_data.frame_progress.Reached(FrameProgress::AddedParticles))
+      {
          if (!SrActive(device_data) ||
              original_shader_hashes.vertex_shaders.empty() ||
              original_shader_hashes.pixel_shaders.empty())
@@ -1706,8 +1748,6 @@ public:
                cache_item.buffer = vertex_buffer;
                cache_item.size = bd.ByteWidth;
                cache_item.stride = stride;
-
-               context_data.skin_data_pending = true;
                context_data.pending_skin_cache[vertex_buffer.get()] = cache_item;
             }
          }
@@ -1901,42 +1941,6 @@ public:
 
          BindMotionVectorRenderTarget(native_device_context, context_data);
       }
-      else if (context_data.frame_progress.Reached(FrameProgress::BackgroundTonemapped) &&
-               !context_data.frame_progress.Reached(FrameProgress::AddedParticles) &&
-               original_shader_hashes.Contains(shader_hashes_merge_particles))
-      {
-         // only apply sr when we have the necessary input resources
-         if (SrActive(device_data) &&
-             context_data.depth_texture)
-         {
-            native_device_context->Draw(4, 0);
-
-            ComPtr<ID3D11RenderTargetView> render_target_view;
-            native_device_context->OMGetRenderTargets(1, render_target_view.put(), nullptr);
-
-            ComPtr<ID3D11Resource> color_resource;
-            render_target_view->GetResource(color_resource.put());
-            color_resource->QueryInterface(context_data.source_color.put());
-            context_data.dest_color = context_data.source_color;
-
-            ComPtr<ID3D11ShaderResourceView> particle_srv;
-            native_device_context->PSGetShaderResources(2, 1, particle_srv.put());
-
-            ComPtr<ID3D11Resource> particle_resource;
-            particle_srv->GetResource(particle_resource.put());
-
-            particle_resource->QueryInterface(context_data.particle_texture.put());
-
-            // split the command list since DLSS must be executed on an immediate context
-            ComPtr<ID3D11CommandList> command_list;
-            native_device_context->FinishCommandList(TRUE, command_list.put());
-            context_data.partial_command_lists.push_back(command_list);
-
-            overrideType = DrawOrDispatchOverrideType::Replaced;
-         }
-
-         context_data.frame_progress.SetReached(FrameProgress::AddedParticles);
-      }
       else if (SrActive(device_data) &&
                original_shader_hashes.Contains(shader_hashes_fxaa))
       {
@@ -1953,7 +1957,7 @@ public:
 
          native_device_context->CopySubresourceRegion(rtv_resource.get(), 0, 0, 0, 0, srv_resource.get(), 0, nullptr);
 
-         return DrawOrDispatchOverrideType::Skip;
+         overrideType = DrawOrDispatchOverrideType::Skip;
       }
       else if (SrActive(device_data) &&
                original_shader_hashes.Contains(shader_hashes_smaa_blending))
@@ -1982,34 +1986,8 @@ public:
 
             native_device_context->CopySubresourceRegion(rtv_resource.get(), 0, 0, 0, 0, srv_resource.get(), 0, nullptr);
 
-            return DrawOrDispatchOverrideType::Skip;
+            overrideType = DrawOrDispatchOverrideType::Skip;
          }
-      }
-      else if (original_shader_hashes.Contains(shader_hashes_lut))
-      {
-         // if there's no bloom or particle we use this as a second chance to inject super resolution
-         if (!context_data.frame_progress.Reached(FrameProgress::AddedParticles) &&
-             !context_data.frame_progress.Reached(FrameProgress::LutApplied) &&
-             SrActive(device_data) &&
-             context_data.depth_texture)
-         {
-            ComPtr<ID3D11ShaderResourceView> srv;
-            native_device_context->PSGetShaderResources(0, 1, srv.put());
-
-            ComPtr<ID3D11Resource> color_resource;
-            srv->GetResource(color_resource.put());
-            color_resource->QueryInterface(context_data.source_color.put());
-            context_data.dest_color = context_data.source_color;
-
-            // split the command list since DLSS must be executed on an immediate context
-            ComPtr<ID3D11CommandList> command_list;
-            native_device_context->FinishCommandList(TRUE, command_list.put());
-            context_data.partial_command_lists.push_back(command_list);
-         }
-         ID3D11SamplerState* sampler = device_data.sampler_state_linear.get();
-         native_device_context->PSSetSamplers(0, 1, &sampler);
-
-         context_data.frame_progress.SetReached(FrameProgress::LutApplied);
       }
       else if (original_shader_hashes.Contains(shader_hashes_dof_prepare) &&
                SrActive(device_data) &&
@@ -3187,7 +3165,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
       shader_hashes_tonemap.pixel_shaders.emplace(std::stoul("C1787BC6", nullptr, 16));
 
       shader_hashes_merge_particles.pixel_shaders.emplace(std::stoul("AC103037", nullptr, 16));
-      shader_hashes_merge_particles.pixel_shaders.emplace(std::stoul("CD84F54A", nullptr, 16));
 
       shader_hashes_fxaa.pixel_shaders.emplace(std::stoul("94D1203C", nullptr, 16));
 
