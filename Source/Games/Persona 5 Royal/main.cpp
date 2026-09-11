@@ -1,4 +1,4 @@
-#define GAME_PERSONA_5 1
+#define GAME_PERSONA_5_ROYAL 1
 
 #define ALLOW_SHADERS_DUMPING 0
 
@@ -152,7 +152,7 @@ namespace
    }
 } // namespace
 
-struct GameDeviceDataPersona5 final : public GameDeviceData
+struct GameDeviceDataPersona5Royal final : public GameDeviceData
 {
 #if ENABLE_SR
    // SR
@@ -205,11 +205,11 @@ struct GameDeviceDataPersona5 final : public GameDeviceData
    bool render_target_changed = false;
 };
 
-class Persona5 final : public Game
+class Persona5Royal final : public Game
 {
-   static GameDeviceDataPersona5& GetGameDeviceData(DeviceData& device_data)
+   static GameDeviceDataPersona5Royal& GetGameDeviceData(DeviceData& device_data)
    {
-      return *static_cast<GameDeviceDataPersona5*>(device_data.game);
+      return *static_cast<GameDeviceDataPersona5Royal*>(device_data.game);
    }
 
    static bool SrActive(const DeviceData& device_data)
@@ -225,12 +225,12 @@ public:
       native_shaders_definitions.emplace(CompileTimeStringHash("Merge"), ShaderDefinition{"Luma_CopyDsrResult", reshade::api::pipeline_subobject_type::compute_shader});
       native_shaders_definitions.emplace(CompileTimeStringHash("Copy RGB 1 A"), ShaderDefinition{"Luma_Copy_RGB", reshade::api::pipeline_subobject_type::pixel_shader});
 
-      reshade::register_event<reshade::addon_event::execute_secondary_command_list>(Persona5::OnExecuteSecondaryCommandList);
-      reshade::register_event<reshade::addon_event::bind_render_targets_and_depth_stencil>(Persona5::OnBindRenderTargetsAndDepthStencil);
-      reshade::register_event<reshade::addon_event::map_buffer_region>(Persona5::OnMapBufferRegion);
-      reshade::register_event<reshade::addon_event::update_buffer_region_command>(Persona5::OnUpdateBufferRegionCommand);
-      reshade::register_event<reshade::addon_event::create_resource>(Persona5::OnCreateResource);
-      reshade::register_event<reshade::addon_event::bind_viewports>(Persona5::OnBindViewports);
+      reshade::register_event<reshade::addon_event::execute_secondary_command_list>(Persona5Royal::OnExecuteSecondaryCommandList);
+      reshade::register_event<reshade::addon_event::bind_render_targets_and_depth_stencil>(Persona5Royal::OnBindRenderTargetsAndDepthStencil);
+      reshade::register_event<reshade::addon_event::map_buffer_region>(Persona5Royal::OnMapBufferRegion);
+      reshade::register_event<reshade::addon_event::update_buffer_region_command>(Persona5Royal::OnUpdateBufferRegionCommand);
+      reshade::register_event<reshade::addon_event::create_resource>(Persona5Royal::OnCreateResource);
+      reshade::register_event<reshade::addon_event::bind_viewports>(Persona5Royal::OnBindViewports);
 
       float4x4 identity = {};
       identity.m00 = 1.0f;
@@ -296,7 +296,7 @@ public:
       device_data.taa_detected = true;
    }
 
-   void SetupSr(ID3D11DeviceContext* native_device_context, GameDeviceDataPersona5& game_device_data, DeviceData& device_data)
+   void SetupSr(ID3D11DeviceContext* native_device_context, GameDeviceDataPersona5Royal& game_device_data, DeviceData& device_data)
    {
       ComPtr<ID3D11Device> device;
       native_device_context->GetDevice(device.put());
@@ -443,7 +443,7 @@ public:
       }
    }
 
-   ID3D11RenderTargetView* GetPostProcessRtv(const D3D11_TEXTURE2D_DESC& texture_desc, ID3D11Resource* resource, GameDeviceDataPersona5& game_device_data)
+   ID3D11RenderTargetView* GetPostProcessRtv(const D3D11_TEXTURE2D_DESC& texture_desc, ID3D11Resource* resource, GameDeviceDataPersona5Royal& game_device_data)
    {
       for (size_t i = 0; i < game_device_data.replacement_textures.size(); ++i)
       {
@@ -502,7 +502,7 @@ public:
       return replacement_texture.rtv.get();
    }
 
-   ID3D11RenderTargetView* GetPostProcessRtvOutputRes(ID3D11RenderTargetView* rtv, GameDeviceDataPersona5& game_device_data, uint2& resolution)
+   ID3D11RenderTargetView* GetPostProcessRtvOutputRes(ID3D11RenderTargetView* rtv, GameDeviceDataPersona5Royal& game_device_data, uint2& resolution)
    {
       ComPtr<ID3D11Resource> resource;
       rtv->GetResource(resource.put());
@@ -538,7 +538,7 @@ public:
       return GetPostProcessRtv(texture_desc, resource.get(), game_device_data);
    }
 
-   ID3D11RenderTargetView* GetPostProcessRtvScaled(ID3D11RenderTargetView* rtv, GameDeviceDataPersona5& game_device_data, uint2& resolution)
+   ID3D11RenderTargetView* GetPostProcessRtvScaled(ID3D11RenderTargetView* rtv, GameDeviceDataPersona5Royal& game_device_data, uint2& resolution)
    {
       ComPtr<ID3D11Resource> resource;
       rtv->GetResource(resource.put());
@@ -572,7 +572,7 @@ public:
       return GetPostProcessRtv(texture_desc, resource.get(), game_device_data);
    }
 
-   ID3D11ShaderResourceView* GetPostProcessSrv(ID3D11ShaderResourceView* srv, GameDeviceDataPersona5& game_device_data)
+   ID3D11ShaderResourceView* GetPostProcessSrv(ID3D11ShaderResourceView* srv, GameDeviceDataPersona5Royal& game_device_data)
    {
       ComPtr<ID3D11Resource> resource;
       srv->GetResource(resource.put());
@@ -590,7 +590,7 @@ public:
       return srv;
    }
 
-   static bool HandleTransformUpdate(ID3D11Buffer* buffer, const void* data, ID3D11DeviceContext* native_device_context, GameDeviceDataPersona5& game_device_data, DeviceData& device_data)
+   static bool HandleTransformUpdate(ID3D11Buffer* buffer, const void* data, ID3D11DeviceContext* native_device_context, GameDeviceDataPersona5Royal& game_device_data, DeviceData& device_data)
    {
       // the constant buffer GFD_VSCONST_TRANSFORM contains float4x4 mtxLocalToWorld, float4x4x mtxPrevLocalToWorld
       // though at least for objects attached to bones mtxPrevLocalToWorld actually contains a transform matrix for
@@ -987,7 +987,7 @@ public:
 
    void OnCreateDevice(ID3D11Device* native_device, DeviceData& device_data) override
    {
-      device_data.game = new GameDeviceDataPersona5;
+      device_data.game = new GameDeviceDataPersona5Royal;
    }
 
    void OnPresent(ID3D11Device* native_device, DeviceData& device_data) override
@@ -1386,7 +1386,7 @@ public:
 
    void PrintImGuiAbout() override
    {
-      ImGui::Text("Persona 5 Luma mod - about and credits section", "");
+      ImGui::Text("Persona 5 Royal Luma mod - about and credits section", "");
       ImGui::Text("xxHash Library\n"
                   "Copyright (c) 2012-2021 Yann Collet\n"
                   "All rights reserved.\n"
@@ -1420,7 +1420,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 {
    if (ul_reason_for_call == DLL_PROCESS_ATTACH)
    {
-      Globals::SetGlobals(PROJECT_NAME, "Persona 5 Luma mod");
+      Globals::SetGlobals(PROJECT_NAME, "Persona 5 Royal Luma mod");
       Globals::DEVELOPMENT_STATE = Globals::ModDevelopmentState::Finished;
       Globals::VERSION = 1;
 
@@ -1462,16 +1462,16 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
       swapchain_upgrade_type = SwapchainUpgradeType::None;
       force_disable_display_composition = true;
 
-      game = new Persona5();
+      game = new Persona5Royal();
    }
    else if (ul_reason_for_call == DLL_PROCESS_DETACH)
    {
-      reshade::unregister_event<reshade::addon_event::execute_secondary_command_list>(Persona5::OnExecuteSecondaryCommandList);
-      reshade::unregister_event<reshade::addon_event::bind_render_targets_and_depth_stencil>(Persona5::OnBindRenderTargetsAndDepthStencil);
-      reshade::unregister_event<reshade::addon_event::map_buffer_region>(Persona5::OnMapBufferRegion);
-      reshade::unregister_event<reshade::addon_event::update_buffer_region_command>(Persona5::OnUpdateBufferRegionCommand);
-      reshade::unregister_event<reshade::addon_event::create_resource>(Persona5::OnCreateResource);
-      reshade::unregister_event<reshade::addon_event::bind_viewports>(Persona5::OnBindViewports);
+      reshade::unregister_event<reshade::addon_event::execute_secondary_command_list>(Persona5Royal::OnExecuteSecondaryCommandList);
+      reshade::unregister_event<reshade::addon_event::bind_render_targets_and_depth_stencil>(Persona5Royal::OnBindRenderTargetsAndDepthStencil);
+      reshade::unregister_event<reshade::addon_event::map_buffer_region>(Persona5Royal::OnMapBufferRegion);
+      reshade::unregister_event<reshade::addon_event::update_buffer_region_command>(Persona5Royal::OnUpdateBufferRegionCommand);
+      reshade::unregister_event<reshade::addon_event::create_resource>(Persona5Royal::OnCreateResource);
+      reshade::unregister_event<reshade::addon_event::bind_viewports>(Persona5Royal::OnBindViewports);
    }
 
    CoreMain(hModule, ul_reason_for_call, lpReserved);
