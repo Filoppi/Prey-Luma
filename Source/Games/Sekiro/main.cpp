@@ -1,7 +1,7 @@
 #define GAME_SEKIRO 1
 
 #define ENABLE_NGX 1
-#define ENABLE_FIDELITY_SK 1
+// #define ENABLE_FIDELITY_SK 1
 
 #define DISABLE_AUTO_DEBUGGER 1
 // #define ENABLE_NVAPI 1
@@ -162,7 +162,7 @@ namespace
       }
    }
    
-   namespace ResourceGather
+   namespace ResourceGather //TODO: del
    {
       void OnDrawOrDispatch(ID3D11Device* native_device, ID3D11DeviceContext* native_device_context, CommandListData& cmd_list_data, DeviceData& device_data, uint32_t ps, uint32_t vs, uint32_t cs)
       {
@@ -172,26 +172,189 @@ namespace
          // AO resolve: 0xAE3D13DB
          // SRV0: depth, r32g8x24, full res
          // RTV0: AO results, rgba8, full res
-
-         // TAA0: 0xAD75DCC2
-         // SRV2: depth, r32g8x24, full res (same as AO)
-         
-         // TAA1: 0x113E91AB
-         // SRV0: current color, r11g11b10, full res
-         
-         // SRV3: motion vectors, rg16, full res
-         // TAA2: 0xCC15C41B (copies to history or something whatever...)
       }
    }
 
    namespace SRImp
    {
+      // TAA0: 0xAD75DCC2
+      // SRV2: depth, r32g8x24, full res (same as AO)
+      
+      // TAA1: 0x113E91AB
+      // SRV0: current color, r11g11b10, full res
+      // SRV3: motion vectors, rg16, full res
+      
+      // Sharpening: 0xCC15C41B
+
+      SR::SuperResolutionImpl::DrawData sr_dd = {};
+
       enum State : uint8_t
       {
-         FirstPS, //0xAD75DCC2
-         SecondPS, //0x113E91AB
-         ThirdPS, //0xCC15C41B
+         Setup, //0xAD75DCC2
+         Resolve, //0x113E91AB
+         Sharpen, //0xCC15C41B
+         Waiting,
+         Done,
       };
+      State state = State::Setup;
+
+      namespace Resources
+      {
+         ComPtr<ID3D11Resource> depth_res;
+         ComPtr<ID3D11Resource> colorin_res;
+         ComPtr<ID3D11Resource> colorout_res;
+         ComPtr<ID3D11Resource> mvs_res;
+         
+         ComPtr<ID3D11ShaderResourceView> colorout_srv;
+      }
+
+      namespace Jitter
+      {
+         std::array<float2, 4> jitters = {
+            float2(-1.f, -1.f),
+            float2( 1.f, -1.f),
+            float2(-1.f,  1.f),
+            float2( 1.f,  1.f),
+         };
+         uint i = 0;
+
+         float2 GetJitter()
+         {
+            float2 jitter = jitters[i];
+            return jitter;
+         }
+
+         void IncrementJitterIndex()
+         {
+            i = (i + 1) % jitters.size();
+         }
+      }
+      
+      // return: None continues exec. 
+      DrawOrDispatchOverrideType OnDrawOrDispatch(ID3D11Device* native_device, ID3D11DeviceContext* native_device_context, CommandListData& cmd_list_data, DeviceData& device_data, uint32_t ps, uint32_t vs, uint32_t cs)
+      {
+         if (device_data.sr_type == SR::Type::None || device_data.sr_suppressed) return DrawOrDispatchOverrideType::None;
+         
+         switch (state) 
+         {
+            case Setup:
+            {
+               if (ps != 0xAD75DCC2) break;
+
+               // depth
+               [[unlikely]] if (!Resources::depth_res.get())
+               {
+                  // SRV2
+                  ComPtr<ID3D11ShaderResourceView> srv2;
+                  native_device_context->PSGetShaderResources(2, 1, srv2.put());
+                  ASSERT_MSG(srv2.get(), "SRImp::OnDrawOrDispatch PSGetShaderResources(2) failed");
+
+                  // RES
+                  srv2->GetResource(Resources::depth_res.put());
+                  ASSERT_MSG(Resources::depth_res.get(), "SRImp::OnDrawOrDispatch srv2->GetResource failed");
+               }
+
+               state = Resolve;
+               return DrawOrDispatchOverrideType::Skip;
+            }
+            case Resolve:
+            {
+               if (ps != 0x113E91AB) break;
+               
+               // color in
+               // [[unlikely]] if (!Resources::color_res.get())
+               {
+                  // SRV0
+                  ComPtr<ID3D11ShaderResourceView> srv0;
+                  native_device_context->PSGetShaderResources(0, 1, srv0.put());
+                  ASSERT_MSG(srv0.get(), "SRImp::OnDrawOrDispatch PSGetShaderResources(0) failed");
+
+                  // RES
+                  srv0->GetResource(Resources::colorin_res.put());
+                  ASSERT_MSG(Resources::colorin_res.get(), "SRImp::OnDrawOrDispatch srv0->GetResource failed");
+               }
+               
+               // motion vectors
+               // [[unlikely]] if (!Resources::mvs_res.get())
+               {
+                  // SRV3
+                  ComPtr<ID3D11ShaderResourceView> srv3;
+                  native_device_context->PSGetShaderResources(3, 1, srv3.put());
+                  ASSERT_MSG(srv3.get(), "SRImp::OnDrawOrDispatch PSGetShaderResources(3) failed");
+
+                  // RES
+                  srv3->GetResource(Resources::mvs_res.put());
+                  ASSERT_MSG(Resources::mvs_res.get(), "SRImp::OnDrawOrDispatch srv3->GetResource failed");
+               }
+
+               // color out
+               // [[unlikely]] if (!Resources::colorout_res.get())
+               {
+                  // RTV0
+                  ComPtr<ID3D11RenderTargetView> rtv0;
+                  native_device_context->OMGetRenderTargets(1, rtv0.put(), nullptr);
+                  ASSERT_MSG(rtv0.get(), "SRImp::OnDrawOrDispatch OMGetRenderTargets(1) failed");
+                  
+                  // RES
+                  rtv0->GetResource(Resources::colorout_res.put());
+                  ASSERT_MSG(Resources::colorout_res.get(), "SRImp::OnDrawOrDispatch rtv0->GetResource failed");
+               }
+
+               auto sr_id = device_data.GetSRInstanceData();
+               sr_id->settings_data.auto_exposure = true;
+               sr_id->settings_data.render_width  = device_data.output_resolution.x;
+               sr_id->settings_data.render_height = device_data.output_resolution.y;
+               sr_id->settings_data.output_width  = device_data.output_resolution.x;
+               sr_id->settings_data.output_height = device_data.output_resolution.y;
+               sr_id->settings_data.render_preset = dlss_render_preset;
+               
+               sr_dd.source_color   = Resources::colorin_res.get();
+               sr_dd.output_color   = Resources::colorout_res.get();
+               sr_dd.motion_vectors = Resources::mvs_res.get();
+               sr_dd.depth_buffer   = Resources::depth_res.get();
+               sr_dd.render_width  = sr_id->settings_data.render_width;
+               sr_dd.render_height = sr_id->settings_data.render_height;
+               sr_dd.near_plane = 0;
+               sr_dd.far_plane = 1;
+               sr_dd.jitter_x = Jitter::GetJitter().x;
+               sr_dd.jitter_y = Jitter::GetJitter().y;
+               sr_dd.reset = device_data.force_reset_sr;
+
+               state = Sharpen;
+               return DrawOrDispatchOverrideType::Skip;
+            }
+            case Sharpen:
+            {
+               if (ps != 0xCC15C41B) break;
+               state = Waiting;
+               break;
+            }
+            case Waiting:
+            {
+               if (native_device_context->GetType() != D3D11_DEVICE_CONTEXT_IMMEDIATE) break;
+
+               reshade::log::message(reshade::log::level::info, std::format("SRImp::OnDrawOrDispatch: Drawn SR for ps {:08X} vs {:08X} cs {:08X}\n", ps, vs, cs).c_str());
+
+               // ASSERT_ONCE( );
+               // auto sr_id = device_data.GetSRInstanceData();
+               // sr_implementations[device_data.sr_type]->UpdateSettings(sr_id, native_device_context, sr_id->settings_data);
+               // device_data.has_drawn_sr = sr_implementations[device_data.sr_type]->Draw(sr_id, native_device_context, sr_dd);
+               // device_data.force_reset_sr = !device_data.has_drawn_sr;
+               
+               state = Done;
+               return DrawOrDispatchOverrideType::Skip;
+            }
+         }
+         
+         return DrawOrDispatchOverrideType::None;
+      }
+
+      void OnPresnt()
+      {
+         if (state == Waiting) ASSERT_ONCE_MSG(false, "SRImp::OnPresnt: Waiting state should have been resolved before present");
+         state = State::Setup;
+         Jitter::IncrementJitterIndex();
+      }
    }
 
    namespace MainColor16f
@@ -319,6 +482,10 @@ public:
       // MainColor16f
       MainColor16f::OnDrawOrDispatch(native_device, native_device_context, cmd_list_data, device_data, ps, vs, cs);
 
+      // SR
+      if (SRImp::OnDrawOrDispatch(native_device, native_device_context, cmd_list_data, device_data, ps, vs, cs) != DrawOrDispatchOverrideType::None)
+         return DrawOrDispatchOverrideType::Skip;
+
       // HDR Reinhard LUT Builder
       if (ps == 0xC0C87BF5)
       {
@@ -347,7 +514,8 @@ public:
 
    void OnPresent(ID3D11Device* native_device, DeviceData& device_data) override
    {
-
+      // SRImp
+      SRImp::OnPresnt();
    }
 
    void LoadConfigs() override
@@ -370,6 +538,34 @@ public:
       }
       if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Simple brightness multiplier on UI.");
       DrawResetButton(cb_luma_global_settings.GameSettings.UIBrightnessRatio, default_luma_global_game_settings.UIBrightnessRatio, nullptr);
+
+      ImGui::NewLine();
+
+      auto sr_id = device_data.GetSRInstanceData();
+      if (sr_id)
+      {
+         ImGui::Checkbox("MVS Jittered", &sr_id->settings_data.mvs_jittered);
+         ImGui::SliderFloat("MVS X Scale", &sr_id->settings_data.mvs_x_scale, 0.0f, 2.0f, "%.2f");
+         ImGui::SliderFloat("MVS Y Scale", &sr_id->settings_data.mvs_y_scale, 0.0f, 2.0f, "%.2f");
+         ImGui::Checkbox("Depth Inverted", &sr_id->settings_data.inverted_depth);
+      }
+
+      ImGui::NewLine();
+      
+      ImGui::SliderFloat("Jitter 0 X", &SRImp::Jitter::jitters[0].x, -1.0f, 1.0f, "%.2f"); 
+      ImGui::SliderFloat("Jitter 0 Y", &SRImp::Jitter::jitters[0].y, -1.0f, 1.0f, "%.2f");
+      ImGui::Spacing();
+      ImGui::SliderFloat("Jitter 1 X", &SRImp::Jitter::jitters[1].x, -1.0f, 1.0f, "%.2f");
+      ImGui::SliderFloat("Jitter 1 Y", &SRImp::Jitter::jitters[1].y, -1.0f, 1.0f, "%.2f");
+      ImGui::Spacing();
+      ImGui::SliderFloat("Jitter 2 X", &SRImp::Jitter::jitters[2].x, -1.0f, 1.0f, "%.2f");
+      ImGui::SliderFloat("Jitter 2 Y", &SRImp::Jitter::jitters[2].y, -1.0f, 1.0f, "%.2f");
+      ImGui::Spacing();
+      ImGui::SliderFloat("Jitter 3 X", &SRImp::Jitter::jitters[3].x, -1.0f, 1.0f, "%.2f");
+      ImGui::SliderFloat("Jitter 3 Y", &SRImp::Jitter::jitters[3].y, -1.0f, 1.0f, "%.2f");   
+      
+      if (ImGui::Button("Increment")) SRImp::Jitter::IncrementJitterIndex();
+      ImGui::SameLine(); ImGui::Text("i: %u", SRImp::Jitter::i);
       
       if (DEVELOPMENT) ImGui::Separator();
    }
