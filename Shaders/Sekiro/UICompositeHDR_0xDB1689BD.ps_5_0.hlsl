@@ -34,13 +34,17 @@ void main(
   float4 r0,r1,r2;
   uint4 bitmask, uiDest;
   float4 fDest;
+  o0.w = 1;
 
   r0.x = 0.100000024 * uiMaxLumScale;
   r0.yzw = HDRScene.Sample(PointSampler_s, v2.xy).xyz;
-  // r0.yzw = 2.009233 * r0.yzw;
+  // r0.yzw = 2.009233 * r0.yzw; // dumb corrections
   // r0.yzw = pow(r0.yzw, 1.5);
 
-  r0.yzw = HDRTonemap(r0.yzw);
+  if (GS.UIBrightnessRatio <= 0) {
+    o0.xyz = r0.yzw;
+    return;
+  }
 
   r1.x = dot(float3(0.298999995,0.587000012,0.114), r0.yzw);
   r1.y = -uiMaxLumScale + r1.x;
@@ -53,7 +57,7 @@ void main(
   r0.x = r1.z ? r0.x : r1.y;
   r0.x = uiMaxLumScale + r0.x;
   r0.x = r0.x + -r1.x;
-  
+
   r2.xyzw = UIScene.Sample(PointSampler_s, v2.xy).xyzw;
   r1.y = -r2.w * r2.w + 1;
   r0.x = r1.y * r0.x + r1.x;
@@ -93,7 +97,7 @@ void main(
 //     r1.xyz = r0.xyz;
 //   }
 
-  // noise & dither
+  // noise & dither (only for HDR, rather useless)
 #if 0
   r0.x = dot(float2(171,231), v0.xy);
   r0.xyz = float3(0.0093457941,0.010309278,0.0149253728) * r0.xxx;
@@ -107,7 +111,6 @@ void main(
 #endif
 
   o0.xyz = r0.xyz;
-  o0.w = 1;
 
   return;
 }

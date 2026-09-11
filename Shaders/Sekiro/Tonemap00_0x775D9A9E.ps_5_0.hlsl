@@ -39,8 +39,11 @@ Texture2D<float4> g_GlareAccTexture : register(t3);
 #define cmp -
 #include "./Includes/Common.hlsl"
 #include "../Includes/JzAzBz.hlsl"
-// #include "../Includes/Color.hlsl"
-// #include "../Includes/ColorGradingLUT.hlsl"
+#include "../Includes/Color.hlsl"
+
+#define LUT_SIZE 16u
+#define LUT_3D 1
+#include "../Includes/ColorGradingLUT.hlsl"
 
 void main(
   float4 v0 : SV_Position0,
@@ -62,55 +65,56 @@ void main(
   r1.xyz = g_ToneMapSceneLumScale.xyz * r1.xyz;
 
   r0.xyz = r1.xyz * v1.zzz + r0.xyz;
-  // o0.xyz = pow(r0.xyz, 1/2.2); return; //debug
+  // o0.xyz = pow(r0.xyz, 1/2.2); return; // debug
+  // r0.xyz = v1.x; // debug
 
-  // per channel modified reinhard to SDR
-  float3 colorBeforeReinhard = r0.xyz;
-  r1.xyz = 0.2 + r0.xyz; // LUT input encoding
-  r0.xyz = r0.xyz / r1.xyz; // LUT input encoding
-#if 1
-  r0.w = 0;
-  r1.x = g_ToneMapTableTexture.SampleLevel(SS_ClampLinear_s, r0.xw, 0).x;
-  r1.y = g_ToneMapTableTexture.SampleLevel(SS_ClampLinear_s, r0.yw, 0).x;
-  r1.z = g_ToneMapTableTexture.SampleLevel(SS_ClampLinear_s, r0.zw, 0).x;
-#elif 0
-  r1.xyz = ReinhardSekiro(r0.xyz, g_ReinhardParam, g_ToneMapParam);
-#endif
+  // Reinhard
+  float p = HDR_PEAK;
+  // p /= max3(mul(float4(1,1,1,1), g_mtxColorMultiplyer)); // peak delta
+  // o0.xyz = pow(p, 1/2.2); return; // debug
+  if (!isHDR) {
+    r0.xyz = r0.xyz / (0.2 + r0.xyz); // LUT encoding (generates a lot of white clip...)
+    r0.w = 0;
+    r1.x = g_ToneMapTableTexture.SampleLevel(SS_ClampLinear_s, r0.xw, 0).x;
+    r1.y = g_ToneMapTableTexture.SampleLevel(SS_ClampLinear_s, r0.yw, 0).x;
+    r1.z = g_ToneMapTableTexture.SampleLevel(SS_ClampLinear_s, r0.zw, 0).x;
+  } else {
+    float3 sdr = ReinhardSekiro(r0.xyz, g_ReinhardParam, 0, false);
 
-  // // restore some chroma for HDR
-  // if (isHDR) {
-  //   r1.xyz = JzAzBz::rgbToJzazbz(r1.xyz);
-  //   colorBeforeReinhard = JzAzBz::rgbToJzazbz(colorBeforeReinhard);
-  //   float s = r1.x * 1.26;
-  //   s = min(s, 1);
-  //   r1.xyz = RestoreHueAndChrominanceUcs(r1.xyz, colorBeforeReinhard, s * 0.67, s);
-  //   r1.xyz = JzAzBz::jzazbzToRgb(r1.xyz);
-  //   r1.xyz = max(0, r1.xyz);
-  //   r1.xyz *= 0.9;
-  //   
-  //   float m = max3(r1.xyz);
-  //   r1.xyz = m > 1 ? r1.xyz / m : r1.xyz;
-  // }
+    // float thres = ReinhardSekiroHDRExtThres(g_ReinhardParam);
+    // float slope = ReinhardSekiroVelocity(thres, g_ReinhardParam);
+    // float output = ReinhardSekiro(thres, g_ReinhardParam, 0, false);
+    float thres  = g_ToneMapTableTexture.Load(int3(uint2(0,0),0)).x;
+    float slope  = g_ToneMapTableTexture.Load(int3(uint2(1,0),0)).x;
+    float output = g_ToneMapTableTexture.Load(int3(uint2(2,0),0)).x;
+    r1.xyz = LinearPiecewiseExtension(sdr, r0.xyz, thres, slope, output);
+
+    float e = rcp(g_ToneMapParam.y);
+    r1.xyz = pow(r1.xyz, e); //TODO: usually 1, but this should be low passed
+
+    #if TONEMAP_BT2020 == 1
+      r1.xyz = BT709_To_BT2020(r1.xyz);
+    #endif
+    // r1.xyz = Neutwo(r1.xyz, p);
+    r1.xyz = Reinhard(r1.xyz, p); //TODO: adv tonemap (though LUT would bottleneck).
+    #if TONEMAP_BT2020 == 1
+      r1.xyz = BT2020_To_BT709(r1.xyz);
+    #endif
+  }
 
   // o0.xyz = pow(r1.xyz, 1/2.2); return; //debug
   
-  // color matrix color grading
+  // color matrix color grading (slight saturation and whatnot)
   r1.w = 1;
-  r0.x = dot(r1.xyzw, g_mtxColorMultiplyer._m00_m10_m20_m30);
-  r0.y = dot(r1.xyzw, g_mtxColorMultiplyer._m01_m11_m21_m31);
-  r0.z = dot(r1.xyzw, g_mtxColorMultiplyer._m02_m12_m22_m32);
+  r0.xyz = mul(r1.xyzw, g_mtxColorMultiplyer);
   r0.xyz = max(0, r0.xyz);
-  // o0.xyz = pow(r0.xyz, 1/2.2); return; //debug
-
-  float3 colorU = r0.xyz;
-  // o0.xyz = colorU; return; // debug
 
   // vignette
   r1.xy = v1.xy * float2(2,2) + float2(-1,-1);
-  r1.xy = g_vVignettingParam.xy * r1.xy;
-  r0.w = dot(r1.xy, r1.xy);
-  r0.w = sqrt(r0.w);
-  r0.w = saturate(r0.w * g_vVignettingParam.z + g_vVignettingParam.w);
+  r1.xy = g_vVignettingParam.xy * r1.xy; // scale
+  r0.w = dot(r1.xy, r1.xy); // dist
+  r0.w = sqrt(r0.w); // dist
+  r0.w = saturate(r0.w * g_vVignettingParam.z + g_vVignettingParam.w); // scale/factor
   r0.w = 1 + -r0.w;
   r1.x = r0.w * -2 + 3;
   r0.w = r0.w * r0.w;
@@ -120,58 +124,79 @@ void main(
   float vignetteMultiplier = r0.w;
   r0.xyz = r0.xyz * vignetteMultiplier;
 
-  // pow contrast / gamma encode
+  // o0.xyz = pow(r0.xyz, 1/2.2); return; //debug
+
+  // compress
+  float3 colorU = r0.xyz;
+  float3 colorN = colorU;
+  if (isHDR) {
+    float y = max3(colorN) /* GetLuminance(colorN) */; //TODO: idk which is better. LUT ruins everything anyways...
+    // float y1 = Neutwo(y, DVS1, p);
+    float y1 = Neupow(y, 1, p, 4);
+    colorN *= safeDivision(y1, y);
+  }
+
+  // pow contrast / gamma encode (usually 1/2.2)
   r0.xyz = pow(r0.xyz, g_ToneMapParam.z);
 
-  // LUT
-  r0.xyz = r0.xyz * float3(0.9375,0.9375,0.9375) + float3(0.03125,0.03125,0.03125);
-  r1.xyz = g_ColorGradingLUTTexture.Sample(SS_ClampLinear_s, r0.xyz).xyz;
+  // LUT (builder lerps 2 16x into this 16x 3D)
+  // r0.xyz = r0.xyz * float3(0.9375,0.9375,0.9375) + float3(0.03125,0.03125,0.03125);
+  // r1.xyz = g_ColorGradingLUTTexture.Sample(SS_ClampLinear_s, r0.xyz).xyz; 
+  r1.xyz = SampleLUT(g_ColorGradingLUTTexture, SS_ClampLinear_s, r0.xyz, LUT_SIZE, true);
 
-  // HDR (inv tonemap by luminance)
+  // decompress
   if (isHDR) {
-    // gamma decode
-    r0.w = 1 / g_ToneMapParam.z;
-    r1.xyz = pow(r1.xyz, r0.w);
-
-    r2.xyz = float3(1,1,1) + -r1.xyz;
-    r2.xyz = max(float3(0.00999999978,0.00999999978,0.00999999978), r2.xyz); // safe
-    r2.xyz = r1.xyz / r2.xyz;
-    r0.w = 1 / g_ReinhardParam.x;
-
-    r2.xyz = pow(r2.xyz, r0.w);
-
-    r0.w = dot(r2.xyz, float3(0.298909992,0.586610019,0.114480004));
-
-    r1.w = pow(r0.w, g_ReinhardParam.x);
-
-    r2.x = 1 + r1.w;
-    r1.w = r1.w / r2.x;
-    r2.x = -1 + r0.w;
-    r2.x = r2.x * 0.0526315793 + 1;
-
-    r2.x = pow(r2.x, g_ReinhardParam.x);
-
-    r2.y = 1 + r2.x;
-    r2.x = r2.x / r2.y;
-    r2.x = -0.5 + r2.x;
-    r2.x = r2.x * 19 + 0.5;
-    r0.w = cmp(1 < r0.w);
-    r0.w = r0.w ? r2.x : r1.w;
-    r2.xyz = r1.xyz * r0.www;
-
-    r0.w = dot(r1.xyz, float3(0.298909992,0.586610019,0.114480004)); //y
-    r0.w = 9.99999975e-005 + r0.w; //safe
-    r1.xyz = r2.xyz / r0.www;
-
-    r1.xyz = g_vHDRDisplayParam.yyy * r1.xyz; // brightness/exposure
-
-    // r1.xyz = pow(r1.xyz, 1.0 / 3.3); // WTH is this?
-    // r1.xyz *= 0.49770236 * 2.009233;
-    // r1.xyz = pow(r1.xyz, 1.5);
-
-    // r1.xyz = pow(r1.xyz, 1 / 2.2); // gamma encode
-    r1.xyz = pow(r1.xyz, g_ToneMapParam.z);
+    r1.xyz = pow(r1.xyz, 2.2); // gamma decode
+    r1.xyz = RestorePostProcess(colorU, colorN, r1.xyz, 0, true);
+    r1.xyz = max(r1.xyz, 0);
+    r1.xyz = pow(r1.xyz, 1/2.2); // gamma encode
   }
+
+//   // HDR (inv tonemap by luminance)
+//   if (isHDR) {
+//     // gamma decode
+//     r0.w = 1 / g_ToneMapParam.z;
+//     r1.xyz = pow(r1.xyz, r0.w);
+// 
+//     r2.xyz = 1 + -r1.xyz;
+//     r2.xyz = max(0.00999999978, r2.xyz); // safe
+//     r2.xyz = r1.xyz / r2.xyz;
+//     r0.w = 1 / g_ReinhardParam.x;
+// 
+//     r2.xyz = pow(r2.xyz, r0.w);
+// 
+//     r0.w = dot(r2.xyz, float3(0.298909992,0.586610019,0.114480004));
+//     r1.w = pow(r0.w, g_ReinhardParam.x);
+// 
+//     r2.x = 1 + r1.w;
+//     r1.w = r1.w / r2.x;
+// 
+//     r2.x = -1 + r0.w;
+//     r2.x = r2.x * 0.0526315793 + 1;
+//     r2.x = pow(r2.x, g_ReinhardParam.x);
+//     r2.y = 1 + r2.x;
+//     r2.x = r2.x / r2.y;
+//     r2.x = -0.5 + r2.x;
+//     r2.x = r2.x * 19 + 0.5;
+// 
+//     r0.w = cmp(1 < r0.w);
+//     r0.w = r0.w ? r2.x : r1.w;
+//     
+//     r2.xyz = r1.xyz * r0.www;
+// 
+//     r0.w = dot(r1.xyz, float3(0.298909992,0.586610019,0.114480004)); //y
+//     r0.w = 9.99999975e-005 + r0.w; //safe
+//     r1.xyz = r2.xyz / r0.www;
+// 
+//     r1.xyz = g_vHDRDisplayParam.yyy * r1.xyz; // brightness/exposure
+// 
+//     // r1.xyz = pow(r1.xyz, 1.0 / 3.3); // WTH is this?
+//     // r1.xyz *= 0.49770236 * 2.009233;
+//     // r1.xyz = pow(r1.xyz, 1.5);
+// 
+//     // r1.xyz = pow(r1.xyz, 1 / 2.2); // gamma encode
+//     r1.xyz = pow(r1.xyz, g_ToneMapParam.z);
+//   }
 
   o0.xyz = r1.xyz;
   o0.w = 1;

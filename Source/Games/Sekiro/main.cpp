@@ -47,7 +47,7 @@ namespace
          assert(shader_defines_data.size() < MAX_SHADER_DEFINES);
          
          // Default built-in
-         // GetShaderDefineData(POST_PROCESS_SPACE_TYPE_HASH).SetDefaultValue('0');
+         GetShaderDefineData(VANILLA_ENCODING_TYPE_HASH).SetDefaultValue('1'); // 2.2
       }
 
       static char InvertCharBool(char b)
@@ -318,6 +318,19 @@ public:
 
       // MainColor16f
       MainColor16f::OnDrawOrDispatch(native_device, native_device_context, cmd_list_data, device_data, ps, vs, cs);
+
+      // HDR Reinhard LUT Builder
+      if (ps == 0xC0C87BF5)
+      {
+         if (cb_luma_global_settings.DisplayMode == DisplayModeType::HDR)
+         {
+            // make viewport width of 3 only
+            D3D11_VIEWPORT viewport = {};
+            viewport.Width = 3.0f;
+            viewport.Height = 1.0f;
+            native_device_context->RSSetViewports(1, &viewport);
+         }
+      }
 
       // set DisplayMode based on UI Composite shader
       if (ps == 0xDB1689BD) cb_luma_global_settings.DisplayMode = DisplayModeType::HDR;

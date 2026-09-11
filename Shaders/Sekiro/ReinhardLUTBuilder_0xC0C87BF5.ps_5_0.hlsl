@@ -4,13 +4,13 @@ cbuffer cbToneMap : register(b1)
 {
   float3 g_ToneMapInvSceneLumScale : packoffset(c0);
   float4 g_ReinhardParam : packoffset(c1);
-  // 1.45
-  // 1.7
+  // 1.45  1.5
+  // 1.7   1.8
   // 0
   // 0
   float4 g_ToneMapParam : packoffset(c2);
   //
-  // 1
+  // 1   1
   //
   //
   float4 g_ToneMapSceneLumScale : packoffset(c3);
@@ -49,7 +49,23 @@ void main(
   uint4 bitmask, uiDest;
   float4 fDest;
 
-  o0.xyz = ReinhardSekiro(v1.x, g_ReinhardParam, g_ToneMapParam);
+  bool isHDR = /* HDR_ENABLED */ g_bEnableFlags.z != 0;
+
+  if (!isHDR) {
+    r0.x = (0.2 * v1.x) / (1 - v1.x); // LUT decode
+    o0.xyz = ReinhardSekiro(r0.x, g_ReinhardParam, g_ToneMapParam, true);
+  } else {
+    // viewport is limited to 3 pix.
+    float thres = ReinhardSekiroHDRExtThres(g_ReinhardParam);
+    if (v0.x >= 0 && v0.x < 1) {
+      r0.x = thres.x;
+    } else if (v0.x >= 1 && v0.x < 2) {
+      r0.x = ReinhardSekiroVelocity(thres, g_ReinhardParam);
+    } else if (v0.x >= 2 && v0.x < 3) {
+      r0.x = ReinhardSekiro(thres, g_ReinhardParam, 0, false);
+    }
+    o0.xyz = r0.x;
+  }
 
   o0.w = 1;
   return;
