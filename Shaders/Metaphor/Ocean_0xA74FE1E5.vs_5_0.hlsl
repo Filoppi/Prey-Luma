@@ -15,7 +15,7 @@ cbuffer GFD_VSCONST_VIEWPROJ : register(b2)
 	float fovy : packoffset(c12.w);
 }
 
-cbuffer GFD_VSCONST_OCEAN_PREV_DATA : register(b4)
+cbuffer GFD_VSCONST_OCEAN_PREV_DATA : register(b5)
 {
     float4x4 mtxLocalToWorldPrev;
     float4x4 mtxViewProjPrev;

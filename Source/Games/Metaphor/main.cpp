@@ -433,9 +433,8 @@ struct GameDeviceDataMetaphor final : public GameDeviceData
    ComPtr<ID3D11RenderTargetView> merged_texture_rtv;
 
    // constant buffers
-   ComPtr<ID3D11Buffer> cbuffer_outline_prev_data;
+   ComPtr<ID3D11Buffer> cbuffer_prev_data;
    ComPtr<ID3D11Buffer> cbuffer_prepare_ocean_data;
-   ComPtr<ID3D11Buffer> cbuffer_ocean_prev_data;
    ComPtr<ID3D11Buffer> cbuffer_skin_cache;
    ComPtr<ID3D11Buffer> cbuffer_motion_vector;
 
@@ -665,7 +664,7 @@ public:
          bd.MiscFlags = 0;
          bd.StructureByteStride = 0;
          bd.Usage = D3D11_USAGE_DYNAMIC;
-         native_device->CreateBuffer(&bd, nullptr, game_device_data.cbuffer_outline_prev_data.put());
+         native_device->CreateBuffer(&bd, nullptr, game_device_data.cbuffer_prev_data.put());
       }
 
       {
@@ -677,17 +676,6 @@ public:
          bd.StructureByteStride = 0;
          bd.Usage = D3D11_USAGE_DYNAMIC;
          native_device->CreateBuffer(&bd, nullptr, game_device_data.cbuffer_prepare_ocean_data.put());
-      }
-
-      {
-         D3D11_BUFFER_DESC bd = {};
-         bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-         bd.ByteWidth = 144;
-         bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-         bd.MiscFlags = 0;
-         bd.StructureByteStride = 0;
-         bd.Usage = D3D11_USAGE_DYNAMIC;
-         native_device->CreateBuffer(&bd, nullptr, game_device_data.cbuffer_ocean_prev_data.put());
       }
 
       {
@@ -1046,25 +1034,25 @@ public:
                if (is_outline_pass)
                {
                   D3D11_MAPPED_SUBRESOURCE mapped_cbuffer;
-                  native_device_context->Map(game_device_data.cbuffer_outline_prev_data.get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_cbuffer);
+                  native_device_context->Map(game_device_data.cbuffer_prev_data.get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_cbuffer);
                   GFD_VSCONST_OUTLINE_PREV_DATA* vs_outline_prev_data = (GFD_VSCONST_OUTLINE_PREV_DATA*)mapped_cbuffer.pData;
                   vs_outline_prev_data->mtxLocalToWorldPrev = cache_data->mtxLocalToWorld;
                   vs_outline_prev_data->mtxViewProjPrev = context_data.prev_view_proj;
                   vs_outline_prev_data->eyePositionPrev = context_data.prev_eye_pos;
                   vs_outline_prev_data->skinned_mesh = is_skinned_mesh ? 1 : 0;
-                  native_device_context->Unmap(game_device_data.cbuffer_outline_prev_data.get(), 0);
+                  native_device_context->Unmap(game_device_data.cbuffer_prev_data.get(), 0);
                }
             }
             else if (is_outline_pass)
             {
                D3D11_MAPPED_SUBRESOURCE mapped_cbuffer;
-               native_device_context->Map(game_device_data.cbuffer_outline_prev_data.get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_cbuffer);
+               native_device_context->Map(game_device_data.cbuffer_prev_data.get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_cbuffer);
                GFD_VSCONST_OUTLINE_PREV_DATA* vs_outline_prev_data = (GFD_VSCONST_OUTLINE_PREV_DATA*)mapped_cbuffer.pData;
                vs_outline_prev_data->mtxLocalToWorldPrev = vs_consts.mtxLocalToWorld;
                vs_outline_prev_data->mtxViewProjPrev = context_data.prev_view_proj;
                vs_outline_prev_data->eyePositionPrev = context_data.prev_eye_pos;
                vs_outline_prev_data->skinned_mesh = is_skinned_mesh ? 1 : 0;
-               native_device_context->Unmap(game_device_data.cbuffer_outline_prev_data.get(), 0);
+               native_device_context->Unmap(game_device_data.cbuffer_prev_data.get(), 0);
             }
          }
       }
@@ -1389,7 +1377,7 @@ public:
             if (SrActive(device_data))
             {
                {
-                  ID3D11Buffer* cb = game_device_data.cbuffer_outline_prev_data.get();
+                  ID3D11Buffer* cb = game_device_data.cbuffer_prev_data.get();
                   native_device_context->VSSetConstantBuffers(5, 1, &cb);
                   cb = game_device_data.cbuffer_skin_cache.get();
                   native_device_context->VSSetConstantBuffers(9, 1, &cb);
@@ -1791,7 +1779,7 @@ public:
                native_device_context->CSSetUnorderedAccessViews(0, 1, uavs, nullptr);
                native_device_context->Dispatch(1, 1, 1);
             }
-            native_device_context->CopySubresourceRegion(game_device_data.cbuffer_ocean_prev_data.get(), 0, 0, 0, 0, game_device_data.scratch_constant_buffer.get(), 0, nullptr);
+            native_device_context->CopySubresourceRegion(game_device_data.cbuffer_prev_data.get(), 0, 0, 0, 0, game_device_data.scratch_constant_buffer.get(), 0, nullptr);
 
             BindMotionVectorRenderTarget(native_device_context, context_data);
 
@@ -1802,8 +1790,6 @@ public:
             {
                native_device_context->UpdateSubresource(game_device_data.cb_transform, 0, nullptr, &vs_consts, 0, 0);
             }
-            ID3D11Buffer* cb = game_device_data.cbuffer_ocean_prev_data.get();
-            native_device_context->VSSetConstantBuffers(4, 1, &cb);
 
             {
                bool addToCache = true;

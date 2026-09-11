@@ -20,7 +20,7 @@ cbuffer GFD_VSCONST_SHADOW : register(b3)
 	float4x4 mtxLightViewProj[3] : packoffset(c0);
 }
 
-cbuffer GFD_VSCONST_OCEAN_PREV_DATA : register(b4)
+cbuffer GFD_VSCONST_OCEAN_PREV_DATA : register(b5)
 {
     float4x4 mtxLocalToWorldPrev;
     float4x4 mtxViewProjPrev;
