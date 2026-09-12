@@ -7,19 +7,10 @@
 #define DISABLE_SWAPCHAIN_FLIP_MODEL 1
 #define ENABLE_POST_DRAW_DISPATCH_CALLBACK 1
 #define ALLOW_SHADERS_DUMPING_WITH_NAME 1
+#define CUSTOM_MSAA_RESOLVE 0
 
 #include "..\..\Core\core.hpp"
 #include "..\..\Core\includes\shader_patching.h"
-
-namespace
-{
-   static const int msaa_values[] = { 2, 4, 8 };
-   int msaa_index = 0;
-   int enable_alpha_to_coverage = 0;
-   int enable_character_supersampling = 0;
-   
-   ShaderHashesList shader_hashes_skinning;
-}
 
 struct SHEXHeader
 {
@@ -29,6 +20,7 @@ struct SHEXHeader
    uint16_t type;
    uint32_t dword_count;
 };
+
 
 bool PatchPixelShader(std::vector<std::byte>& shader_code)
 {
@@ -264,6 +256,25 @@ void PatchCharacterPixelShader(std::vector<std::byte>& shader_code)
    std::memcpy(&dxbc_header->hash, &md5_digest.data, DXBCHeader::hash_size);
 }
 
+namespace
+{
+   static const int msaa_values[] = { 2, 4, 8 };
+   int msaa_index = 0;
+   int enable_alpha_to_coverage = 0;
+   int enable_character_supersampling = 0;
+   
+   ShaderHashesList shader_hashes_skinning = {};
+   ShaderHashesList shader_hashes_non_skinning = {};
+}
+
+struct CachedRenderTargetResource
+{
+   ComPtr<ID3D11Texture2D> texture = nullptr;
+   ComPtr<ID3D11RenderTargetView> rtv = nullptr;
+   ComPtr<ID3D11ShaderResourceView> srv = nullptr;
+   D3D11_TEXTURE2D_DESC desc{};
+};
+
 struct GameDeviceHeavenBurnsRed final : public GameDeviceData
 {
    std::unordered_map<ID3D11BlendState*, ComPtr<ID3D11BlendState>> alpha_blend_states;
@@ -272,9 +283,16 @@ struct GameDeviceHeavenBurnsRed final : public GameDeviceData
    std::unordered_map<uint32_t, std::vector<std::byte>> pixel_shader_code;
    
    std::unordered_set<ID3D11Buffer*> skinned_vertex_buffers;
+
+   ComPtr<ID3D11Resource> tracked_color_resource;
+   ComPtr<ID3D11RenderTargetView> tracked_color_rtv;
+   ComPtr<ID3D11Resource> tracked_depth_resource;
+   ComPtr<ID3D11DepthStencilView> tracked_depth_dsv;
    
    // Immediate context only
    bool is_current_rtv_ms = false;
+   bool has_3d_scene_drawn = false;
+   CachedRenderTargetResource cached_source_color;
 };
 
 class HeavenBurnsRed final : public Game
@@ -292,7 +310,21 @@ class HeavenBurnsRed final : public Game
 public:
    void OnInit(bool async) override
    {
+#if CUSTOM_MSAA_RESOLVE
+      native_shaders_definitions.emplace(CompileTimeStringHash("MSAA Filter VS"), 
+         ShaderDefinition{"Luma_MSAAResolveFilter", reshade::api::pipeline_subobject_type::vertex_shader, nullptr, nullptr, 
+            {{"VERTEXSHADER", "1"}}});
+      
+      native_shaders_definitions.emplace(CompileTimeStringHash("MSAA Filter PS"), 
+         ShaderDefinition{"Luma_MSAAResolveFilter", reshade::api::pipeline_subobject_type::pixel_shader, nullptr, nullptr, 
+            {{"MSAA_SAMPLE", "8"}}});
+      
+      reshade::register_event<reshade::addon_event::resolve_texture_region>(HeavenBurnsRed::OnResolveTextureRegion);
+#endif
       reshade::register_event<reshade::addon_event::create_resource>(HeavenBurnsRed::OnCreateResource);
+      reshade::register_event<reshade::addon_event::init_resource>(HeavenBurnsRed::OnInitResource);
+      reshade::register_event<reshade::addon_event::destroy_resource>(HeavenBurnsRed::OnDestroyResource);
+      reshade::register_event<reshade::addon_event::init_resource_view>(HeavenBurnsRed::OnInitResourceView);
       reshade::register_event<reshade::addon_event::create_pipeline>(HeavenBurnsRed::OnCreatePipeline);
       reshade::register_event<reshade::addon_event::create_sampler>(HeavenBurnsRed::OnCreateSampler);
       reshade::register_event<reshade::addon_event::bind_render_targets_and_depth_stencil>(HeavenBurnsRed::OnBindRenderTargetsAndDepthStencil);
@@ -333,6 +365,81 @@ public:
       
       desc.texture.samples = msaa_values[msaa_index];
       return true;
+   }
+
+   static void OnInitResource(
+      reshade::api::device* device,
+      const reshade::api::resource_desc& desc,
+      const reshade::api::subresource_data* initial_data,
+      reshade::api::resource_usage initial_state,
+      reshade::api::resource resource)
+   {
+      if (desc.type != reshade::api::resource_type::texture_2d)
+         return;
+      
+      if (desc.texture.samples <= 1)
+         return;
+      
+      auto& device_data = *device->get_private_data<DeviceData>();
+      
+      if (desc.texture.width != device_data.output_resolution.x || desc.texture.height != device_data.output_resolution.y)
+         return;
+      
+      auto& game_device_data = GetGameDeviceData(device_data);
+      
+      if ((desc.usage & reshade::api::resource_usage::depth_stencil) != reshade::api::resource_usage::undefined)
+      {
+         game_device_data.tracked_depth_resource = reinterpret_cast<ID3D11Resource*>(resource.handle);
+         game_device_data.tracked_depth_dsv = nullptr;
+      }
+      else if ((desc.usage & reshade::api::resource_usage::render_target) != reshade::api::resource_usage::undefined)
+      {
+         game_device_data.tracked_color_resource = reinterpret_cast<ID3D11Resource*>(resource.handle);
+         game_device_data.tracked_color_rtv = nullptr;
+      }
+   }
+   
+   static void OnDestroyResource(
+      reshade::api::device* device,
+      reshade::api::resource resource)
+   {
+      auto& device_data = *device->get_private_data<DeviceData>();
+      auto& game_device_data = GetGameDeviceData(device_data);
+      
+      ID3D11Resource* native_resource = reinterpret_cast<ID3D11Resource*>(resource.handle);
+      
+      if (game_device_data.tracked_color_resource.get() == native_resource)
+      {
+         game_device_data.tracked_color_resource = nullptr;
+         game_device_data.tracked_color_rtv = nullptr;
+      }
+      else if (game_device_data.tracked_depth_resource.get() == native_resource)
+      {
+         game_device_data.tracked_depth_resource = nullptr;
+         game_device_data.tracked_depth_dsv = nullptr;
+      }
+   }
+   
+   static void OnInitResourceView(
+      reshade::api::device* device,
+      reshade::api::resource resource,
+      reshade::api::resource_usage usage_type,
+      const reshade::api::resource_view_desc& desc,
+      reshade::api::resource_view view)
+   {
+      auto& device_data = *device->get_private_data<DeviceData>();
+      auto& game_device_data = GetGameDeviceData(device_data);
+      
+      ID3D11Resource* native_resource = reinterpret_cast<ID3D11Resource*>(resource.handle);
+      
+      if (usage_type == reshade::api::resource_usage::render_target && game_device_data.tracked_color_resource.get() == native_resource)
+      {
+         game_device_data.tracked_color_rtv = reinterpret_cast<ID3D11RenderTargetView*>(view.handle);
+      }
+      else if (usage_type == reshade::api::resource_usage::depth_stencil && game_device_data.tracked_depth_resource.get() == native_resource)
+      {
+         game_device_data.tracked_depth_dsv = reinterpret_cast<ID3D11DepthStencilView*>(view.handle);
+      }
    }
    
    static bool OnCreatePipeline(
@@ -395,20 +502,147 @@ public:
       const reshade::api::resource_view *rtvs,
       reshade::api::resource_view dsv)
    {
-      if (count != 1)
-         return;
+      auto& device_data = *cmd_list->get_device()->get_private_data<DeviceData>();
+      auto& game_device_data = GetGameDeviceData(device_data);
       
-      if (rtvs[0].handle == 0)
-         return;
-      
-      reshade::api::resource resource = cmd_list->get_device()->get_resource_from_view(rtvs[0]);
-      reshade::api::resource_desc desc = cmd_list->get_device()->get_resource_desc(resource);
-      
+      game_device_data.is_current_rtv_ms =
+         count == 1 &&
+         rtvs[0].handle != 0 &&
+         game_device_data.tracked_color_rtv != nullptr &&
+         rtvs[0].handle == reinterpret_cast<uint64_t>(game_device_data.tracked_color_rtv.get());
+   }
+   
+#if CUSTOM_MSAA_RESOLVE
+   static bool OnResolveTextureRegion(
+      reshade::api::command_list* cmd_list,
+      reshade::api::resource source,
+      uint32_t source_subresource,
+      const reshade::api::subresource_box* source_box,
+      reshade::api::resource dest,
+      uint32_t dest_subresource,
+      uint32_t dest_x,
+      uint32_t dest_y,
+      uint32_t dest_z,
+      reshade::api::format format)
+   {
+      if (source.handle == 0)
+         return false;
+
+      if (dest.handle == 0)
+         return false;
+
       auto& device_data = *cmd_list->get_device()->get_private_data<DeviceData>();
       auto& game_device_data = GetGameDeviceData(device_data);
 
-      game_device_data.is_current_rtv_ms = desc.texture.samples > 1;
+      if (!game_device_data.has_3d_scene_drawn)
+      {
+#if 0
+         reshade::log::message(reshade::log::level::debug, "Fail to detect 3d scene.");
+#endif
+         return false;
+      }
+      
+      ComPtr<ID3D11Resource> src_tex;
+      HRESULT hr_src = reinterpret_cast<ID3D11Resource*>(source.handle)->QueryInterface(src_tex.put());
+      if (FAILED(hr_src))
+      {
+#if DEVELOPMENT
+         reshade::log::message(reshade::log::level::debug, "Fail to resolve incompatible source.");
+#endif
+         return false;
+      }
+      
+      if (game_device_data.cached_source_color.texture.get() == src_tex.get())
+      {
+         if (test_index == 14)
+         {
+            ComPtr<ID3D11DeviceContext> native_device_context;
+            ID3D11DeviceChild* device_child = (ID3D11DeviceChild*)(cmd_list->get_native());
+            HRESULT hr = device_child->QueryInterface(native_device_context.put());
+            if (FAILED(hr))
+            {
+#if DEVELOPMENT
+               reshade::log::message(reshade::log::level::debug, "Fail to get context device.");
+#endif
+               return false;
+            }
+
+            ID3D11Device* native_device = (ID3D11Device*)(cmd_list->get_device()->get_native());
+
+            ComPtr<ID3D11RenderTargetView> render_target_view;
+            {
+               ComPtr<ID3D11Resource> dest_tex;
+               HRESULT hr_dest = reinterpret_cast<ID3D11Resource*>(dest.handle)->QueryInterface(dest_tex.put());
+               if (FAILED(hr_dest))
+               {
+#if DEVELOPMENT
+                  reshade::log::message(reshade::log::level::debug, "Fail to resolve incompatible dest.");
+#endif
+                  return false;
+               }
+
+               D3D11_RENDER_TARGET_VIEW_DESC rtv_desc = {};
+               rtv_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+               rtv_desc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+               rtv_desc.Texture2D.MipSlice = 0;
+
+               hr = native_device->CreateRenderTargetView(dest_tex.get(), &rtv_desc, render_target_view.put());
+               if (FAILED(hr))
+               {
+#if DEVELOPMENT
+                  reshade::log::message(reshade::log::level::debug, "Fail to create dest render target.");
+#endif
+                  return false;
+               }
+            }
+
+            DrawStateStack<DrawStateStackType::FullGraphics> draw_state_stack;
+            draw_state_stack.Cache(native_device_context.get(), device_data.uav_max_count);
+
+   #if 0
+            reshade::log::message(reshade::log::level::debug, "Drawing custom resolve.");
+   #endif
+
+            // Set the new resources/states:
+            constexpr FLOAT blend_factor_alpha[4] = { 1.f, 1.f, 1.f, 1.f };
+            constexpr FLOAT blend_factor[4] = { 1.f, 1.f, 1.f, 0.f }; // TODO: this makes no sense as the blend state is unlikely to use it, use write mask instead
+            native_device_context->OMSetBlendState(device_data.default_blend_state.get(), false ? blend_factor_alpha : blend_factor, 0xFFFFFFFF);
+            native_device_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            native_device_context->RSSetScissorRects(0, nullptr);
+            D3D11_VIEWPORT viewport;
+            viewport.TopLeftX = 0;
+            viewport.TopLeftY = 0;
+            viewport.Width = game_device_data.cached_source_color.desc.Width;
+            viewport.Height = game_device_data.cached_source_color.desc.Height;
+            viewport.MinDepth = 0;
+            viewport.MaxDepth = 1;
+            native_device_context->RSSetViewports(1, &viewport);
+            native_device_context->OMSetRenderTargets(1, render_target_view.get_addressof(), nullptr);
+            native_device_context->PSSetShaderResources(0, 1, game_device_data.cached_source_color.srv.get_addressof());
+            native_device_context->OMSetDepthStencilState(nullptr, 0);
+            ID3D11VertexShader* vs = device_data.native_vertex_shaders[CompileTimeStringHash("MSAA Filter VS")].get();
+            ID3D11PixelShader* ps = device_data.native_pixel_shaders[CompileTimeStringHash("MSAA Filter PS")].get();
+            native_device_context->VSSetShader(vs, nullptr, 0);
+            native_device_context->PSSetShader(ps, nullptr, 0);
+            native_device_context->IASetInputLayout(nullptr);
+            native_device_context->RSSetState(nullptr);
+
+            // Finally draw:
+            native_device_context->Draw(3, 0);
+
+            draw_state_stack.Restore(native_device_context.get());
+            return true;
+         }
+      }
+      else
+      {
+#if 0
+         reshade::log::message(reshade::log::level::debug, "Resolve source isn't cached.");
+#endif
+      }
+      return false;
    }
+#endif
    
    static ID3D11PixelShader* GetCharacterPixelShader(
       uint32_t pixel_shader_hash,
@@ -457,12 +691,47 @@ public:
       std::function<void()>* original_draw_dispatch_func) override
    {
       auto& game_device_data = GetGameDeviceData(device_data);
-      if (enable_character_supersampling)
+      if (enable_character_supersampling && (stages & reshade::api::shader_stage::compute) != 0)
       {
-         if (original_shader_hashes.Contains(shader_hashes_skinning))
+         bool is_skinning = false;
+         while (true)
+         {
+            if (original_shader_hashes.Contains(shader_hashes_non_skinning))
+               break;
+            
+            is_skinning = original_shader_hashes.Contains(shader_hashes_skinning);
+            
+            if (!is_skinning)
+            {
+               ComPtr<ID3D11ComputeShader> shader;
+               native_device_context->CSGetShader(shader.put(), nullptr, nullptr);
+
+               std::optional<std::string> optional_name = GetD3DNameW(shader.get());
+               if (optional_name.has_value() && !optional_name->empty())
+               {
+                  if (optional_name->contains("Skinning"))
+                  {
+#if DEVELOPMENT
+                     reshade::log::message(reshade::log::level::debug, std::format("Skinning Compute Shader: 0x{:08X}", original_shader_hashes.compute_shaders[0]).c_str());
+#endif
+                     is_skinning = true;
+                     shader_hashes_skinning.compute_shaders.emplace(original_shader_hashes.compute_shaders[0]);
+                  }
+               }
+            }
+            
+            if (!is_skinning)
+            {
+               shader_hashes_non_skinning.compute_shaders.emplace(original_shader_hashes.compute_shaders[0]);
+            }
+            break;
+         }
+            
+         // it seems like almost all dynamic objects will be animated by skinning shaders
+         if (is_skinning)
          {
             ComPtr<ID3D11UnorderedAccessView> uavs[5] = {};
-
+            // batch skin supports max of 5
             native_device_context->CSGetUnorderedAccessViews(0, 5, reinterpret_cast<ID3D11UnorderedAccessView**>(uavs));
 
             for (const auto& uav : uavs)
@@ -478,6 +747,8 @@ public:
                   game_device_data.skinned_vertex_buffers.insert(buffer.get());
             }
          }
+         
+         return DrawOrDispatchOverrideType::None;
       }
       
       if ((stages & reshade::api::shader_stage::pixel) == 0)
@@ -488,6 +759,29 @@ public:
       
       if (game_device_data.is_current_rtv_ms)
       {
+         if (!game_device_data.has_3d_scene_drawn)
+         {
+            game_device_data.has_3d_scene_drawn = true;
+
+            if (game_device_data.tracked_color_rtv.get() != game_device_data.cached_source_color.rtv.get())
+            {
+               game_device_data.cached_source_color.rtv = game_device_data.tracked_color_rtv;
+
+               if (game_device_data.tracked_color_resource &&
+                   SUCCEEDED(game_device_data.tracked_color_resource->QueryInterface(game_device_data.cached_source_color.texture.put())))
+               {
+                  game_device_data.cached_source_color.texture->GetDesc(&game_device_data.cached_source_color.desc);
+
+                  D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc = {};
+                  srv_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+                  srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DMS;
+                  // D3D11_TEX2DMS_SRV has no fields to set
+
+                  const HRESULT hr = native_device->CreateShaderResourceView(game_device_data.cached_source_color.texture.get(), &srv_desc, game_device_data.cached_source_color.srv.put());
+               }
+            }
+         }
+         
          if (enable_alpha_to_coverage)
          {
             auto shader_it = game_device_data.modified_atoc_pixel_shaders.find(original_shader_hashes.pixel_shaders[0]);
@@ -530,6 +824,12 @@ public:
             if (shader_it != game_device_data.modified_character_pixel_shaders.end())
             {
                native_device_context->PSSetShader(shader_it->second.get(), nullptr, 0);
+#if DEVELOPMENT
+               if (test_index == 13)
+               {
+                  return DrawOrDispatchOverrideType::Skip;
+               }
+#endif
             }
             else
             {
@@ -556,6 +856,7 @@ public:
       game_device_data.skinned_vertex_buffers.clear();
       
       game_device_data.is_current_rtv_ms = false;
+      game_device_data.has_3d_scene_drawn = false;
    }
    
    void LoadConfigs() override
@@ -609,25 +910,18 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
       force_disable_display_composition = true;
       
       enable_samplers_upgrade = false; // Exit hang
-      
-      shader_hashes_skinning.compute_shaders = {
-         0x1169398B,
-         0x46D63650,
-         0x778CD6B1,
-         0xC7D613CC,
-         0xFB8B5077,
-         0x15236F79,
-         0x1A08AE68,
-         0x79BE3FB5,
-         0x9963F2F1,
-         0xB3F6C938,
-      };
 
       game = new HeavenBurnsRed();
    }
    else if (ul_reason_for_call == DLL_PROCESS_DETACH)
    {
+#if CUSTOM_MSAA_RESOLVE
+      reshade::unregister_event<reshade::addon_event::resolve_texture_region>(HeavenBurnsRed::OnResolveTextureRegion);
+#endif
       reshade::unregister_event<reshade::addon_event::create_resource>(HeavenBurnsRed::OnCreateResource);
+      reshade::unregister_event<reshade::addon_event::init_resource>(HeavenBurnsRed::OnInitResource);
+      reshade::unregister_event<reshade::addon_event::destroy_resource>(HeavenBurnsRed::OnDestroyResource);
+      reshade::unregister_event<reshade::addon_event::init_resource_view>(HeavenBurnsRed::OnInitResourceView);
       reshade::unregister_event<reshade::addon_event::create_pipeline>(HeavenBurnsRed::OnCreatePipeline);
       reshade::unregister_event<reshade::addon_event::create_sampler>(HeavenBurnsRed::OnCreateSampler);
       reshade::unregister_event<reshade::addon_event::bind_render_targets_and_depth_stencil>(HeavenBurnsRed::OnBindRenderTargetsAndDepthStencil);
@@ -636,4 +930,4 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
    CoreMain(hModule, ul_reason_for_call, lpReserved);
    
    return TRUE;
-}   
+}
