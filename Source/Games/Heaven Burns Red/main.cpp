@@ -706,7 +706,15 @@ public:
                ComPtr<ID3D11ComputeShader> shader;
                native_device_context->CSGetShader(shader.put(), nullptr, nullptr);
 
-               std::optional<std::string> optional_name = GetD3DNameW(shader.get());
+               std::optional<std::string> optional_name = std::nullopt;//GetD3DNameW(shader.get());
+               byte data[128] = {};
+               UINT size = sizeof(data);
+               if (shader.get()->GetPrivateData(WKPDID_D3DDebugObjectName, &size, data) == S_OK)
+               {
+                  if (size > 0)
+                     optional_name = std::string{ data, data + size };
+               }
+               
                if (optional_name.has_value() && !optional_name->empty())
                {
                   if (optional_name->contains("Skinning"))
